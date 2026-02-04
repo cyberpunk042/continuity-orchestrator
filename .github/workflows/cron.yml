@@ -1,0 +1,98 @@
+# Continuity Orchestrator — Scheduled Tick Workflow
+#
+# Runs on a fixed schedule to evaluate countdown, apply policy rules,
+# execute integrations, and persist results. All behavior is driven
+# by repository configuration and persistent state.
+
+name: continuity-tick
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: "*/10 * * * *"
+  
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger"
+        required: false
+        default: "manual_run"
+      dry_run:
+        description: "Run without persisting changes"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: continuity-tick
+  cancel-in-progress: false
+
+env:
+  CONTINUITY_ENV: production
+  PYTHON_VERSION: "3.12"
+  ADAPTER_MOCK_MODE: ${{ vars.ADAPTER_MOCK_MODE || 'true' }}
+
+jobs:
+  run-tick:
+    name: Execute Continuity Tick
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      
+      - name: Run continuity tick
+        id: tick
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SMS_API_KEY: ${{ secrets.SMS_API_KEY }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          REDDIT_API_KEY: ${{ secrets.REDDIT_API_KEY }}
+          PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
+          PERSISTENCE_API_TOKEN: ${{ secrets.PERSISTENCE_API_TOKEN }}
+        run: |
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "Running in dry-run mode"
+            python -m src.main tick --dry-run
+          else
+            python -m src.main tick
+          fi
+      
+      - name: Commit state and audit changes
+        if: inputs.dry_run != 'true'
+        run: |
+          if git status --porcelain state/ audit/ | grep -q .; then
+            git config user.name "continuity-orchestrator[bot]"
+            git config user.email "continuity-orchestrator[bot]@users.noreply.github.com"
+            
+            git add state/ audit/
+            
+            TICK_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            git commit -m "tick: ${TICK_TIME}"
+            
+            for i in 1 2 3; do
+              git push && break
+              echo "Push attempt $i failed, retrying..."
+              sleep 5
+              git pull --rebase
+            done
+          else
+            echo "No state changes to commit"
+          fi

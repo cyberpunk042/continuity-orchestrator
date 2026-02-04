@@ -1,0 +1,1 @@
+REMINDER: Continuity renewal required. Approx ${{time_to_deadline_hours}}h remaining. Use offline procedure.

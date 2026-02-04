@@ -1,0 +1,143 @@
+# policy/plans/default.yaml
+
+version: 1
+
+notes:
+  - This file defines what actions are executed at each escalation stage.
+  - Actions are grouped by stage and executed through adapters.
+  - Each action must be idempotent; execution receipts are recorded to prevent duplicates.
+  - Reminder actions must never include renewal entry points or links.
+
+plan_id: default
+description: Default staged continuity and disclosure plan.
+
+stages:
+
+  OK:
+    description: Normal operation. No outward actions.
+    actions: []
+
+  REMIND_1:
+    description: First reminder to the operator.
+    actions:
+      - id: remind_email_primary
+        adapter: email
+        channel: operator
+        template: reminder_basic
+        constraints:
+          no_links: true
+          no_entrypoint_reference: true
+
+  REMIND_2:
+    description: Stronger reminder using secondary channels.
+    actions:
+      - id: remind_email_secondary
+        adapter: email
+        channel: operator
+        template: reminder_strong
+        constraints:
+          no_links: true
+          no_entrypoint_reference: true
+
+      - id: remind_sms
+        adapter: sms
+        channel: operator
+        template: reminder_sms
+        constraints:
+          no_links: true
+          no_entrypoint_reference: true
+
+  PRE_RELEASE:
+    description: Warning stage for preconfigured custodians and observers.
+    actions:
+      - id: notify_custodians_email
+        adapter: email
+        channel: custodians
+        template: pre_release_notice
+        constraints:
+          limited_scope: true
+
+      - id: notify_watchers_webhook
+        adapter: webhook
+        channel: observers
+        payload: pre_release_signal
+
+  PARTIAL:
+    description: First outward-facing execution wave.
+    actions:
+      - id: post_x_notice
+        adapter: x
+        channel: public
+        template: partial_notice
+
+      - id: post_reddit_notice
+        adapter: reddit
+        channel: public
+        template: partial_notice
+
+      - id: publish_github_document
+        adapter: github_surface
+        channel: public
+        artifact:
+          type: document
+          visibility: public
+          label: initial_release
+
+      - id: persist_partial_state
+        adapter: persistence_api
+        channel: internal
+        payload: partial_state_snapshot
+
+  FULL:
+    description: Full execution of all configured actions.
+    actions:
+      - id: post_x_full
+        adapter: x
+        channel: public
+        template: full_release
+
+      - id: post_reddit_full
+        adapter: reddit
+        channel: public
+        template: full_release
+
+      - id: publish_github_full_documents
+        adapter: github_surface
+        channel: public
+        artifact:
+          type: document_bundle
+          visibility: public
+          label: full_release
+
+      - id: publish_article
+        adapter: article_publish
+        channel: public
+        template: full_article
+
+      - id: notify_all_webhooks
+        adapter: webhook
+        channel: observers
+        payload: full_release_signal
+
+      - id: persist_final_state
+        adapter: persistence_api
+        channel: internal
+        payload: final_state_snapshot
+
+receipts:
+  record: true
+  fields:
+    - action_id
+    - adapter
+    - channel
+    - timestamp
+    - delivery_id
+    - status
+
+failure_handling:
+  retry_policy:
+    max_attempts: 3
+    backoff_seconds: 60
+  on_exhausted:
+    record_failure: true
+    continue_execution: true

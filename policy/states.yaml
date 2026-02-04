@@ -1,0 +1,74 @@
+# policy/states.yaml
+
+version: 1
+
+notes:
+  - This file defines the escalation state machine for continuity-orchestrator.
+  - States are ordered. The engine may only move forward unless explicitly allowed by a rule.
+  - Each state can define default behavior, but execution is driven by plans.
+
+states:
+  - name: OK
+    order: 0
+    description: Countdown is healthy. No outward actions required.
+    flags:
+      outward_actions_allowed: false
+      reminders_allowed: false
+
+  - name: REMIND_1
+    order: 10
+    description: First reminder stage. Notify operator to renew before deadline.
+    flags:
+      outward_actions_allowed: false
+      reminders_allowed: true
+
+  - name: REMIND_2
+    order: 20
+    description: Second reminder stage. Stronger reminder via secondary channel if configured.
+    flags:
+      outward_actions_allowed: false
+      reminders_allowed: true
+
+  - name: PRE_RELEASE
+    order: 30
+    description: Final warning stage. Notify preconfigured custodians that escalation is imminent.
+    flags:
+      outward_actions_allowed: false
+      reminders_allowed: true
+
+  - name: PARTIAL
+    order: 40
+    description: Limited outward execution. First wave of public/third-party actions.
+    flags:
+      outward_actions_allowed: true
+      reminders_allowed: true
+
+  - name: FULL
+    order: 50
+    description: Full execution. All configured outward actions fire per plan.
+    flags:
+      outward_actions_allowed: true
+      reminders_allowed: true
+
+terminal_states:
+  - FULL
+
+reset_behavior:
+  on_successful_renewal:
+    target_state: OK
+    description: Successful renewal returns the system to OK and resets stage progression.
+  on_manual_disable:
+    target_state: OK
+    description: If a disable mechanism exists in the chosen mode, it returns to OK.
+
+stage_progression_defaults:
+  - from: OK
+    to: REMIND_1
+  - from: REMIND_1
+    to: REMIND_2
+  - from: REMIND_2
+    to: PRE_RELEASE
+  - from: PRE_RELEASE
+    to: PARTIAL
+  - from: PARTIAL
+    to: FULL

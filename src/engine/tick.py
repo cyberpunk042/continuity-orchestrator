@@ -1,0 +1,269 @@
+"""
+Tick Lifecycle — The core execution loop.
+
+The tick is the atomic unit of execution. Each tick:
+1. Initializes context
+2. Computes time fields
+3. Evaluates rules (no renewal in prototype)
+4. Applies mutations
+5. Selects actions
+6. Executes adapters (mock for prototype)
+7. Records audit entries
+8. Returns result
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from ..models.state import State, ActionReceipt
+from ..policy.models import Policy
+from ..persistence.audit import AuditWriter
+from .time_eval import compute_time_fields
+from .rules import evaluate_rules
+from .state import apply_rules
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TickResult:
+    """Result of a tick execution."""
+
+    tick_id: str
+    started_at: str
+    ended_at: Optional[str] = None
+    duration_ms: int = 0
+
+    # State info
+    previous_state: str = ""
+    new_state: str = ""
+    state_changed: bool = False
+
+    # Rules
+    matched_rules: List[str] = field(default_factory=list)
+
+    # Actions
+    actions_selected: List[str] = field(default_factory=list)
+    actions_executed: List[str] = field(default_factory=list)
+
+    # Errors
+    errors: List[str] = field(default_factory=list)
+
+
+def generate_tick_id() -> str:
+    """Generate a unique tick ID."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    suffix = uuid4().hex[:6].upper()
+    return f"T-{ts}-{suffix}"
+
+
+def run_tick(
+    state: State,
+    policy: Policy,
+    now: Optional[datetime] = None,
+    audit_writer: Optional[AuditWriter] = None,
+    dry_run: bool = False,
+) -> TickResult:
+    """
+    Execute a single tick of the continuity engine.
+
+    This is the main entry point for the engine.
+
+    Args:
+        state: Current state (will be mutated)
+        policy: Loaded policy
+        now: Override timestamp (optional)
+        audit_writer: Audit ledger writer (optional)
+        dry_run: If True, don't execute adapters
+
+    Returns:
+        TickResult with execution details
+    """
+    start_time = time.time()
+    tick_id = generate_tick_id()
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    result = TickResult(
+        tick_id=tick_id,
+        started_at=now.isoformat().replace("+00:00", "Z"),
+        previous_state=state.escalation.state,
+    )
+
+    logger.info(f"Starting tick {tick_id}")
+
+    # --- Phase 1: Initialization ---
+    state_id = state.meta.state_id
+
+    # Emit tick_start audit
+    if audit_writer:
+        audit_writer.emit_tick_start(
+            tick_id=tick_id,
+            state_id=state_id,
+            escalation_state=state.escalation.state,
+            policy_version=state.meta.policy_version,
+            plan_id=state.meta.plan_id,
+            now_iso=now.isoformat().replace("+00:00", "Z"),
+            deadline_iso=state.timer.deadline_iso,
+        )
+
+    # --- Phase 2: Time Evaluation ---
+    compute_time_fields(state, now)
+
+    logger.info(
+        f"Time: deadline={state.timer.deadline_iso}, "
+        f"time_to_deadline={state.timer.time_to_deadline_minutes}m, "
+        f"overdue={state.timer.overdue_minutes}m"
+    )
+
+    # --- Phase 3: Renewal Evaluation ---
+    # In prototype, renewal is manual via set-deadline command
+    # No automatic renewal check here
+
+    # --- Phase 4: Policy Evaluation (Rules) ---
+    matched = evaluate_rules(state, policy.rules)
+    result.matched_rules = [r.id for r in matched]
+
+    for r in matched:
+        logger.info(f"Rule matched: {r.id}")
+        if audit_writer:
+            audit_writer.emit_rule_matched(
+                tick_id=tick_id,
+                state_id=state_id,
+                rule_id=r.id,
+                escalation_state=state.escalation.state,
+                policy_version=state.meta.policy_version,
+                plan_id=state.meta.plan_id,
+            )
+
+    # --- Phase 5: State Mutation ---
+    previous_state = state.escalation.state
+    mutation_result = apply_rules(state, matched, now)
+
+    if mutation_result["state_changed"]:
+        result.state_changed = True
+        result.new_state = mutation_result["new_state"]
+        logger.info(f"State transition: {previous_state} → {result.new_state}")
+
+        if audit_writer:
+            audit_writer.emit_state_transition(
+                tick_id=tick_id,
+                state_id=state_id,
+                from_state=previous_state,
+                to_state=result.new_state,
+                rule_id=matched[-1].id if matched else "unknown",
+                policy_version=state.meta.policy_version,
+                plan_id=state.meta.plan_id,
+            )
+    else:
+        result.new_state = state.escalation.state
+
+    # --- Phase 6: Action Selection ---
+    current_stage = state.escalation.state
+    actions_for_stage = policy.plan.get_actions_for_stage(current_stage)
+    result.actions_selected = [a.id for a in actions_for_stage]
+
+    logger.info(f"Actions for stage {current_stage}: {result.actions_selected}")
+
+    # --- Phase 7: Adapter Execution (Mock) ---
+    # Clear previous tick's actions
+    state.actions.last_tick_actions = []
+
+    if not dry_run and actions_for_stage:
+        from pathlib import Path
+        from ..adapters.registry import AdapterRegistry
+        from ..adapters.base import ExecutionContext
+        from ..templates.resolver import TemplateResolver
+        from ..templates.context import build_template_context
+
+        registry = AdapterRegistry(mock_mode=True)
+        
+        # Template resolver (looks for templates in project root)
+        project_root = Path(__file__).parent.parent.parent
+        template_resolver = TemplateResolver(project_root / "templates")
+
+        for action in actions_for_stage:
+            # Check idempotency
+            if action.id in state.actions.executed:
+                prev = state.actions.executed[action.id]
+                if prev.status == "ok":
+                    logger.info(f"Skipping {action.id}: already executed")
+                    continue
+
+            # Resolve template if specified
+            template_content = None
+            if action.template:
+                tpl_context = build_template_context(state, action, tick_id)
+                template_content = template_resolver.resolve_and_render(
+                    action.template, tpl_context
+                )
+                if template_content:
+                    logger.debug(f"Resolved template '{action.template}'")
+
+            # Build context
+            context = ExecutionContext(
+                state=state,
+                action=action,
+                tick_id=tick_id,
+                template_content=template_content,
+            )
+
+            # Execute
+            receipt = registry.execute_action(action, context)
+
+            # Record receipt
+            state.actions.executed[action.id] = ActionReceipt(
+                status=receipt.status,
+                last_delivery_id=receipt.delivery_id,
+                last_executed_iso=receipt.ts_iso,
+            )
+            state.actions.last_tick_actions.append(action.id)
+            result.actions_executed.append(action.id)
+
+            # Audit
+            if audit_writer:
+                audit_writer.emit(
+                    event_type="action_receipt",
+                    tick_id=tick_id,
+                    state_id=state_id,
+                    escalation_state=current_stage,
+                    policy_version=state.meta.policy_version,
+                    plan_id=state.meta.plan_id,
+                    details=receipt.model_dump(),
+                )
+
+    # --- Phase 8: Finalization ---
+    end_time = time.time()
+    result.duration_ms = int((end_time - start_time) * 1000)
+    result.ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Update state metadata
+    state.meta.updated_at_iso = result.ended_at
+
+    # Emit tick_end audit
+    if audit_writer:
+        audit_writer.emit_tick_end(
+            tick_id=tick_id,
+            state_id=state_id,
+            escalation_state=state.escalation.state,
+            policy_version=state.meta.policy_version,
+            plan_id=state.meta.plan_id,
+            duration_ms=result.duration_ms,
+            actions_executed=len(result.actions_executed),
+            state_changed=result.state_changed,
+            matched_rules=result.matched_rules,
+        )
+
+    logger.info(f"Tick {tick_id} complete in {result.duration_ms}ms")
+
+    return result
