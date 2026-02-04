@@ -105,6 +105,10 @@ class SiteGenerator:
         feed_path = self._generate_feed(context)
         files_generated.append(feed_path)
         
+        # Countdown page (live timer + renewal form)
+        countdown_path = self._generate_countdown(context)
+        files_generated.append(countdown_path)
+        
         # Generate articles from Editor.js content
         article_paths = self._generate_articles(context)
         files_generated.extend(article_paths)
@@ -134,7 +138,7 @@ class SiteGenerator:
         audit_entries: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         """Build template context from state."""
-        return {
+        context = {
             "project": state.meta.project,
             "state_id": state.meta.state_id,
             "stage": state.escalation.state,
@@ -149,6 +153,24 @@ class SiteGenerator:
             "build_time": datetime.now(timezone.utc).isoformat(),
             "audit_entries": audit_entries or [],
         }
+        
+        # Load content manifest for stage-based visibility
+        try:
+            from .manifest import ContentManifest
+            manifest = ContentManifest.load()
+            context["manifest"] = manifest
+            context["stage_behavior"] = manifest.get_stage_behavior(state.escalation.state)
+            context["visible_articles"] = manifest.get_visible_articles(state.escalation.state)
+            context["nav_articles"] = manifest.get_nav_articles(state.escalation.state)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to load manifest: {e}")
+            context["manifest"] = None
+            context["stage_behavior"] = None
+            context["visible_articles"] = []
+            context["nav_articles"] = []
+        
+        return context
     
     def _generate_index(self, context: Dict[str, Any]) -> Path:
         """Generate the main index page."""
@@ -197,7 +219,8 @@ class SiteGenerator:
                 </section>
                 
                 <nav>
-                    <a href="timeline.html">View Timeline</a>
+                    <a href="countdown.html">Countdown</a>
+                    <a href="timeline.html">Timeline</a>
                     <a href="articles/">Articles</a>
                     <a href="status.html">Full Status</a>
                     <a href="feed.xml">RSS Feed</a>
@@ -352,11 +375,389 @@ class SiteGenerator:
         output_path.write_text(html)
         return output_path
     
+    def _generate_countdown(self, context: Dict[str, Any]) -> Path:
+        """Generate the countdown page with live timer and renewal form."""
+        stage = context["stage"]
+        deadline = context["deadline"]
+        project = context["project"]
+        
+        # Stage styling
+        stage_colors = {
+            "OK": "#10b981",
+            "REMIND_1": "#f59e0b",
+            "REMIND_2": "#f97316",
+            "PRE_RELEASE": "#ef4444",
+            "PARTIAL": "#8b5cf6",
+            "FULL": "#dc2626",
+        }
+        stage_color = stage_colors.get(stage, "#6b7280")
+        
+        # Stage behavior from manifest
+        stage_behavior = context.get("stage_behavior")
+        banner_html = ""
+        if stage_behavior and stage_behavior.banner:
+            banner_class = stage_behavior.banner_class or "info"
+            banner_html = f'<div class="banner banner-{banner_class}">{stage_behavior.banner}</div>'
+        
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Countdown — {project}</title>
+    <style>
+        :root {{
+            --color-bg: #0d1117;
+            --color-surface: #161b22;
+            --color-border: #30363d;
+            --color-text: #c9d1d9;
+            --color-text-muted: #8b949e;
+            --color-accent: #58a6ff;
+            --color-stage: {stage_color};
+        }}
+        
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }}
+        
+        .container {{
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }}
+        
+        h1 {{
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            color: var(--color-text-muted);
+        }}
+        
+        .stage-badge {{
+            display: inline-block;
+            background: var(--color-stage);
+            color: white;
+            padding: 0.5rem 1.5rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 2rem;
+        }}
+        
+        .countdown {{
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            margin-bottom: 2rem;
+        }}
+        
+        .countdown-label {{
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }}
+        
+        .countdown-timer {{
+            font-size: 4rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+        }}
+        
+        .countdown-timer.overdue {{
+            color: #ef4444;
+        }}
+        
+        .countdown-timer.ok {{
+            color: #10b981;
+        }}
+        
+        .countdown-timer.warning {{
+            color: #f59e0b;
+        }}
+        
+        .countdown-timer.critical {{
+            color: #ef4444;
+            animation: pulse 1s ease-in-out infinite;
+        }}
+        
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.7; }}
+        }}
+        
+        .deadline-info {{
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+        }}
+        
+        .renewal-section {{
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 2rem;
+        }}
+        
+        .renewal-section h2 {{
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--color-text);
+        }}
+        
+        .renewal-form {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+        
+        .renewal-form input {{
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-size: 1rem;
+        }}
+        
+        .renewal-form input:focus {{
+            outline: none;
+            border-color: var(--color-accent);
+        }}
+        
+        .renewal-form button {{
+            padding: 0.75rem 1.5rem;
+            background: var(--color-accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }}
+        
+        .renewal-form button:hover {{
+            background: #4c8ed9;
+        }}
+        
+        .renewal-form button:disabled {{
+            background: var(--color-border);
+            cursor: not-allowed;
+        }}
+        
+        .renewal-note {{
+            margin-top: 1rem;
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+        }}
+        
+        .renewal-status {{
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 8px;
+            display: none;
+        }}
+        
+        .renewal-status.success {{
+            display: block;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid #10b981;
+            color: #10b981;
+        }}
+        
+        .renewal-status.error {{
+            display: block;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+        }}
+        
+        .banner {{
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            font-weight: 500;
+        }}
+        
+        .banner-info {{
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid var(--color-accent);
+            color: var(--color-accent);
+        }}
+        
+        .banner-warning {{
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid #f59e0b;
+            color: #f59e0b;
+        }}
+        
+        .banner-alert {{
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid #8b5cf6;
+            color: #8b5cf6;
+        }}
+        
+        .banner-critical {{
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid #dc2626;
+            color: #dc2626;
+        }}
+        
+        .nav {{
+            margin-top: 2rem;
+        }}
+        
+        .nav a {{
+            color: var(--color-accent);
+            text-decoration: none;
+            margin: 0 0.5rem;
+        }}
+        
+        .nav a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{project}</h1>
+        
+        {banner_html}
+        
+        <span class="stage-badge">{stage}</span>
+        
+        <div class="countdown">
+            <div class="countdown-label">Time Remaining</div>
+            <div class="countdown-timer" id="timer">--:--:--</div>
+            <div class="deadline-info">
+                Deadline: <span id="deadline">{deadline}</span>
+            </div>
+        </div>
+        
+        <div class="renewal-section">
+            <h2>🔐 Extend Deadline</h2>
+            <form class="renewal-form" id="renewal-form">
+                <input type="password" id="renewal-code" placeholder="Enter renewal code" autocomplete="off">
+                <button type="submit" id="renew-btn">Renew</button>
+            </form>
+            <div class="renewal-note">
+                Renewal requires a valid code. Contact the operator if you need access.
+            </div>
+            <div class="renewal-status" id="renewal-status"></div>
+        </div>
+        
+        <nav class="nav">
+            <a href="index.html">Status</a>
+            <a href="timeline.html">Timeline</a>
+            <a href="articles/">Articles</a>
+        </nav>
+    </div>
+    
+    <script>
+        // Countdown configuration
+        const deadline = new Date("{deadline}");
+        const timerEl = document.getElementById("timer");
+        
+        function updateCountdown() {{
+            const now = new Date();
+            const diff = deadline - now;
+            
+            if (diff <= 0) {{
+                // Overdue
+                const overdue = Math.abs(diff);
+                const hours = Math.floor(overdue / (1000 * 60 * 60));
+                const mins = Math.floor((overdue % (1000 * 60 * 60)) / (1000 * 60));
+                const secs = Math.floor((overdue % (1000 * 60)) / 1000);
+                
+                timerEl.textContent = `-${{String(hours).padStart(2, '0')}}:${{String(mins).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}`;
+                timerEl.className = "countdown-timer overdue";
+            }} else {{
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const secs = Math.floor((diff % (1000 * 60)) / 1000);
+                
+                if (days > 0) {{
+                    timerEl.textContent = `${{days}}d ${{String(hours).padStart(2, '0')}}:${{String(mins).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}`;
+                }} else {{
+                    timerEl.textContent = `${{String(hours).padStart(2, '0')}}:${{String(mins).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}`;
+                }}
+                
+                // Color based on time remaining
+                const totalMins = diff / (1000 * 60);
+                if (totalMins > 60 * 24) {{
+                    timerEl.className = "countdown-timer ok";
+                }} else if (totalMins > 60) {{
+                    timerEl.className = "countdown-timer warning";
+                }} else {{
+                    timerEl.className = "countdown-timer critical";
+                }}
+            }}
+        }}
+        
+        // Update every second
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+        
+        // Renewal form handling
+        const form = document.getElementById("renewal-form");
+        const codeInput = document.getElementById("renewal-code");
+        const renewBtn = document.getElementById("renew-btn");
+        const statusEl = document.getElementById("renewal-status");
+        
+        form.addEventListener("submit", async (e) => {{
+            e.preventDefault();
+            
+            const code = codeInput.value.trim();
+            if (!code) {{
+                showStatus("Please enter a renewal code", "error");
+                return;
+            }}
+            
+            renewBtn.disabled = true;
+            renewBtn.textContent = "Renewing...";
+            
+            // Note: This would trigger a GitHub workflow_dispatch
+            // For now, show instructions
+            showStatus(
+                "To renew: Go to GitHub Actions → Renew Deadline → Run workflow → Enter code",
+                "error"
+            );
+            
+            renewBtn.disabled = false;
+            renewBtn.textContent = "Renew";
+        }});
+        
+        function showStatus(message, type) {{
+            statusEl.textContent = message;
+            statusEl.className = `renewal-status ${{type}}`;
+        }}
+    </script>
+</body>
+</html>"""
+        
+        output_path = self.output_dir / "countdown.html"
+        output_path.write_text(html)
+        return output_path
+    
     def _generate_articles(self, context: Dict[str, Any]) -> List[Path]:
         """
         Generate article pages from Editor.js JSON files.
         
-        Articles are stored in content/articles/*.json
+        Articles are filtered by the content manifest based on current stage.
+        Only articles visible at the current stage are generated.
         """
         try:
             from .editorjs import ContentManager
@@ -368,21 +769,46 @@ class SiteGenerator:
             return []
         
         content_manager = ContentManager(content_dir)
-        articles = content_manager.list_articles()
+        all_articles = content_manager.list_articles()
         
-        if not articles:
+        if not all_articles:
             return []
+        
+        # Get manifest for visibility filtering
+        manifest = context.get("manifest")
+        current_stage = context.get("stage", "OK")
         
         # Create articles directory
         articles_dir = self.output_dir / "articles"
         articles_dir.mkdir(exist_ok=True)
         
         generated_paths = []
+        published_articles = []
+        skipped_articles = []
         
-        for article_meta in articles:
-            article = content_manager.get_article(article_meta["slug"])
+        for article_meta in all_articles:
+            slug = article_meta["slug"]
+            
+            # Check visibility via manifest
+            if manifest:
+                # Simple check: is this article visible at current stage?
+                if not manifest.is_article_visible(slug, current_stage):
+                    skipped_articles.append(slug)
+                    continue
+            
+            article = content_manager.get_article(slug)
             if not article:
                 continue
+            
+            # Get manifest metadata if available
+            manifest_entry = manifest.get_article(slug) if manifest else None
+            is_pinned = manifest_entry.visibility.pin_to_top if manifest_entry else False
+            
+            published_articles.append({
+                "slug": slug,
+                "title": article["title"],
+                "pinned": is_pinned,
+            })
             
             # Generate article page
             html = self._render_html_page(
@@ -410,9 +836,18 @@ class SiteGenerator:
             output_path.write_text(html)
             generated_paths.append(output_path)
         
-        # Also generate an articles index
+        # Log visibility filtering results
+        if skipped_articles:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Skipped {len(skipped_articles)} articles not visible at stage {current_stage}: "
+                f"{', '.join(skipped_articles)}"
+            )
+        
+        # Also generate an articles index (using published_articles, not all)
         if generated_paths:
-            index_html = self._generate_articles_index(articles, context)
+            index_html = self._generate_articles_index(published_articles, context)
             index_path = articles_dir / "index.html"
             index_path.write_text(index_html)
             generated_paths.append(index_path)
@@ -424,13 +859,27 @@ class SiteGenerator:
         articles: List[Dict],
         context: Dict[str, Any],
     ) -> str:
-        """Generate index page listing all articles."""
-        article_items = "\n".join(
-            f'''<li>
-                <a href="{a['slug']}.html">{a['title']}</a>
-            </li>'''
-            for a in articles
+        """Generate index page listing all visible articles."""
+        # Sort: pinned first, then by title
+        sorted_articles = sorted(
+            articles,
+            key=lambda a: (not a.get("pinned", False), a.get("title", ""))
         )
+        
+        article_items = "\n".join(
+            f'''<li class="{'pinned' if a.get('pinned') else ''}">
+                <a href="{a['slug']}.html">{a['title']}</a>
+                {'<span class="pin-badge">📌</span>' if a.get('pinned') else ''}
+            </li>'''
+            for a in sorted_articles
+        )
+        
+        stage = context.get("stage", "OK")
+        stage_behavior = context.get("stage_behavior")
+        banner_html = ""
+        if stage_behavior and stage_behavior.banner:
+            banner_class = stage_behavior.banner_class or "info"
+            banner_html = f'<div class="banner banner-{banner_class}">{stage_behavior.banner}</div>'
         
         return self._render_html_page(
             title=f"Articles — {context['project']}",
@@ -440,9 +889,11 @@ class SiteGenerator:
                 <a href="../index.html">← Back to Status</a>
             </header>
             
+            {banner_html}
+            
             <main>
                 <ul class="article-list">
-                    {article_items}
+                    {article_items if sorted_articles else '<li class="empty">No articles available at this stage.</li>'}
                 </ul>
             </main>
             

@@ -165,6 +165,83 @@ def reset(ctx: click.Context, state_file: str) -> None:
     click.secho("State reset to OK", fg="green")
 
 
+@cli.command("renew")
+@click.option(
+    "--hours",
+    "-h",
+    default=48,
+    type=int,
+    help="Hours to extend the deadline",
+)
+@click.option(
+    "--state-file",
+    default="state/current.json",
+    help="Path to state file",
+)
+@click.pass_context
+def renew(ctx: click.Context, hours: int, state_file: str) -> None:
+    """Renew the deadline and reset state to OK."""
+    from datetime import timedelta
+    import json
+    
+    root = ctx.obj["root"]
+    state_path = root / state_file
+    
+    state = load_state(state_path)
+    now = datetime.now(timezone.utc)
+    
+    # Calculate new deadline
+    new_deadline = now + timedelta(hours=hours)
+    old_state = state.escalation.state
+    old_deadline = state.timer.deadline_iso
+    
+    # Update state
+    state.timer.deadline_iso = new_deadline.isoformat()
+    state.timer.now_iso = now.isoformat()
+    state.timer.time_to_deadline_minutes = hours * 60
+    state.timer.overdue_minutes = 0
+    
+    state.escalation.state = "OK"
+    state.escalation.state_entered_at_iso = now.isoformat()
+    state.escalation.last_transition_rule_id = "MANUAL_RENEWAL"
+    
+    state.renewal.last_renewal_iso = now.isoformat()
+    state.renewal.renewed_this_tick = True
+    state.renewal.renewal_count = (state.renewal.renewal_count or 0) + 1
+    
+    # Clear executed actions (fresh start)
+    state.actions.executed = {}
+    state.actions.last_tick_actions = []
+    
+    state.meta.updated_at_iso = now.isoformat()
+    
+    save_state(state, state_path)
+    
+    # Append to audit log
+    audit_path = root / "audit" / "ledger.ndjson"
+    audit_entry = {
+        "event_type": "renewal",
+        "timestamp": now.isoformat(),
+        "tick_id": f"R-{now.strftime('%Y%m%dT%H%M%S')}-RENEW",
+        "previous_state": old_state,
+        "new_state": "OK",
+        "old_deadline": old_deadline,
+        "new_deadline": new_deadline.isoformat(),
+        "extended_hours": hours,
+        "renewal_count": state.renewal.renewal_count,
+    }
+    
+    with open(audit_path, "a") as f:
+        f.write(json.dumps(audit_entry) + "\n")
+    
+    click.secho(f"✅ Renewal successful", fg="green")
+    click.echo(f"  Previous state: {old_state}")
+    click.echo(f"  New state: OK")
+    click.echo(f"  Extended by: {hours} hours")
+    click.echo(f"  New deadline: {new_deadline.isoformat()}")
+    click.echo(f"  Renewal count: {state.renewal.renewal_count}")
+
+
 @cli.command("build-site")
 @click.option(
     "--output",
@@ -218,6 +295,88 @@ def build_site(ctx: click.Context, output: str, clean: bool) -> None:
     
     if len(result['files']) > 5:
         click.echo(f"  ... and {len(result['files']) - 5} more")
+
+
+@cli.command("check-config")
+@click.pass_context
+def check_config(ctx: click.Context) -> None:
+    """Check adapter configuration status."""
+    from .config.validator import ConfigValidator
+    
+    validator = ConfigValidator()
+    results = validator.validate_all()
+    
+    click.echo("\n📋 Adapter Configuration Status\n")
+    
+    configured = []
+    not_configured = []
+    
+    for name, status in sorted(results.items()):
+        if status.configured:
+            configured.append((name, status))
+            click.secho(f"  ✓ {name}", fg="green", nl=False)
+            click.echo(f" — {status.mode} mode")
+        else:
+            not_configured.append((name, status))
+            click.secho(f"  ✗ {name}", fg="red", nl=False)
+            if status.missing:
+                click.echo(f" — missing: {', '.join(status.missing)}")
+            else:
+                click.echo(f" — not configured")
+    
+    click.echo()
+    click.secho(f"Summary: {len(configured)} configured, {len(not_configured)} not configured", bold=True)
+    
+    if not_configured:
+        click.echo("\n📖 Setup Guide:\n")
+        for name, status in not_configured:
+            if status.guidance:
+                click.echo(f"  {name}:")
+                click.echo(f"    → {status.guidance}")
+
+
+@cli.command("status")
+@click.option(
+    "--state-file",
+    default="state/current.json",
+    help="Path to state file",
+)
+@click.pass_context
+def status(ctx: click.Context, state_file: str) -> None:
+    """Show current system status."""
+    root = ctx.obj["root"]
+    state_path = root / state_file
+    
+    state = load_state(state_path)
+    
+    # Determine color based on stage
+    stage = state.escalation.state
+    color_map = {
+        "OK": "green",
+        "REMIND_1": "yellow",
+        "REMIND_2": "yellow", 
+        "PRE_RELEASE": "red",
+        "PARTIAL": "magenta",
+        "FULL": "red",
+    }
+    color = color_map.get(stage, "white")
+    
+    click.echo("\n📊 Continuity Orchestrator Status\n")
+    click.echo(f"  Project:    {state.meta.project}")
+    click.secho(f"  Stage:      {stage}", fg=color, bold=True)
+    click.echo(f"  Armed:      {'Yes' if state.mode.armed else 'No'}")
+    click.echo(f"  Deadline:   {state.timer.deadline_iso}")
+    
+    if state.timer.time_to_deadline_minutes > 0:
+        hours = state.timer.time_to_deadline_minutes // 60
+        mins = state.timer.time_to_deadline_minutes % 60
+        click.echo(f"  Remaining:  {hours}h {mins}m")
+    elif state.timer.overdue_minutes > 0:
+        click.secho(f"  Overdue:    {state.timer.overdue_minutes} minutes", fg="red")
+    
+    click.echo(f"  Renewals:   {state.renewal.renewal_count or 0}")
+    click.echo(f"  Updated:    {state.meta.updated_at_iso}")
+    click.echo()
 
 
 if __name__ == "__main__":

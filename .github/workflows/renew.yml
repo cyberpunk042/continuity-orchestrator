@@ -1,0 +1,103 @@
+name: Renew Deadline
+
+# Triggered manually with a renewal code to extend the deadline.
+# The code is validated against a GitHub secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      renewal_code:
+        description: 'Renewal code (secret)'
+        required: true
+        type: string
+      extend_hours:
+        description: 'Hours to extend deadline'
+        required: false
+        default: '48'
+        type: number
+
+permissions:
+  contents: write
+
+concurrency:
+  group: continuity-renew
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  validate-and-renew:
+    name: Validate Code & Renew
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate renewal code
+        env:
+          RENEWAL_SECRET: ${{ secrets.RENEWAL_SECRET }}
+        run: |
+          if [ -z "$RENEWAL_SECRET" ]; then
+            echo "❌ RENEWAL_SECRET not configured in repository secrets"
+            exit 1
+          fi
+          
+          if [ "${{ inputs.renewal_code }}" != "$RENEWAL_SECRET" ]; then
+            echo "❌ Invalid renewal code"
+            # Log failed attempt (could trigger security alert)
+            echo "Failed renewal attempt at $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/failed_attempts.log
+            exit 1
+          fi
+          
+          echo "✅ Renewal code validated"
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      
+      - name: Execute renewal
+        id: renew
+        run: |
+          python -m src.main renew --hours ${{ inputs.extend_hours }}
+          echo "renewed=true" >> $GITHUB_OUTPUT
+      
+      - name: Build updated site
+        run: |
+          python -m src.main build-site --output public
+      
+      - name: Commit changes
+        run: |
+          git config user.name "continuity-orchestrator[bot]"
+          git config user.email "continuity-orchestrator[bot]@users.noreply.github.com"
+          
+          RENEW_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          git add state/ audit/
+          git commit -m "renew: Extended deadline by ${{ inputs.extend_hours }} hours at ${RENEW_TIME}" || true
+          
+          git push
+      
+      - name: Deploy to GitHub Pages
+        if: vars.ENABLE_PAGES == 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          commit_message: "site: Renewal completed"
+      
+      - name: Summary
+        run: |
+          echo "## ✅ Renewal Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Extended deadline by: **${{ inputs.extend_hours }} hours**" >> $GITHUB_STEP_SUMMARY
+          echo "- Renewed at: **$(date -u +%Y-%m-%dT%H:%M:%SZ)**" >> $GITHUB_STEP_SUMMARY
+          echo "- State reset to: **OK**" >> $GITHUB_STEP_SUMMARY

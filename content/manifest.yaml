@@ -1,0 +1,84 @@
+# Content Manifest — Article Visibility Rules
+# 
+# This file defines which articles are published at which escalation stage.
+# Articles are only visible when the system reaches their designated stage.
+
+version: 1
+
+# Stage order for reference:
+# OK=0, REMIND_1=10, REMIND_2=20, PRE_RELEASE=30, PARTIAL=40, FULL=50
+
+articles:
+  # Always visible (informational)
+  - slug: about
+    title: About This System
+    visibility:
+      min_stage: OK           # Visible from OK onwards (always)
+      include_in_nav: true
+      pin_to_top: false
+    meta:
+      description: Information about the continuity orchestrator system.
+      author: System
+
+  # Partial disclosure article
+  - slug: partial_notice
+    title: Initial Disclosure Notice
+    visibility:
+      min_stage: PARTIAL      # Only visible at PARTIAL and FULL
+      include_in_nav: true
+      pin_to_top: true        # Pin when visible
+    meta:
+      description: Initial public notice regarding the disclosure.
+      author: System
+
+  # Full disclosure article  
+  - slug: full_disclosure
+    title: Full Disclosure Statement
+    visibility:
+      min_stage: FULL         # Only visible at FULL (terminal state)
+      include_in_nav: true
+      pin_to_top: true
+    meta:
+      description: Complete disclosure of all relevant information.
+      author: System
+
+# Default visibility for articles not in manifest
+defaults:
+  min_stage: FULL             # Unlisted articles require FULL stage
+  include_in_nav: false
+  pin_to_top: false
+
+# Stage-specific site behavior
+site_behavior:
+  OK:
+    show_countdown: true
+    show_articles: false      # No articles section in OK
+    banner: null
+    
+  REMIND_1:
+    show_countdown: true
+    show_articles: false
+    banner: "System reminder active"
+    
+  REMIND_2:
+    show_countdown: true
+    show_articles: false
+    banner: "Urgent: Action required"
+    
+  PRE_RELEASE:
+    show_countdown: true
+    show_articles: false
+    banner: "Final warning: Disclosure imminent"
+    banner_class: warning
+    
+  PARTIAL:
+    show_countdown: false
+    show_articles: true
+    banner: "Partial disclosure in progress"
+    banner_class: alert
+    
+  FULL:
+    show_countdown: false
+    show_articles: true
+    banner: "Full disclosure active"
+    banner_class: critical
