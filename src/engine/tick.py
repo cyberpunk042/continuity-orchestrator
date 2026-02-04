@@ -10,6 +10,32 @@ The tick is the atomic unit of execution. Each tick:
 6. Executes adapters (mock for prototype)
 7. Records audit entries
 8. Returns result
+
+## Design Principles
+
+- **Determinism**: Given the same state and time, the tick produces the same result
+- **Idempotency**: Actions are not re-executed if already completed
+- **Atomicity**: Either all changes persist or none do
+- **Auditability**: Every decision is logged
+
+## Tick ID Format
+
+    T-{YYYYMMDD}T{HHMMSS}-{RANDOM}
+    Example: T-20260204T221903-92929A
+
+## Usage
+
+    from src.engine.tick import run_tick
+    
+    result = run_tick(
+        state=state,
+        policy=policy,
+        audit_writer=audit_writer,
+        dry_run=False,
+    )
+    
+    if result.state_changed:
+        print(f"Transitioned to {result.new_state}")
 """
 
 from __future__ import annotations
@@ -180,13 +206,19 @@ def run_tick(
     state.actions.last_tick_actions = []
 
     if not dry_run and actions_for_stage:
+        import os
         from pathlib import Path
         from ..adapters.registry import AdapterRegistry
         from ..adapters.base import ExecutionContext
         from ..templates.resolver import TemplateResolver
         from ..templates.context import build_template_context
 
-        registry = AdapterRegistry(mock_mode=True)
+        # Check environment for mock mode (default to True for safety)
+        mock_mode = os.environ.get("ADAPTER_MOCK_MODE", "true").lower() in ("true", "1", "yes")
+        registry = AdapterRegistry(mock_mode=mock_mode)
+        
+        if not mock_mode:
+            logger.info("Running with REAL adapters")
         
         # Template resolver (looks for templates in project root)
         project_root = Path(__file__).parent.parent.parent

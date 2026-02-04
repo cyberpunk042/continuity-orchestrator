@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "continuity-orchestrator",
         "state_id": "S-INIT-001",
-        "updated_at_iso": "2026-02-04T22:17:23.749126Z",
+        "updated_at_iso": "2026-02-04T22:19:03.539319Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-04T22:46:55.251819+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-04T22:17:23.742901Z",
-        "time_to_deadline_minutes": 29,
+        "now_iso": "2026-02-04T22:19:03.532601Z",
+        "time_to_deadline_minutes": 27,
         "overdue_minutes": 0
     },
     "renewal": {
@@ -54,10 +54,7 @@
                 "last_executed_iso": "2026-02-04T22:17:23.748988+00:00"
             }
         },
-        "last_tick_actions": [
-            "remind_email_secondary",
-            "remind_sms"
-        ]
+        "last_tick_actions": []
     },
     "integrations": {
         "enabled_adapters": {

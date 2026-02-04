@@ -20,6 +20,10 @@ from .policy.loader import load_policy
 from .persistence.state_file import load_state, save_state
 from .persistence.audit import AuditWriter
 from .engine.tick import run_tick
+from .logging_config import setup_logging
+
+# Initialize logging
+setup_logging()
 
 
 def get_project_root() -> Path:

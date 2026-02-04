@@ -2,6 +2,26 @@
 
 A scheduled orchestration engine that evaluates a renewable countdown and, if not renewed in time, executes preconfigured notifications, publications, and integrations to ensure continuity and visibility.
 
+```shell
+# Activate environment
+source .venv/bin/activate
+
+# Run a tick
+python -m src.main tick
+
+# Check status
+python -m src.main status
+
+# Set deadline
+python -m src.main set-deadline --hours 24
+
+# Reset to OK
+python -m src.main reset
+
+# Dry run (no persistence)
+python -m src.main tick --dry-run
+```
+
 ---
 
 ## What This Is
@@ -93,22 +113,67 @@ The engine enforces what is declared.
 
 ---
 
-## Demo Scope
+## Getting Started
 
-This repository is a **demo / prop**:
-- minimal
-- readable
-- realistic
-- extensible
+### Installation
 
-It is designed to communicate behavior clearly and credibly.
+```bash
+# Clone the repository
+git clone https://github.com/your-username/continuity-orchestrator.git
+cd continuity-orchestrator
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install in development mode
+pip install -e .
+```
+
+### Basic Usage
+
+```bash
+# Check current status
+python -m src.main status
+
+# Set a deadline 24 hours from now
+python -m src.main set-deadline --hours 24
+
+# Run a tick (evaluates rules, executes actions)
+python -m src.main tick
+
+# Dry run (preview without changes)
+python -m src.main tick --dry-run
+
+# Reset to initial state
+python -m src.main reset
+```
+
+### Demo
+
+```bash
+# Run the escalation demo
+./scripts/demo_escalation.sh
+```
 
 ---
 
 ## Status
 
-Initialized and structured.
+**✅ Working Prototype**
 
-Policy, state, audit, adapters, engine, templates, and workflow are defined.
+The core engine is fully functional:
+- Policy-driven rule evaluation
+- Time-based escalation stages
+- Mock adapter execution
+- Audit trail with complete event history
+- Idempotent action execution
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed guide.  
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned features.
 
 ---
+
+## License
+
+MIT

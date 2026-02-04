@@ -27,6 +27,7 @@ class AdapterRegistry:
     Registry for adapter lookup by name.
 
     Supports mock mode where all adapters are mocks.
+    When mock_mode is False, registers real adapters.
     """
 
     def __init__(self, mock_mode: bool = True):
@@ -36,12 +37,48 @@ class AdapterRegistry:
 
         if mock_mode:
             self._register_mock_adapters()
+        else:
+            self._register_real_adapters()
 
     def _register_mock_adapters(self) -> None:
         """Register all mock adapters."""
         self.register(MockEmailAdapter())
         self.register(MockSMSAdapter())
         self.register(MockWebhookAdapter())
+        self.register(MockGitHubSurfaceAdapter())
+        self.register(MockAdapter("x"))
+        self.register(MockAdapter("reddit"))
+        self.register(MockAdapter("article_publish"))
+        self.register(MockAdapter("persistence_api"))
+
+    def _register_real_adapters(self) -> None:
+        """Register real adapters (with mock fallbacks for unimplemented)."""
+        import os
+        
+        # Webhook adapter
+        try:
+            from .webhook import WebhookAdapter
+            self.register(WebhookAdapter())
+            logger.info("Registered real webhook adapter")
+        except ImportError:
+            self.register(MockWebhookAdapter())
+            logger.warning("httpx not available, using mock webhook")
+        
+        # Email adapter (Resend)
+        if os.environ.get("RESEND_API_KEY"):
+            try:
+                from .email_resend import ResendEmailAdapter
+                self.register(ResendEmailAdapter())
+                logger.info("Registered Resend email adapter")
+            except ImportError:
+                self.register(MockEmailAdapter())
+                logger.warning("resend package not available, using mock email")
+        else:
+            self.register(MockEmailAdapter())
+            logger.debug("RESEND_API_KEY not set, using mock email")
+        
+        # Use mocks for not-yet-implemented adapters
+        self.register(MockSMSAdapter())
         self.register(MockGitHubSurfaceAdapter())
         self.register(MockAdapter("x"))
         self.register(MockAdapter("reddit"))

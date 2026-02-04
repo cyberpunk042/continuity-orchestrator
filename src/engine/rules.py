@@ -1,5 +1,48 @@
 """
 Rule Evaluation — Match policy rules against state.
+
+This module evaluates policy rules to determine which should trigger
+based on the current state. Rules are defined in policy/rules.yaml.
+
+## Rule Structure
+
+Each rule has:
+- id: Unique identifier (e.g., "R10_ESCALATE_TO_REMIND_1")
+- when: Dictionary of conditions (all must match, AND logic)
+- then: Mutations to apply if matched
+- stop: If True, stop evaluating further rules
+
+## Condition Operators
+
+Field conditions support operator suffixes:
+- `field_name`: Exact equality
+- `field_name_lte`: Less than or equal
+- `field_name_lt`: Less than  
+- `field_name_gte`: Greater than or equal
+- `field_name_gt`: Greater than
+
+Special conditions:
+- `state_is`: Match exact escalation state
+- `state_in`: Match any of listed states
+- `always`: Always matches if True
+
+## Path Aliasing
+
+Policy rules use semantic paths (e.g., `time.time_to_deadline_minutes`)
+which are mapped to actual state paths (e.g., `timer.time_to_deadline_minutes`).
+
+## Constant Resolution
+
+Values prefixed with `constants.` are resolved from the constants dict
+defined in rules.yaml. Example: `constants.remind_1_at_minutes` → 360
+
+## Usage
+
+    from src.engine.rules import evaluate_rules
+    
+    matched = evaluate_rules(state, policy.rules)
+    for rule in matched:
+        print(f"Matched: {rule.id}")
 """
 
 from __future__ import annotations
