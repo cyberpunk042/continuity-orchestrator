@@ -74,9 +74,9 @@
 | A.2 — Add inline comments for complex logic | ✅ | 1.5h |
 | A.3 — Create DEVELOPMENT.md guide | ✅ | 1h |
 | A.4 — Update README.md with quick start | ✅ | 1h |
-| A.5 — Add ARCHITECTURE.md (system overview) | ⬜ | 1.5h |
+| A.5 — Add ARCHITECTURE.md (system overview) | ✅ | 1.5h |
 | A.6 — Configure logging properly | ✅ | 0.5h |
-| A.7 — Add error handling & validation | ⬜ | 2h |
+| A.7 — Add error handling & validation | ✅ | 2h |
 
 ### Phase B: Testing Foundation
 **Goal**: Establish confidence in the core logic
@@ -88,7 +88,7 @@
 | B.3 — Unit tests for rules.py | ✅ | 1.5h |
 | B.4 — Unit tests for state.py mutations | ✅ | 1h |
 | B.5 — Integration test for tick lifecycle | ✅ | 2h |
-| B.6 — Test policy loading edge cases | ⬜ | 1h |
+| B.6 — Test policy loading edge cases | ✅ | 1h |
 | B.7 — Add CI test workflow | ✅ | 0.5h |
 
 ### Phase C: Real Integrations
@@ -98,11 +98,12 @@
 |---------|------------|--------------|--------|
 | C.1 — Webhook | Low | httpx | ✅ Done |
 | C.2 — Email (Resend) | Low | resend | ✅ Done |
-| C.3 — GitHub Surface | Medium | PyGithub or API | ⬜ |
-| C.4 — Persistence API | Low | httpx | ⬜ |
-| C.5 — SMS (Twilio) | Medium | twilio | ⬜ |
-| C.6 — X (Twitter) | High | OAuth, tweepy | ⬜ |
-| C.7 — Reddit | High | OAuth, praw | ⬜ |
+| C.3 — GitHub Surface | Medium | httpx | ✅ Done |
+| C.4 — Persistence API | Low | httpx | ✅ Done |
+| C.5 — Article Publish | Low | site generator | ✅ Done |
+| C.6 — SMS (Twilio) | Medium | twilio | ⬜ |
+| C.7 — X (Twitter) | High | OAuth, tweepy | ⬜ |
+| C.8 — Reddit | High | OAuth, praw | ⬜ |
 
 ### Phase D: Triggers & Automation
 **Goal**: Multiple ways to trigger actions beyond CRON
@@ -129,13 +130,13 @@
 ### Phase F: Static Site & Public Surface
 **Goal**: Generate and publish a public-facing site
 
-| Task | Description |
-|------|-------------|
-| F.1 — Site generator (Markdown → HTML) | |
-| F.2 — GitHub Pages deployment | |
-| F.3 — Status page (current state, timeline) | |
-| F.4 — Archive page (historical escalations) | |
-| F.5 — RSS/Atom feed for updates | |
+| Task | Description | Status |
+|------|-------------|--------|
+| F.1 — Site generator (Markdown → HTML) | SiteGenerator class | ✅ Done |
+| F.2 — GitHub Pages deployment | deploy-site.yml workflow | ✅ Done |
+| F.3 — Status page (current state, timeline) | index.html, timeline.html | ✅ Done |
+| F.4 — Archive page (historical escalations) | archive/*.html | ✅ Done |
+| F.5 — RSS/Atom feed for updates | feed.xml | ✅ Done |
 
 ### Phase G: Forkability & Customization
 **Goal**: Make it easy for others to create their own instance

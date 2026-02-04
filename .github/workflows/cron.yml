@@ -96,3 +96,18 @@ jobs:
           else
             echo "No state changes to commit"
           fi
+      
+      - name: Build static site
+        if: inputs.dry_run != 'true'
+        run: |
+          python -m src.main build-site --output public
+          echo "Site built to public/"
+          ls -la public/
+      
+      - name: Deploy to GitHub Pages
+        if: inputs.dry_run != 'true' && vars.ENABLE_PAGES == 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          commit_message: "site: Deploy from tick"

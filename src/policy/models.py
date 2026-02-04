@@ -29,8 +29,8 @@ class StateDefinition(BaseModel):
 
     name: str
     order: int
-    description: str
-    flags: StateFlags
+    description: Optional[str] = None
+    flags: StateFlags = Field(default_factory=StateFlags)
 
 
 class ResetBehavior(BaseModel):
@@ -145,8 +145,9 @@ class Plan(BaseModel):
 
     version: int = 1
     notes: List[str] = Field(default_factory=list)
-    plan_id: str
-    description: str
+    plan_id: Optional[str] = None
+    name: Optional[str] = None  # Alias for plan_id
+    description: Optional[str] = None
     stages: Dict[str, StageActions]
     receipts: ReceiptsConfig = Field(default_factory=ReceiptsConfig)
     failure_handling: FailureHandling = Field(default_factory=FailureHandling)

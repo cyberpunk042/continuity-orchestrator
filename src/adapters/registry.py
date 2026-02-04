@@ -77,13 +77,45 @@ class AdapterRegistry:
             self.register(MockEmailAdapter())
             logger.debug("RESEND_API_KEY not set, using mock email")
         
+        # GitHub Surface adapter
+        if os.environ.get("GITHUB_TOKEN"):
+            try:
+                from .github_surface import GitHubSurfaceAdapter
+                self.register(GitHubSurfaceAdapter())
+                logger.info("Registered GitHub Surface adapter")
+            except ImportError:
+                self.register(MockGitHubSurfaceAdapter())
+                logger.warning("httpx not available, using mock GitHub")
+        else:
+            self.register(MockGitHubSurfaceAdapter())
+            logger.debug("GITHUB_TOKEN not set, using mock GitHub")
+        
+        # Persistence API adapter
+        if os.environ.get("PERSISTENCE_API_URL"):
+            try:
+                from .persistence_api import PersistenceAPIAdapter
+                self.register(PersistenceAPIAdapter())
+                logger.info("Registered Persistence API adapter")
+            except ImportError:
+                self.register(MockAdapter("persistence_api"))
+                logger.warning("httpx not available, using mock persistence")
+        else:
+            self.register(MockAdapter("persistence_api"))
+            logger.debug("PERSISTENCE_API_URL not set, using mock persistence")
+        
+        # Article publish adapter (always available - uses site generator)
+        try:
+            from .article_publish import ArticlePublishAdapter
+            self.register(ArticlePublishAdapter())
+            logger.info("Registered Article Publish adapter")
+        except ImportError as e:
+            self.register(MockAdapter("article_publish"))
+            logger.warning(f"Article publish not available: {e}")
+        
         # Use mocks for not-yet-implemented adapters
         self.register(MockSMSAdapter())
-        self.register(MockGitHubSurfaceAdapter())
         self.register(MockAdapter("x"))
         self.register(MockAdapter("reddit"))
-        self.register(MockAdapter("article_publish"))
-        self.register(MockAdapter("persistence_api"))
 
     def register(self, adapter: Adapter) -> None:
         """Register an adapter."""

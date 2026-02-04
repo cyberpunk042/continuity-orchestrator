@@ -165,5 +165,60 @@ def reset(ctx: click.Context, state_file: str) -> None:
     click.secho("State reset to OK", fg="green")
 
 
+@cli.command("build-site")
+@click.option(
+    "--output",
+    "-o",
+    default="public",
+    help="Output directory for generated site",
+)
+@click.option(
+    "--clean/--no-clean",
+    default=True,
+    help="Clean output directory before building",
+)
+@click.pass_context
+def build_site(ctx: click.Context, output: str, clean: bool) -> None:
+    """Build static site from current state."""
+    from pathlib import Path
+    from .site.generator import SiteGenerator
+    import json
+    
+    root = ctx.obj["root"]
+    state_path = root / "state" / "current.json"
+    
+    click.echo(f"Loading state from {state_path}")
+    state = load_state(state_path)
+    
+    # Load audit entries
+    audit_path = root / "audit" / "ledger.ndjson"
+    audit_entries = []
+    if audit_path.exists():
+        with open(audit_path, "r") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        audit_entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    
+    click.echo(f"Building site to {output}/")
+    generator = SiteGenerator(output_dir=root / output)
+    result = generator.build(
+        state=state,
+        audit_entries=audit_entries,
+        clean=clean,
+    )
+    
+    click.secho(f"✓ Site built: {result['files_generated']} files", fg="green")
+    click.echo(f"  Output: {result['output_dir']}")
+    
+    for f in result['files'][:5]:
+        click.echo(f"  - {Path(f).name}")
+    
+    if len(result['files']) > 5:
+        click.echo(f"  ... and {len(result['files']) - 5} more")
+
+
 if __name__ == "__main__":
     cli()
