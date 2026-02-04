@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "continuity-orchestrator",
         "state_id": "S-INIT-001",
-        "updated_at_iso": "2026-02-04T23:39:29.140894Z",
+        "updated_at_iso": "2026-02-04T23:58:29.537271Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-06T23:20:39.324910+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-04T23:39:29.140211Z",
-        "time_to_deadline_minutes": 2861,
+        "now_iso": "2026-02-04T23:58:29.536632Z",
+        "time_to_deadline_minutes": 2842,
         "overdue_minutes": 0
     },
     "renewal": {
