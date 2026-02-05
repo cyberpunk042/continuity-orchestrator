@@ -1,11 +1,25 @@
-# policy/states.yaml
+# ═══════════════════════════════════════════════════════════════════════════
+# ESCALATION STATES — The state machine for your countdown
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  STATE FLOW (automatic progression when deadline approaches/passes):    │
+# │                                                                          │
+# │  OK → REMIND_1 → REMIND_2 → PRE_RELEASE → PARTIAL → FULL               │
+# │  ↑                                                                       │
+# │  └──── RENEWAL resets back to OK at any point                           │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# Each state can trigger different actions (defined in plans/default.yaml)
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
 version: 1
 
 notes:
-  - This file defines the escalation state machine for continuity-orchestrator.
-  - States are ordered. The engine may only move forward unless explicitly allowed by a rule.
-  - Each state can define default behavior, but execution is driven by plans.
+  - States are ordered - the engine only moves forward unless a rule resets.
+  - Each state can define what kind of actions are allowed.
+  - Actual actions for each state are configured in plans/default.yaml.
 
 states:
   - name: OK

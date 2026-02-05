@@ -1,15 +1,31 @@
-# policy/plans/default.yaml
+# ═══════════════════════════════════════════════════════════════════════════
+# ACTION PLAN — What happens at each escalation stage
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  STAGE        │ WHO GETS NOTIFIED            │ WHAT HAPPENS            │
+# │───────────────│──────────────────────────────│─────────────────────────│
+# │  OK           │ Nobody                       │ Nothing                 │
+# │  REMIND_1     │ Operator (email)             │ Gentle reminder         │
+# │  REMIND_2     │ Operator (email + SMS)       │ Urgent reminder         │
+# │  PRE_RELEASE  │ Custodians + Webhooks        │ Final warning           │
+# │  PARTIAL      │ Public (X, Reddit, GitHub)   │ Limited disclosure      │
+# │  FULL         │ Everyone                     │ Full disclosure         │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# Edit the actions below to customize what happens at each stage.
+# Adapters: email, sms, x, reddit, github_surface, webhook, persistence_api
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
 version: 1
-
-notes:
-  - This file defines what actions are executed at each escalation stage.
-  - Actions are grouped by stage and executed through adapters.
-  - Each action must be idempotent; execution receipts are recorded to prevent duplicates.
-  - Reminder actions must never include renewal entry points or links.
-
 plan_id: default
 description: Default staged continuity and disclosure plan.
+
+notes:
+  - Actions are executed through adapters (email, sms, x, reddit, etc.)
+  - Each action is idempotent - receipts prevent duplicate execution
+  - Reminder actions (REMIND_1/2) must never include renewal links
 
 stages:
 
