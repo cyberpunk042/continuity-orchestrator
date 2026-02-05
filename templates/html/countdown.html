@@ -117,9 +117,6 @@
         deadlineEl.textContent = "DELAYED";
         deadlineEl.style.color = "var(--color-warning)";
         deadlineEl.style.fontWeight = "bold";
-        // Strikethrough the labels
-        document.querySelector('.countdown-label').style.textDecoration = "line-through";
-        document.querySelector('.deadline-info').style.textDecoration = "line-through";
     } else {
         deadlineEl.textContent = deadline.toLocaleString(undefined, {
             weekday: 'short',
@@ -138,7 +135,6 @@
             timerEl.className = "countdown-timer delayed";
             timerEl.style.color = "var(--color-warning)";
             timerEl.style.fontSize = "2rem";
-            timerEl.style.textDecoration = "none"; // Timer itself not struck
             return;
         }
 

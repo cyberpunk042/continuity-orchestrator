@@ -66,5 +66,17 @@
             });
         }
     }
+
+    // Strikethrough Deadline and Time Remaining when release is triggered
+    if (isReleaseTriggered()) {
+        const rows = document.querySelectorAll('table tr');
+        rows.forEach(row => {
+            const label = row.querySelector('td:first-child');
+            if (label && (label.textContent.includes('Deadline') || label.textContent.includes('Time Remaining'))) {
+                row.style.textDecoration = 'line-through';
+                row.style.opacity = '0.6';
+            }
+        });
+    }
 </script>
 {% endblock %}
