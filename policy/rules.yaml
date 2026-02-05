@@ -21,14 +21,32 @@ inputs:
   mode:
     - name
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ESCALATION TIMING — When each stage triggers automatically
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# BEFORE DEADLINE (reminders):
+#   T-6h  → REMIND_1 (first reminder)
+#   T-1h  → REMIND_2 (second reminder) 
+#   T-15m → PRE_RELEASE (final warning)
+#
+# AFTER DEADLINE (disclosure):
+#   T+0   → PARTIAL disclosure (immediate if partial_after_overdue_minutes=0)
+#   T+2h  → FULL disclosure (2 hours after deadline)
+#
+# ═══════════════════════════════════════════════════════════════════════════
 constants:
-  # Default demo thresholds (can be overridden by runtime config)
-  remind_1_at_minutes: 360      # T-6h
-  remind_2_at_minutes: 60       # T-1h
-  pre_release_at_minutes: 15    # T-15m
-  partial_after_overdue_minutes: 0
-  full_after_overdue_minutes: 120  # T+2h
-  max_failed_attempts: 3
+  # REMINDERS (before deadline)
+  remind_1_at_minutes: 360              # First reminder X minutes before deadline
+  remind_2_at_minutes: 60               # Second reminder X minutes before deadline
+  pre_release_at_minutes: 15            # Final warning X minutes before deadline
+  
+  # DISCLOSURE (after deadline passes)
+  partial_after_overdue_minutes: 0      # Delay before PARTIAL disclosure (0 = immediate)
+  full_after_overdue_minutes: 120       # Delay before FULL disclosure (e.g. 120 = 2 hours)
+  
+  # SECURITY
+  max_failed_attempts: 3                # Lockout after X failed renewal attempts
 
 rules:
 
