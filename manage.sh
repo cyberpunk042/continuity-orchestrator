@@ -178,9 +178,9 @@ run_push_secrets() {
         echo "Options:"
         echo "  1) Install gh CLI now (recommended)"
         echo "  2) Show JSON to copy manually"
-        echo "  3) Cancel"
         echo ""
-        read -p "Choose (1/2/3): " gh_choice
+        read -p "Choose (1/2) [1]: " gh_choice
+        gh_choice="${gh_choice:-1}"
         
         case "$gh_choice" in
             1)
@@ -259,7 +259,9 @@ print(json.dumps(config, indent=2))
     echo "     → Multiple secrets: RENEWAL_SECRET, RELEASE_SECRET, etc."
     echo "     → Traditional approach"
     echo ""
-    read -p "Choose (1/2): " secret_mode
+    echo -e "${YELLOW}⚠ Note: If CONTINUITY_CONFIG exists, it overrides individual secrets${NC}"
+    echo ""
+    read -p "Choose (1/2) [1]: " secret_mode
     secret_mode="${secret_mode:-1}"
     
     echo ""

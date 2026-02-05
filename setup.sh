@@ -50,7 +50,8 @@ echo "  1) Deadman switch — Release info if I don't check in"
 echo "  2) Scheduled publishing — Publish content on a timer"
 echo "  3) Custom — I'll configure it myself"
 echo ""
-read -p "Choose (1-3): " USE_CASE
+read -p "Choose (1-3) [1]: " USE_CASE
+USE_CASE="${USE_CASE:-1}"
 
 case $USE_CASE in
     1) TEMPLATE="deadman-switch" ;;
