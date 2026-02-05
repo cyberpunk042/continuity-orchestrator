@@ -219,25 +219,51 @@ echo ""
 echo -e "${BOLD}🐙 GitHub Integration${NC}"
 echo ""
 
-# Part 1: Repository
+# Part 1: Repository (auto-detect from git remote)
 echo -e "${BOLD}   📂 Repository${NC}"
+
+# Try to auto-detect from git remote
+DETECTED_REPO=""
+if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null; then
+    REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+    if [ -n "$REMOTE_URL" ]; then
+        # Parse owner/repo from various formats:
+        # git@github.com:owner/repo.git
+        # https://github.com/owner/repo.git
+        DETECTED_REPO=$(echo "$REMOTE_URL" | sed -E 's#(git@github\.com:|https://github\.com/)##' | sed 's/\.git$//')
+    fi
+fi
+
 if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "owner/repo" ]; then
     echo -e "   ${GREEN}✓ Repository: ${GITHUB_REPO}${NC}"
     read -p "   Change? (y/N): " CHANGE_REPO
     if [[ $CHANGE_REPO =~ ^[Yy] ]]; then
-        read -p "   Repository (owner/repo): " NEW_REPO
+        read -p "   Repository (owner/repo) [${DETECTED_REPO:-}]: " NEW_REPO
+        NEW_REPO=${NEW_REPO:-$DETECTED_REPO}
         [ -n "$NEW_REPO" ] && GITHUB_REPO="$NEW_REPO"
+    fi
+elif [ -n "$DETECTED_REPO" ]; then
+    echo -e "   ${CYAN}Detected: ${DETECTED_REPO}${NC}"
+    read -p "   Use this? (Y/n): " USE_DETECTED
+    USE_DETECTED=${USE_DETECTED:-Y}
+    if [[ $USE_DETECTED =~ ^[Yy] ]]; then
+        GITHUB_REPO="$DETECTED_REPO"
+        echo -e "   ${GREEN}✓ Using: ${GITHUB_REPO}${NC}"
+    else
+        read -p "   Repository (owner/repo): " GITHUB_REPO
     fi
 else
     read -p "   Repository (owner/repo): " GITHUB_REPO
 fi
 echo ""
 
-# Part 2: GITHUB_TOKEN (server-side adapter)
-echo -e "${BOLD}   🔑 Server Token (GITHUB_TOKEN)${NC}"
-echo -e "${DIM}   Used by: github_surface adapter (create files, releases, gists)${NC}"
+# Part 2: GITHUB_TOKEN (for publishing content via API when escalation triggers)
+echo -e "${BOLD}   🔑 Publishing Token (GITHUB_TOKEN)${NC}"
+echo -e "${DIM}   Used when: Escalation triggers content publishing via GitHub API${NC}"
+echo -e "${DIM}   Actions: Create/update files, create releases, post gists${NC}"
 echo -e "${DIM}   Permissions: 'repo' and 'workflow'${NC}"
 echo -e "${DIM}   Create at: https://github.com/settings/tokens${NC}"
+echo -e "${YELLOW}   ⚠ Most users skip this - GitHub Actions provides its own token${NC}"
 if [ -n "$GITHUB_TOKEN" ]; then
     echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$GITHUB_TOKEN")]"
     read -p "   Replace? (y/N): " REPLACE_TOKEN
@@ -247,8 +273,7 @@ if [ -n "$GITHUB_TOKEN" ]; then
     fi
     HAS_REAL_ADAPTER="true"
 else
-    echo -e "${DIM}   (Optional - only needed if using github_surface adapter)${NC}"
-    read -p "   GitHub Token (or Enter to skip): " GITHUB_TOKEN
+    read -p "   GitHub Token (Enter to skip - recommended): " GITHUB_TOKEN
     [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
 fi
 echo ""
