@@ -30,10 +30,11 @@ services:
       - state-data:/data/state
       - audit-data:/data/audit
       - public-data:/data/public
+      - git-repo-data:/repo
     command: >
       sh -c "
-        mkdir -p /data/state /data/audit /data/public &&
-        chmod -R 777 /data/state /data/audit /data/public &&
+        mkdir -p /data/state /data/audit /data/public /repo &&
+        chmod -R 777 /data/state /data/audit /data/public /repo &&
         rm -rf /data/public/* 2>/dev/null || true
       "
     networks:
@@ -195,6 +196,9 @@ services:
     restart: unless-stopped
     profiles:
       - git-sync
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
     environment:
       - STATE_FILE=/repo/state/current.json
       - AUDIT_DIR=/repo/audit
