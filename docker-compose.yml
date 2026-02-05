@@ -97,8 +97,9 @@ services:
       - RELEASE_DELAY_SCOPE=${RELEASE_DELAY_SCOPE:-partial}
       - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
     volumes:
-      - state-data:/data/state
-      - audit-data:/data/audit
+      # Use local state/audit from repo for testing with real data
+      - ./state:/data/state
+      - ./audit:/data/audit
       - public-data:/data/public
       - ./policy:/app/policy:ro
       - ./templates:/app/templates:ro
