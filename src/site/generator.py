@@ -138,12 +138,39 @@ class SiteGenerator:
         audit_entries: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         """Build template context from state."""
-        # Get github repository from routing config if available
+        # Get github repository - try multiple sources
         github_repo = None
-        if hasattr(state, 'integrations') and state.integrations:
-            routing = getattr(state.integrations, 'routing', None)
-            if routing and hasattr(routing, 'github_repository'):
-                github_repo = routing.github_repository
+        
+        # 1. From environment variable (e.g., in GitHub Actions)
+        github_repo = os.environ.get("GITHUB_REPOSITORY")
+        
+        # 2. From state config
+        if not github_repo:
+            if hasattr(state, 'integrations') and state.integrations:
+                routing = getattr(state.integrations, 'routing', None)
+                if routing and hasattr(routing, 'github_repository'):
+                    repo_from_state = routing.github_repository
+                    if repo_from_state and repo_from_state != "owner/repo":
+                        github_repo = repo_from_state
+        
+        # 3. Auto-detect from git remote
+        if not github_repo:
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    url = result.stdout.strip()
+                    # Parse: git@github.com:owner/repo.git or https://github.com/owner/repo.git
+                    if "github.com" in url:
+                        if url.startswith("git@"):
+                            github_repo = url.split(":")[-1].replace(".git", "")
+                        else:
+                            github_repo = "/".join(url.split("/")[-2:]).replace(".git", "")
+            except Exception:
+                pass
         
         # Get renewal trigger token if configured (fine-grained PAT with only actions:write)
         renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
