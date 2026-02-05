@@ -3,7 +3,7 @@
 {% block title %}Articles — {{ project }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="../assets/css/articles.css">
+<link rel="stylesheet" href="{{ base_path|default('') }}assets/css/articles.css">
 {% endblock %}
 
 {% block body_class %}page-articles{% endblock %}
@@ -11,10 +11,10 @@
 {% block content %}
 <header>
     <h1>Articles</h1>
-    <a href="../index.html">← Back to Status</a>
+    <a href="{{ base_path|default('') }}index.html">← Back to Status</a>
 </header>
 
-{% if banner_html %}{{ banner_html }}{% endif %}
+{% if banner_html %}{{ banner_html|safe }}{% endif %}
 
 <main>
     {% if articles %}

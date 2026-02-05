@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ project }}{% endblock %}</title>
-    <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="feed.xml">
-    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="{{ base_path|default('') }}feed.xml">
+    <link rel="stylesheet" href="{{ base_path|default('') }}assets/css/base.css">
     {% block extra_css %}{% endblock %}
     <style>{% block inline_css %}{% endblock %}</style>
 </head>
@@ -19,7 +19,7 @@
         
         async function checkForStateChange() {
             try {
-                const response = await fetch("status.json?t=" + Date.now(), {cache: "no-store"});
+                const response = await fetch("{{ base_path|default('') }}status.json?t=" + Date.now(), {cache: "no-store"});
                 if (response.ok) {
                     const status = await response.json();
                     if (status.deadline !== CURRENT_DEADLINE || status.stage !== CURRENT_STAGE) {

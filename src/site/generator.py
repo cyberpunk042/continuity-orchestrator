@@ -367,6 +367,7 @@ class SiteGenerator:
             
             article_context = {
                 **context,
+                "base_path": "../",  # Articles are in subdirectory
                 "article": {
                     "title": title,
                     "slug": slug,
@@ -392,6 +393,7 @@ class SiteGenerator:
         # Render article index
         index_context = {
             **context,
+            "base_path": "../",  # Articles are in subdirectory
             "articles": articles_data,
         }
         template = self.jinja_env.get_template("articles_index.html")
