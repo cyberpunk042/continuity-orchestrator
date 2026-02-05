@@ -191,8 +191,11 @@ class TestSiteGeneratorContext:
         assert "deadline" in context
         assert "2026-02-05" in context["deadline"]
     
-    def test_build_context_includes_github_repo(self, sample_state, temp_output_dir):
+    def test_build_context_includes_github_repo(self, sample_state, temp_output_dir, monkeypatch):
         """Test context includes github repository."""
+        # Set env var to override git remote auto-detect
+        monkeypatch.setenv("GITHUB_REPOSITORY", "testuser/testrepo")
+        
         generator = SiteGenerator(output_dir=temp_output_dir)
         context = generator._build_context(sample_state)
         
