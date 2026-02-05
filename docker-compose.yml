@@ -56,24 +56,45 @@ services:
       - STATE_FILE=/data/state/current.json
       - AUDIT_DIR=/data/audit
       - POLICY_DIR=/app/policy
+      # Project settings
+      - PROJECT_NAME=${PROJECT_NAME:-}
+      - OPERATOR_EMAIL=${OPERATOR_EMAIL:-}
       - ADAPTER_MOCK_MODE=${ADAPTER_MOCK_MODE:-false}
       # Master config (preferred - one secret)
       - CONTINUITY_CONFIG=${CONTINUITY_CONFIG:-}
-      # Individual keys (fallback)
+      # Email (Resend)
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-}
+      # SMS (Twilio)
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
       - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - OPERATOR_SMS=${OPERATOR_SMS:-}
+      # GitHub
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
+      # X/Twitter
       - X_API_KEY=${X_API_KEY:-}
       - X_API_SECRET=${X_API_SECRET:-}
       - X_ACCESS_TOKEN=${X_ACCESS_TOKEN:-}
       - X_ACCESS_SECRET=${X_ACCESS_SECRET:-}
+      # Reddit
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
       - REDDIT_USERNAME=${REDDIT_USERNAME:-}
       - REDDIT_PASSWORD=${REDDIT_PASSWORD:-}
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
+      # Webhooks
+      - WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT:-30}
+      # Persistence API
+      - PERSISTENCE_API_URL=${PERSISTENCE_API_URL:-}
+      - PERSISTENCE_API_KEY=${PERSISTENCE_API_KEY:-}
+      - PERSISTENCE_API_TIMEOUT=${PERSISTENCE_API_TIMEOUT:-30}
+      # Manual controls (renewal/release)
+      - RENEWAL_SECRET=${RENEWAL_SECRET:-}
+      - RELEASE_SECRET=${RELEASE_SECRET:-}
+      - RELEASE_DELAY_MINUTES=${RELEASE_DELAY_MINUTES:-60}
+      - RELEASE_DELAY_SCOPE=${RELEASE_DELAY_SCOPE:-partial}
+      - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
     volumes:
       - state-data:/data/state
       - audit-data:/data/audit
@@ -178,12 +199,47 @@ services:
       - STATE_FILE=/repo/state/current.json
       - AUDIT_DIR=/repo/audit
       - POLICY_DIR=/repo/policy
+      # Project settings
+      - PROJECT_NAME=${PROJECT_NAME:-}
+      - OPERATOR_EMAIL=${OPERATOR_EMAIL:-}
       - ADAPTER_MOCK_MODE=${ADAPTER_MOCK_MODE:-false}
+      # Master config (preferred - one secret)
       - CONTINUITY_CONFIG=${CONTINUITY_CONFIG:-}
+      # Email (Resend)
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-}
+      # SMS (Twilio)
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - OPERATOR_SMS=${OPERATOR_SMS:-}
+      # GitHub
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
       - GIT_AUTHOR_NAME=Continuity Orchestrator
       - GIT_AUTHOR_EMAIL=continuity@automated.bot
+      # X/Twitter
+      - X_API_KEY=${X_API_KEY:-}
+      - X_API_SECRET=${X_API_SECRET:-}
+      - X_ACCESS_TOKEN=${X_ACCESS_TOKEN:-}
+      - X_ACCESS_SECRET=${X_ACCESS_SECRET:-}
+      # Reddit
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - REDDIT_USERNAME=${REDDIT_USERNAME:-}
+      - REDDIT_PASSWORD=${REDDIT_PASSWORD:-}
+      # Webhooks
+      - WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT:-30}
+      # Persistence API
+      - PERSISTENCE_API_URL=${PERSISTENCE_API_URL:-}
+      - PERSISTENCE_API_KEY=${PERSISTENCE_API_KEY:-}
+      - PERSISTENCE_API_TIMEOUT=${PERSISTENCE_API_TIMEOUT:-30}
+      # Manual controls (renewal/release)
+      - RENEWAL_SECRET=${RENEWAL_SECRET:-}
+      - RELEASE_SECRET=${RELEASE_SECRET:-}
+      - RELEASE_DELAY_MINUTES=${RELEASE_DELAY_MINUTES:-60}
+      - RELEASE_DELAY_SCOPE=${RELEASE_DELAY_SCOPE:-partial}
+      - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
     volumes:
       # NO HOST MOUNT - repo is cloned inside container
       # State persists in named volumes between restarts
