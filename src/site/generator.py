@@ -124,6 +124,10 @@ class SiteGenerator:
                 archive_path = self._generate_archive_entry(entry, context)
                 files_generated.append(archive_path)
         
+        # Generate status.json for auto-refresh polling
+        status_json_path = self._generate_status_json(context)
+        files_generated.append(status_json_path)
+        
         return {
             "success": True,
             "output_dir": str(self.output_dir),
@@ -421,6 +425,22 @@ class SiteGenerator:
         
         output_path = self.output_dir / "archive" / f"{safe_id}.html"
         output_path.write_text(html)
+        return output_path
+    
+    def _generate_status_json(self, context: Dict[str, Any]) -> Path:
+        """Generate status.json for client-side auto-refresh polling."""
+        import json
+        
+        status = {
+            "deadline": context.get("deadline", ""),
+            "stage": context.get("stage", ""),
+            "time_to_deadline": context.get("time_to_deadline", 0),
+            "build_time": context.get("build_time", ""),
+            "project": context.get("project", ""),
+        }
+        
+        output_path = self.output_dir / "status.json"
+        output_path.write_text(json.dumps(status, indent=2))
         return output_path
     
     def _generate_countdown(self, context: Dict[str, Any]) -> Path:
@@ -1104,6 +1124,41 @@ class SiteGenerator:
                 }}, 5000);
             }}
         }}
+        
+        // Auto-refresh: poll status.json for state changes
+        const CURRENT_DEADLINE = "{deadline}";
+        const CURRENT_STAGE = "{stage}";
+        const POLL_INTERVAL = 15000; // 15 seconds
+        
+        async function checkForStateChange() {{
+            try {{
+                const response = await fetch("status.json?t=" + Date.now(), {{
+                    cache: "no-store"
+                }});
+                if (response.ok) {{
+                    const status = await response.json();
+                    // Reload if deadline or stage changed
+                    if (status.deadline !== CURRENT_DEADLINE || status.stage !== CURRENT_STAGE) {{
+                        console.log("State changed, reloading...");
+                        showStatus("🔄 State updated! Refreshing...", "success");
+                        setTimeout(() => location.reload(), 1000);
+                    }}
+                }}
+            }} catch (e) {{
+                // Silent fail - status.json might not exist or network issue
+                console.debug("State check failed:", e);
+            }}
+        }}
+        
+        // Start polling (but not too aggressively)
+        setInterval(checkForStateChange, POLL_INTERVAL);
+        
+        // Also check immediately after page becomes visible (user switches tabs back)
+        document.addEventListener("visibilitychange", () => {{
+            if (!document.hidden) {{
+                checkForStateChange();
+            }}
+        }});
     </script>
 </body>
 </html>"""
