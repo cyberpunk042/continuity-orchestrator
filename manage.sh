@@ -156,12 +156,14 @@ run_setup() {
 run_push_secrets() {
     echo -e "\n${BOLD}=== Push Secrets to GitHub ===${NC}\n"
     
-    # Load secrets from .env first
+    # Load secrets from .env first (export so python can read them)
     if [ ! -f ".env" ]; then
         echo -e "${RED}Error: .env file not found. Run setup first.${NC}"
         return 1
     fi
+    set -a  # Export all variables
     source .env
+    set +a
     
     # Detect repo
     REPO="${GITHUB_REPOSITORY:-}"
@@ -174,16 +176,42 @@ run_push_secrets() {
         echo -e "${YELLOW}GitHub CLI (gh) not installed${NC}"
         echo ""
         echo "Options:"
-        echo "  1) Install gh: https://cli.github.com/"
-        echo "  2) Manually add ONE secret at:"
-        echo "     https://github.com/${REPO}/settings/secrets/actions"
+        echo "  1) Install gh CLI now (recommended)"
+        echo "  2) Show JSON to copy manually"
+        echo "  3) Cancel"
         echo ""
-        echo -e "${BOLD}Create a secret named: CONTINUITY_CONFIG${NC}"
-        echo -e "${BOLD}With this JSON value:${NC}"
-        echo ""
+        read -p "Choose (1/2/3): " gh_choice
         
-        # Generate master JSON
-        python3 -c "
+        case "$gh_choice" in
+            1)
+                echo ""
+                echo "Installing GitHub CLI..."
+                (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+                    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+                    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+                    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+                    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+                    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+                    && sudo apt update \
+                    && sudo apt install gh -y
+                
+                if ! command -v gh &>/dev/null; then
+                    echo -e "${RED}Installation failed${NC}"
+                    return 1
+                fi
+                echo -e "${GREEN}✓ GitHub CLI installed${NC}"
+                echo ""
+                # Continue to push secrets below
+                ;;
+            2)
+                echo ""
+                echo -e "${BOLD}Create a secret named: CONTINUITY_CONFIG${NC}"
+                echo -e "At: https://github.com/${REPO}/settings/secrets/actions"
+                echo ""
+                echo -e "${BOLD}With this JSON value:${NC}"
+                echo ""
+                python3 -c "
 import json
 import os
 
@@ -198,8 +226,14 @@ for key in ['RESEND_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
 
 print(json.dumps(config, indent=2))
 "
-        echo ""
-        return 0
+                echo ""
+                return 0
+                ;;
+            *)
+                echo "Cancelled."
+                return 0
+                ;;
+        esac
     fi
     
     # Check gh auth
