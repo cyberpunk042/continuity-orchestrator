@@ -196,15 +196,26 @@ services:
           export GIT_CONFIGURED=1
         fi
         
+        # Pull latest state at startup
+        echo "Syncing with remote..."
+        git stash 2>/dev/null || true
+        git pull --rebase origin main || true
+        git stash pop 2>/dev/null || true
+        
         # Clear and prepare shared volume for nginx
         rm -rf /public/* 2>/dev/null || true
+        
+        # Background sync - keep repo always in sync
+        (while true; do
+          git stash 2>/dev/null
+          git pull --rebase origin main 2>/dev/null || true
+          git stash pop 2>/dev/null
+          sleep 30
+        done) &
         
         while true; do
           echo "═══════════════════════════════════════════"
           echo "Running tick at $$(date -Iseconds)"
-          
-          # Pull latest state (in case Actions ran) - reset URL first
-          git pull --rebase origin main || true
           
           # Run tick
           python -m src.main tick
@@ -217,7 +228,7 @@ services:
             echo "No state changes"
           else
             echo "Committing state changes..."
-            git add state/ audit/ public/
+            git add state/ audit/
             git commit -m "chore(state): tick at $$(date -Iseconds)" || true
             git push origin main || echo "Push failed, will retry next tick"
           fi
