@@ -745,6 +745,11 @@ class SiteGenerator:
         
         .instruction-card:not(:last-child) {{
             border-bottom: 1px solid var(--color-border);
+            margin-bottom: 0.75rem;
+        }}
+        
+        .instruction-card + .link-btn {{
+            margin-top: 0.5rem;
         }}
         
         .step-number {{
