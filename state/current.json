@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T21:02:30.660163+00:00",
+        "updated_at_iso": "2026-02-05T21:03:32.848917+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,16 +12,16 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-06T00:02:30.660163+00:00",
+        "deadline_iso": "2026-02-06T09:03:32.848917+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T21:02:30.660163+00:00",
-        "time_to_deadline_minutes": 180,
+        "now_iso": "2026-02-05T21:03:32.848917+00:00",
+        "time_to_deadline_minutes": 720,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-05T21:02:30.660163+00:00",
+        "last_renewal_iso": "2026-02-05T21:03:32.848917+00:00",
         "renewed_this_tick": true,
-        "renewal_count": 3
+        "renewal_count": 4
     },
     "security": {
         "failed_attempts": 0,
@@ -32,7 +32,7 @@
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-05T21:02:30.660163+00:00",
+        "state_entered_at_iso": "2026-02-05T21:03:32.848917+00:00",
         "last_transition_rule_id": "MANUAL_RENEWAL",
         "monotonic_enforced": true
     },
