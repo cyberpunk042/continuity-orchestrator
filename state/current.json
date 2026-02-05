@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-project",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T07:37:39.235143Z",
+        "updated_at_iso": "2026-02-05T08:07:09.877421Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-07T01:02:21.098805+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T07:37:39.234403Z",
-        "time_to_deadline_minutes": 2484,
+        "now_iso": "2026-02-05T08:07:09.876711Z",
+        "time_to_deadline_minutes": 2455,
         "overdue_minutes": 0
     },
     "renewal": {
