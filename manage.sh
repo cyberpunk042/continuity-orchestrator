@@ -156,34 +156,46 @@ run_setup() {
 run_push_secrets() {
     echo -e "\n${BOLD}=== Push Secrets to GitHub ===${NC}\n"
     
-    # Check for gh CLI
-    if ! command -v gh &>/dev/null; then
-        echo -e "${RED}Error: GitHub CLI (gh) not installed${NC}"
-        echo "Install: https://cli.github.com/"
-        echo ""
-        echo "Or manually add secrets at:"
-        echo "  https://github.com/\${GITHUB_REPO}/settings/secrets/actions"
-        return 1
-    fi
-    
-    # Check gh auth
-    if ! gh auth status &>/dev/null; then
-        echo -e "${YELLOW}GitHub CLI not authenticated. Running 'gh auth login'...${NC}"
-        gh auth login
-    fi
-    
-    # Load secrets from .env
+    # Load secrets from .env first
     if [ ! -f ".env" ]; then
         echo -e "${RED}Error: .env file not found. Run setup first.${NC}"
         return 1
     fi
-    
     source .env
     
     # Detect repo
     REPO="${GITHUB_REPOSITORY:-}"
     if [ -z "$REPO" ] || [ "$REPO" == "owner/repo" ]; then
         REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@github\.com:|https://github\.com/)##' | sed 's/\.git$//')
+    fi
+    
+    # Check for gh CLI
+    if ! command -v gh &>/dev/null; then
+        echo -e "${YELLOW}GitHub CLI (gh) not installed${NC}"
+        echo ""
+        echo "Options:"
+        echo "  1) Install gh: https://cli.github.com/"
+        echo "  2) Manually add secrets at:"
+        echo "     https://github.com/${REPO}/settings/secrets/actions"
+        echo ""
+        echo -e "${BOLD}Your secrets (copy these values):${NC}"
+        echo ""
+        [ -n "$RESEND_API_KEY" ] && echo "RESEND_API_KEY=$RESEND_API_KEY"
+        [ -n "$TWILIO_ACCOUNT_SID" ] && echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID"
+        [ -n "$TWILIO_AUTH_TOKEN" ] && echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN"
+        [ -n "$TWILIO_FROM_NUMBER" ] && echo "TWILIO_FROM_NUMBER=$TWILIO_FROM_NUMBER"
+        [ -n "$OPERATOR_SMS" ] && echo "OPERATOR_SMS=$OPERATOR_SMS"
+        [ -n "$RENEWAL_SECRET" ] && echo "RENEWAL_SECRET=$RENEWAL_SECRET"
+        [ -n "$RELEASE_SECRET" ] && echo "RELEASE_SECRET=$RELEASE_SECRET"
+        [ -n "$RENEWAL_TRIGGER_TOKEN" ] && echo "RENEWAL_TRIGGER_TOKEN=$RENEWAL_TRIGGER_TOKEN"
+        echo ""
+        return 0
+    fi
+    
+    # Check gh auth
+    if ! gh auth status &>/dev/null; then
+        echo -e "${YELLOW}GitHub CLI not authenticated. Running 'gh auth login'...${NC}"
+        gh auth login
     fi
     
     if [ -z "$REPO" ]; then
@@ -204,7 +216,8 @@ run_push_secrets() {
     [ -n "$GITHUB_TOKEN" ] && echo -e "  ✓ GITHUB_TOKEN (as GH_TOKEN)"
     
     echo ""
-    read -p "Push these secrets to ${REPO}? (y/N): " confirm
+    read -p "Push these secrets to ${REPO}? (Y/n): " confirm
+    confirm="${confirm:-Y}"
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         echo "Cancelled."
         return 0
