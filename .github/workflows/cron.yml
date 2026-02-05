@@ -8,8 +8,8 @@ name: continuity-tick
 
 on:
   schedule:
-    # Run every 10 minutes
-    - cron: "*/10 * * * *"
+    # Run every 30 minutes
+    - cron: "*/30 * * * *"
   
   workflow_dispatch:
     inputs:
@@ -51,6 +51,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      
+      - name: Pull latest state
+        run: |
+          # Ensure we have the latest state (may have been updated by renew workflow)
+          git pull --rebase origin main || true
       
       - name: Set up Python
         uses: actions/setup-python@v5
