@@ -160,6 +160,17 @@ if [[ $ENABLE_GITHUB =~ ^[Yy] ]]; then
     if [ -n "$GITHUB_TOKEN" ]; then
         HAS_REAL_ADAPTER="true"
         echo -e "${GREEN}   ✓ GitHub configured${NC}"
+        
+        # One-click renewal token
+        echo ""
+        echo -e "${BOLD}   🔐 One-Click Renewal (optional)${NC}"
+        echo -e "${DIM}   Allows renewing directly from the countdown page.${NC}"
+        echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
+        echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
+        read -p "   Renewal Trigger Token (or skip): " RENEWAL_TRIGGER_TOKEN
+        if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
+            echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
+        fi
     else
         echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
     fi
@@ -224,6 +235,9 @@ OPERATOR_SMS=${OPERATOR_SMS}
 # ═══════════════════════════════════════════════════════════════
 GITHUB_TOKEN=${GITHUB_TOKEN}
 GITHUB_REPOSITORY=${GITHUB_REPO:-owner/repo}
+
+# One-click renewal from website (fine-grained PAT with only Actions:write)
+RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN}
 
 # ═══════════════════════════════════════════════════════════════
 # X (Twitter) — https://developer.twitter.com/en/portal

@@ -186,6 +186,64 @@ jobs:
           git push
 ```
 
+### One-Click Renewal from Website
+
+Enable direct renewal from the countdown page without navigating to GitHub:
+
+1. **Create a fine-grained PAT:**
+   - Go to https://github.com/settings/tokens?type=beta
+   - Click "Generate new token"
+   - Name: `Continuity Renewal Trigger`
+   - Repository access: Select only your repository
+   - Permissions: **Actions** → **Read and write** (ONLY this permission!)
+   - Generate and copy the token
+
+2. **Add to environment:**
+   ```bash
+   # In your .env file
+   RENEWAL_TRIGGER_TOKEN=github_pat_xxxxx
+   ```
+
+3. **Rebuild the site:**
+   ```bash
+   python -m src.main build-site
+   ```
+
+**How it works:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SECURITY MODEL                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  RENEWAL_TRIGGER_TOKEN (in static JS)                       │
+│  ├── Can: Trigger workflows via GitHub API                  │
+│  └── Cannot: Read code, access secrets, modify repo         │
+│                                                              │
+│  RENEWAL_SECRET (in GitHub Secrets)                         │
+│  └── Required to actually validate and extend deadline      │
+│                                                              │
+│  Even if someone discovers the trigger token, they can      │
+│  only spam workflow runs (which fail without the secret).   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**User flow with one-click:**
+
+1. User enters renewal code on countdown page
+2. Clicks "🚀 Renew Now"  
+3. JavaScript calls GitHub API directly
+4. Workflow runs and validates the code
+5. User sees success/failure status inline
+
+**Fallback without token:**
+
+If `RENEWAL_TRIGGER_TOKEN` is not set, the page falls back to:
+1. Copy code to clipboard
+2. Open GitHub Actions page
+3. User pastes code manually
+
 ---
 
 ## Systemd Service
