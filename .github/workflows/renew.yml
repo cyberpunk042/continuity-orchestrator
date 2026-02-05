@@ -1,7 +1,8 @@
 name: Renew Deadline
 
-# Triggered manually with a renewal code to extend the deadline.
-# The code is validated against a GitHub secret.
+# Triggered manually with a code to extend the deadline OR trigger release.
+# - RENEWAL_SECRET: extends deadline (normal renewal)
+# - RELEASE_SECRET: triggers immediate disclosure (shadow mode - cron rebuilds later)
 
 on:
   workflow_dispatch:
@@ -30,30 +31,44 @@ env:
 
 jobs:
   validate-and-renew:
-    name: Validate Code & Renew
+    name: Validate Code & Process
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
-      - name: Validate renewal code
+      - name: Validate code and determine action
+        id: validate
         env:
           RENEWAL_SECRET: ${{ secrets.RENEWAL_SECRET }}
+          RELEASE_SECRET: ${{ secrets.RELEASE_SECRET }}
         run: |
+          INPUT_CODE="${{ inputs.renewal_code }}"
+          
+          # Check if it's a release trigger
+          if [ -n "$RELEASE_SECRET" ] && [ "$INPUT_CODE" = "$RELEASE_SECRET" ]; then
+            echo "⚠️ RELEASE CODE - Triggering disclosure (shadow mode)"
+            echo "action=release" >> $GITHUB_OUTPUT
+            echo "shadow=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if it's a normal renewal
           if [ -z "$RENEWAL_SECRET" ]; then
-            echo "❌ RENEWAL_SECRET not configured in repository secrets"
+            echo "❌ RENEWAL_SECRET not configured"
             exit 1
           fi
           
-          if [ "${{ inputs.renewal_code }}" != "$RENEWAL_SECRET" ]; then
-            echo "❌ Invalid renewal code"
-            # Log failed attempt (could trigger security alert)
-            echo "Failed renewal attempt at $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/failed_attempts.log
-            exit 1
+          if [ "$INPUT_CODE" = "$RENEWAL_SECRET" ]; then
+            echo "✅ Renewal code validated"
+            echo "action=renew" >> $GITHUB_OUTPUT
+            echo "shadow=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          echo "✅ Renewal code validated"
+          echo "❌ Invalid code"
+          exit 1
       
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -70,42 +85,63 @@ jobs:
           pip install -e .
       
       - name: Execute renewal
-        id: renew
+        if: steps.validate.outputs.action == 'renew'
         run: |
           python -m src.main renew --hours ${{ inputs.extend_hours }}
-          echo "renewed=true" >> $GITHUB_OUTPUT
       
+      - name: Execute release trigger
+        if: steps.validate.outputs.action == 'release'
+        run: |
+          python -m src.main trigger-release --stage FULL --silent
+      
+      - name: Commit state changes
+        run: |
+          git config user.name "continuity-orchestrator[bot]"
+          git config user.email "continuity-orchestrator[bot]@users.noreply.github.com"
+          
+          TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          git add state/ audit/
+          
+          if [ "${{ steps.validate.outputs.action }}" = "release" ]; then
+            git commit -m "release: Manual trigger at ${TIME}" || true
+          else
+            git commit -m "renew: Extended by ${{ inputs.extend_hours }}h at ${TIME}" || true
+          fi
+          
+          git push
+      
+      # Only rebuild site for normal renewals (not shadow release)
       - name: Build updated site
+        if: steps.validate.outputs.shadow == 'false'
         env:
           RENEWAL_TRIGGER_TOKEN: ${{ secrets.RENEWAL_TRIGGER_TOKEN }}
         run: |
           python -m src.main build-site --output public
       
-      - name: Commit changes
-        run: |
-          git config user.name "continuity-orchestrator[bot]"
-          git config user.email "continuity-orchestrator[bot]@users.noreply.github.com"
-          
-          RENEW_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          
-          git add state/ audit/
-          git commit -m "renew: Extended deadline by ${{ inputs.extend_hours }} hours at ${RENEW_TIME}" || true
-          
-          git push
-      
       - name: Upload artifact
+        if: steps.validate.outputs.shadow == 'false'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./public
       
       - name: Deploy to GitHub Pages
+        if: steps.validate.outputs.shadow == 'false'
         id: deployment
         uses: actions/deploy-pages@v4
       
       - name: Summary
         run: |
-          echo "## ✅ Renewal Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Extended deadline by: **${{ inputs.extend_hours }} hours**" >> $GITHUB_STEP_SUMMARY
-          echo "- Renewed at: **$(date -u +%Y-%m-%dT%H:%M:%SZ)**" >> $GITHUB_STEP_SUMMARY
-          echo "- State reset to: **OK**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.validate.outputs.action }}" = "release" ]; then
+            echo "## ⚠️ RELEASE TRIGGERED (Shadow Mode)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Stage: **FULL**" >> $GITHUB_STEP_SUMMARY
+            echo "- Triggered at: **$(date -u +%Y-%m-%dT%H:%M:%SZ)**" >> $GITHUB_STEP_SUMMARY
+            echo "- Site rebuild: **Delayed (cron will pick up)**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Renewal Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Extended deadline by: **${{ inputs.extend_hours }} hours**" >> $GITHUB_STEP_SUMMARY
+            echo "- Renewed at: **$(date -u +%Y-%m-%dT%H:%M:%SZ)**" >> $GITHUB_STEP_SUMMARY
+            echo "- State reset to: **OK**" >> $GITHUB_STEP_SUMMARY
+          fi

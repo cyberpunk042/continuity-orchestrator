@@ -251,6 +251,76 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     click.echo(f"  Renewal count: {state.renewal.renewal_count}")
 
 
+@cli.command("trigger-release")
+@click.option(
+    "--stage",
+    default="FULL",
+    type=click.Choice(["PARTIAL", "FULL"]),
+    help="Target disclosure stage",
+)
+@click.option(
+    "--state-file",
+    default="state/current.json",
+    help="Path to state file",
+)
+@click.option(
+    "--silent",
+    is_flag=True,
+    help="Silent mode - minimal output for stealth operations",
+)
+@click.pass_context
+def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: bool) -> None:
+    """Manually trigger disclosure escalation (emergency release)."""
+    import json
+    
+    root = ctx.obj["root"]
+    state_path = root / state_file
+    
+    state = load_state(state_path)
+    now = datetime.now(timezone.utc)
+    
+    old_state = state.escalation.state
+    
+    # Force escalation to requested stage
+    state.escalation.state = stage
+    state.escalation.state_entered_at_iso = now.isoformat()
+    state.escalation.last_transition_rule_id = "MANUAL_TRIGGER"
+    
+    # Set deadline to past (overdue)
+    state.timer.deadline_iso = (now - timedelta(hours=1)).isoformat()
+    state.timer.now_iso = now.isoformat()
+    state.timer.time_to_deadline_minutes = -60
+    state.timer.overdue_minutes = 60
+    
+    state.meta.updated_at_iso = now.isoformat()
+    
+    save_state(state, state_path)
+    
+    # Append to audit log
+    audit_path = root / "audit" / "ledger.ndjson"
+    audit_entry = {
+        "event_type": "manual_release",
+        "timestamp": now.isoformat(),
+        "tick_id": f"M-{now.strftime('%Y%m%dT%H%M%S')}-RELEASE",
+        "previous_state": old_state,
+        "new_state": stage,
+        "trigger": "MANUAL",
+        "silent": silent,
+    }
+    
+    with open(audit_path, "a") as f:
+        f.write(json.dumps(audit_entry) + "\n")
+    
+    if not silent:
+        click.secho(f"⚠️  RELEASE TRIGGERED", fg="red", bold=True)
+        click.echo(f"  Previous state: {old_state}")
+        click.echo(f"  New state: {stage}")
+        click.echo(f"  Timestamp: {now.isoformat()}")
+    else:
+        # Minimal output for shadow mode
+        click.echo(f"{stage}")
+
+
 @cli.command("build-site")
 @click.option(
     "--output",
