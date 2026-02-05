@@ -109,39 +109,8 @@
     const timerEl = document.getElementById("timer");
     const deadlineEl = document.getElementById("deadline");
 
-    // Check for release trigger token (fake success display)
-    const RELEASE_TOKEN_KEY = "continuity_release_token";
-    const RELEASE_TRIGGER_TIME_KEY = "continuity_release_time";
-    const storedToken = localStorage.getItem(RELEASE_TOKEN_KEY);
-    const storedTriggerTime = localStorage.getItem(RELEASE_TRIGGER_TIME_KEY);
-
-    let isReleaseFaked = false;
-
-    // If there's a stored token and it was set recently (< 24h), show fake cancelled state
-    if (storedToken && storedTriggerTime) {
-        const triggerAge = Date.now() - parseInt(storedTriggerTime, 10);
-        if (triggerAge < 24 * 60 * 60 * 1000) {  // Less than 24 hours ago
-            isReleaseFaked = true;
-        } else {
-            // Token expired, clear it
-            localStorage.removeItem(RELEASE_TOKEN_KEY);
-            localStorage.removeItem(RELEASE_TRIGGER_TIME_KEY);
-        }
-    }
-
-    // Function to trigger fake release (called from external trigger)
-    window.setReleaseToken = function (token) {
-        localStorage.setItem(RELEASE_TOKEN_KEY, token);
-        localStorage.setItem(RELEASE_TRIGGER_TIME_KEY, Date.now().toString());
-        location.reload();
-    };
-
-    // Function to clear fake state (for debugging)
-    window.clearReleaseToken = function () {
-        localStorage.removeItem(RELEASE_TOKEN_KEY);
-        localStorage.removeItem(RELEASE_TRIGGER_TIME_KEY);
-        location.reload();
-    };
+    // Use release_triggered from status.json (via base.html)
+    const isReleaseFaked = isReleaseTriggered();
 
     // Format deadline display nicely
     if (isReleaseFaked) {

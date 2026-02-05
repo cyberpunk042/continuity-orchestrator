@@ -127,6 +127,9 @@ class SiteGenerator:
         # Renewal token
         renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
         
+        # Release secret (for client-side optimistic display)
+        release_secret = os.environ.get("RELEASE_SECRET", "")
+        
         # Enabled adapters
         enabled_adapters = {}
         if hasattr(state, 'integrations') and state.integrations:
@@ -230,6 +233,7 @@ class SiteGenerator:
             "stage_behavior": stage_behavior,
             "nav_articles": nav_articles,
             "visible_articles": visible_articles,
+            "release_triggered": state.release.triggered if hasattr(state, 'release') else False,
             "raw_state_json": json.dumps({
                 "project": state.meta.project,
                 "stage": stage,
@@ -296,6 +300,7 @@ class SiteGenerator:
             "time_to_deadline": context.get("time_to_deadline", 0),
             "build_time": context.get("build_time", ""),
             "project": context.get("project", ""),
+            "release_triggered": context.get("release_triggered", False),
         }
         
         output_path = self.output_dir / "status.json"
