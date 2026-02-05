@@ -347,6 +347,12 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     state.actions.executed = {}
     state.actions.last_tick_actions = []
     
+    # Clear release trigger (renewal cancels any pending release)
+    state.release.triggered = False
+    state.release.trigger_time_iso = None
+    state.release.execute_after_iso = None
+    state.release.client_token = None
+    
     state.meta.updated_at_iso = now.isoformat()
     
     save_state(state, state_path)
