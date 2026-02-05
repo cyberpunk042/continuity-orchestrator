@@ -283,7 +283,6 @@ echo -e "${BOLD}   🔑 Git Sync Token (GITHUB_TOKEN)${NC}"
 echo -e "${DIM}   Required for: Backend/Docker deployment to push state to GitHub${NC}"
 echo -e "${DIM}   Also used by: github_surface adapter (create files, releases, gists)${NC}"
 echo -e "${DIM}   Permissions: 'repo' (read/write) and 'workflow'${NC}"
-echo -e "${DIM}   Create at: https://github.com/settings/tokens${NC}"
 echo ""
 echo -e "${CYAN}   Who needs this?${NC}"
 echo -e "${DIM}   • Docker/backend deployment → YES (for git push to sync state)${NC}"
@@ -297,8 +296,49 @@ if [ -n "$GITHUB_TOKEN" ]; then
     fi
     HAS_REAL_ADAPTER="true"
 else
-    read -p "   GitHub Token (required for backend, skip for Actions-only): " GITHUB_TOKEN
-    [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+    # Check if gh is available to generate token
+    if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+        echo ""
+        echo -e "   ${GREEN}✓ GitHub CLI detected${NC}"
+        echo "   Options:"
+        echo "     1) Use current gh token (recommended for backend)"
+        echo "     2) Enter a different token manually"
+        echo "     3) Skip (GitHub Actions only)"
+        echo ""
+        read -p "   Choose (1/2/3) [1]: " TOKEN_CHOICE
+        TOKEN_CHOICE="${TOKEN_CHOICE:-1}"
+        
+        case "$TOKEN_CHOICE" in
+            1)
+                GITHUB_TOKEN=$(gh auth token)
+                echo -e "   ${GREEN}✓ Using gh token${NC}"
+                HAS_REAL_ADAPTER="true"
+                ;;
+            2)
+                read -p "   GitHub Token: " GITHUB_TOKEN
+                [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+                ;;
+            *)
+                echo -e "   ${DIM}Skipped${NC}"
+                ;;
+        esac
+    else
+        echo ""
+        echo "   Options:"
+        echo "     1) Enter token manually"
+        echo "     2) Skip (GitHub Actions only)"
+        echo ""
+        read -p "   Choose (1/2) [2]: " TOKEN_CHOICE
+        TOKEN_CHOICE="${TOKEN_CHOICE:-2}"
+        
+        if [[ "$TOKEN_CHOICE" == "1" ]]; then
+            echo -e "${DIM}   Create at: https://github.com/settings/tokens${NC}"
+            read -p "   GitHub Token: " GITHUB_TOKEN
+            [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+        else
+            echo -e "   ${DIM}Skipped${NC}"
+        fi
+    fi
 fi
 echo ""
 
