@@ -101,10 +101,10 @@ echo -e "${BOLD}STEP 3: Configure Adapters${NC}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "${DIM}Configure each adapter or skip to set up later.${NC}"
-echo -e "${DIM}You can always edit .env to add credentials.${NC}"
+echo -e "${DIM}Existing credentials will be preserved unless you enter new ones.${NC}"
 echo ""
 
-# Initialize variables
+# Load existing credentials from .env if present
 RESEND_API_KEY=""
 TWILIO_SID=""
 TWILIO_TOKEN=""
@@ -112,28 +112,65 @@ TWILIO_FROM=""
 OPERATOR_SMS=""
 GITHUB_TOKEN=""
 GITHUB_REPO=""
+RENEWAL_TRIGGER_TOKEN=""
+RENEWAL_SECRET=""
+RELEASE_SECRET=""
+
+if [ -f ".env" ]; then
+    RESEND_API_KEY=$(grep '^RESEND_API_KEY=' .env 2>/dev/null | cut -d= -f2 || true)
+    TWILIO_SID=$(grep '^TWILIO_ACCOUNT_SID=' .env 2>/dev/null | cut -d= -f2 || true)
+    TWILIO_TOKEN=$(grep '^TWILIO_AUTH_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    TWILIO_FROM=$(grep '^TWILIO_FROM_NUMBER=' .env 2>/dev/null | cut -d= -f2 || true)
+    OPERATOR_SMS=$(grep '^OPERATOR_SMS=' .env 2>/dev/null | cut -d= -f2 || true)
+    GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    GITHUB_REPO=$(grep '^GITHUB_REPOSITORY=' .env 2>/dev/null | cut -d= -f2 || true)
+    RENEWAL_TRIGGER_TOKEN=$(grep '^RENEWAL_TRIGGER_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    RENEWAL_SECRET=$(grep '^RENEWAL_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
+    RELEASE_SECRET=$(grep '^RELEASE_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
+fi
 
 # Track if any real adapter is configured
 HAS_REAL_ADAPTER="false"
+[ -n "$RESEND_API_KEY" ] || [ -n "$TWILIO_SID" ] || [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+
+# Helper to show masked key
+mask_key() {
+    local key="$1"
+    if [ -n "$key" ] && [ ${#key} -gt 8 ]; then
+        echo "${key:0:4}...${key: -4}"
+    elif [ -n "$key" ]; then
+        echo "****"
+    fi
+}
 
 # ─────────────────────────────────────────────────────────────────
 # Email (Resend)
 # ─────────────────────────────────────────────────────────────────
 echo -e "${BOLD}📧 Email (Resend)${NC}"
-read -p "   Configure email notifications? (Y/n): " ENABLE_EMAIL
-ENABLE_EMAIL=${ENABLE_EMAIL:-Y}
-
-if [[ $ENABLE_EMAIL =~ ^[Yy] ]]; then
-    echo -e "${DIM}   Get a free API key at https://resend.com/api-keys${NC}"
-    read -p "   Resend API key (or Enter to skip): " RESEND_API_KEY
-    if [ -n "$RESEND_API_KEY" ]; then
-        HAS_REAL_ADAPTER="true"
-        echo -e "${GREEN}   ✓ Email configured${NC}"
-    else
-        echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
+if [ -n "$RESEND_API_KEY" ]; then
+    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$RESEND_API_KEY")]"
+    read -p "   Replace? (y/N): " REPLACE_EMAIL
+    if [[ $REPLACE_EMAIL =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Get a free API key at https://resend.com/api-keys${NC}"
+        read -p "   New Resend API key: " NEW_KEY
+        [ -n "$NEW_KEY" ] && RESEND_API_KEY="$NEW_KEY"
     fi
+    HAS_REAL_ADAPTER="true"
 else
-    echo -e "${DIM}   Skipped${NC}"
+    read -p "   Configure email notifications? (Y/n): " ENABLE_EMAIL
+    ENABLE_EMAIL=${ENABLE_EMAIL:-Y}
+    if [[ $ENABLE_EMAIL =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Get a free API key at https://resend.com/api-keys${NC}"
+        read -p "   Resend API key (or Enter to skip): " RESEND_API_KEY
+        if [ -n "$RESEND_API_KEY" ]; then
+            HAS_REAL_ADAPTER="true"
+            echo -e "${GREEN}   ✓ Email configured${NC}"
+        else
+            echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
+        fi
+    else
+        echo -e "${DIM}   Skipped${NC}"
+    fi
 fi
 echo ""
 
@@ -141,22 +178,38 @@ echo ""
 # SMS (Twilio)
 # ─────────────────────────────────────────────────────────────────
 echo -e "${BOLD}📱 SMS (Twilio)${NC}"
-read -p "   Configure SMS notifications? (y/N): " ENABLE_SMS
-
-if [[ $ENABLE_SMS =~ ^[Yy] ]]; then
-    echo -e "${DIM}   Get credentials at https://console.twilio.com${NC}"
-    read -p "   Twilio Account SID: " TWILIO_SID
-    read -p "   Twilio Auth Token: " TWILIO_TOKEN
-    read -p "   From Number (+1234567890): " TWILIO_FROM
-    read -p "   Your phone (+1234567890): " OPERATOR_SMS
-    if [ -n "$TWILIO_SID" ] && [ -n "$TWILIO_TOKEN" ] && [ -n "$TWILIO_FROM" ]; then
-        HAS_REAL_ADAPTER="true"
-        echo -e "${GREEN}   ✓ SMS configured${NC}"
-    else
-        echo -e "${YELLOW}   ⚠ Incomplete (mock mode)${NC}"
+if [ -n "$TWILIO_SID" ]; then
+    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$TWILIO_SID")]"
+    read -p "   Replace? (y/N): " REPLACE_SMS
+    if [[ $REPLACE_SMS =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Get credentials at https://console.twilio.com${NC}"
+        read -p "   Twilio Account SID: " NEW_SID
+        read -p "   Twilio Auth Token: " NEW_TOKEN
+        read -p "   From Number (+1234567890): " NEW_FROM
+        read -p "   Your phone (+1234567890): " NEW_SMS
+        [ -n "$NEW_SID" ] && TWILIO_SID="$NEW_SID"
+        [ -n "$NEW_TOKEN" ] && TWILIO_TOKEN="$NEW_TOKEN"
+        [ -n "$NEW_FROM" ] && TWILIO_FROM="$NEW_FROM"
+        [ -n "$NEW_SMS" ] && OPERATOR_SMS="$NEW_SMS"
     fi
+    HAS_REAL_ADAPTER="true"
 else
-    echo -e "${DIM}   Skipped${NC}"
+    read -p "   Configure SMS notifications? (y/N): " ENABLE_SMS
+    if [[ $ENABLE_SMS =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Get credentials at https://console.twilio.com${NC}"
+        read -p "   Twilio Account SID: " TWILIO_SID
+        read -p "   Twilio Auth Token: " TWILIO_TOKEN
+        read -p "   From Number (+1234567890): " TWILIO_FROM
+        read -p "   Your phone (+1234567890): " OPERATOR_SMS
+        if [ -n "$TWILIO_SID" ] && [ -n "$TWILIO_TOKEN" ] && [ -n "$TWILIO_FROM" ]; then
+            HAS_REAL_ADAPTER="true"
+            echo -e "${GREEN}   ✓ SMS configured${NC}"
+        else
+            echo -e "${YELLOW}   ⚠ Incomplete (mock mode)${NC}"
+        fi
+    else
+        echo -e "${DIM}   Skipped${NC}"
+    fi
 fi
 echo ""
 
@@ -164,32 +217,64 @@ echo ""
 # GitHub
 # ─────────────────────────────────────────────────────────────────
 echo -e "${BOLD}🐙 GitHub (for publishing & state sync)${NC}"
-read -p "   Configure GitHub? (y/N): " ENABLE_GITHUB
-
-if [[ $ENABLE_GITHUB =~ ^[Yy] ]]; then
-    echo -e "${DIM}   Create a token at https://github.com/settings/tokens${NC}"
-    echo -e "${DIM}   (needs 'repo' and 'workflow' permissions)${NC}"
-    read -p "   GitHub Token: " GITHUB_TOKEN
-    read -p "   Repository (owner/repo): " GITHUB_REPO
-    if [ -n "$GITHUB_TOKEN" ]; then
-        HAS_REAL_ADAPTER="true"
-        echo -e "${GREEN}   ✓ GitHub configured${NC}"
-        
-        # One-click renewal token
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$GITHUB_TOKEN")]"
+    echo -e "   ${GREEN}  Repository: ${GITHUB_REPO:-not set}${NC}"
+    read -p "   Replace? (y/N): " REPLACE_GITHUB
+    if [[ $REPLACE_GITHUB =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Create a token at https://github.com/settings/tokens${NC}"
+        echo -e "${DIM}   (needs 'repo' and 'workflow' permissions)${NC}"
+        read -p "   GitHub Token: " NEW_TOKEN
+        read -p "   Repository (owner/repo): " NEW_REPO
+        [ -n "$NEW_TOKEN" ] && GITHUB_TOKEN="$NEW_TOKEN"
+        [ -n "$NEW_REPO" ] && GITHUB_REPO="$NEW_REPO"
+    fi
+    HAS_REAL_ADAPTER="true"
+    
+    # Check for renewal trigger token
+    if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
+        echo -e "   ${GREEN}✓ One-click renewal: configured${NC}"
+    else
         echo ""
         echo -e "${BOLD}   🔐 One-Click Renewal (optional)${NC}"
         echo -e "${DIM}   Allows renewing directly from the countdown page.${NC}"
-        echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
-        echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
-        read -p "   Renewal Trigger Token (or skip): " RENEWAL_TRIGGER_TOKEN
-        if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
-            echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
+        read -p "   Add renewal trigger token? (y/N): " ADD_RENEWAL
+        if [[ $ADD_RENEWAL =~ ^[Yy] ]]; then
+            echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
+            echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
+            read -p "   Renewal Trigger Token: " RENEWAL_TRIGGER_TOKEN
+            if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
+                echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
+            fi
         fi
-    else
-        echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
     fi
 else
-    echo -e "${DIM}   Skipped${NC}"
+    read -p "   Configure GitHub? (y/N): " ENABLE_GITHUB
+    if [[ $ENABLE_GITHUB =~ ^[Yy] ]]; then
+        echo -e "${DIM}   Create a token at https://github.com/settings/tokens${NC}"
+        echo -e "${DIM}   (needs 'repo' and 'workflow' permissions)${NC}"
+        read -p "   GitHub Token: " GITHUB_TOKEN
+        read -p "   Repository (owner/repo): " GITHUB_REPO
+        if [ -n "$GITHUB_TOKEN" ]; then
+            HAS_REAL_ADAPTER="true"
+            echo -e "${GREEN}   ✓ GitHub configured${NC}"
+            
+            # One-click renewal token
+            echo ""
+            echo -e "${BOLD}   🔐 One-Click Renewal (optional)${NC}"
+            echo -e "${DIM}   Allows renewing directly from the countdown page.${NC}"
+            echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
+            echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
+            read -p "   Renewal Trigger Token (or skip): " RENEWAL_TRIGGER_TOKEN
+            if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
+                echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
+            fi
+        else
+            echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
+        fi
+    else
+        echo -e "${DIM}   Skipped${NC}"
+    fi
 fi
 echo ""
 
@@ -212,29 +297,12 @@ else
     MOCK_MODE="true"
 fi
 
-# Backup existing .env if exists
+# Backup existing .env if exists (credentials already loaded earlier)
 if [ -f ".env" ]; then
     BACKUP_DIR="backups"
     mkdir -p "$BACKUP_DIR"
     cp .env "$BACKUP_DIR/env_$(date +%Y%m%dT%H%M%S).bak"
     echo -e "${CYAN}Backed up existing .env${NC}"
-    
-    # Preserve existing credentials that weren't changed
-    [ -z "$RESEND_API_KEY" ] && RESEND_API_KEY=$(grep '^RESEND_API_KEY=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$TWILIO_SID" ] && TWILIO_SID=$(grep '^TWILIO_ACCOUNT_SID=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$TWILIO_TOKEN" ] && TWILIO_TOKEN=$(grep '^TWILIO_AUTH_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$TWILIO_FROM" ] && TWILIO_FROM=$(grep '^TWILIO_FROM_NUMBER=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$OPERATOR_SMS" ] && OPERATOR_SMS=$(grep '^OPERATOR_SMS=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$GITHUB_TOKEN" ] && GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$GITHUB_REPO" ] && GITHUB_REPO=$(grep '^GITHUB_REPOSITORY=' .env 2>/dev/null | cut -d= -f2 || true)
-    [ -z "$RENEWAL_TRIGGER_TOKEN" ] && RENEWAL_TRIGGER_TOKEN=$(grep '^RENEWAL_TRIGGER_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
-    
-    # Preserve secrets
-    RENEWAL_SECRET=$(grep '^RENEWAL_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
-    RELEASE_SECRET=$(grep '^RELEASE_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
-    
-    # Check if any real adapter was preserved
-    [ -n "$RESEND_API_KEY" ] || [ -n "$TWILIO_SID" ] || [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
 fi
 
 # Create .env file
