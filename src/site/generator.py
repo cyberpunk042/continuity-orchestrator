@@ -1520,6 +1520,35 @@ class SiteGenerator:
 </head>
 <body>
     {content}
+    
+    <script>
+        // Auto-refresh: poll status.json for state changes
+        const CURRENT_DEADLINE = "{context.get('deadline', '')}";
+        const CURRENT_STAGE = "{context.get('stage', '')}";
+        const POLL_INTERVAL = 15000;
+        
+        async function checkForStateChange() {{
+            try {{
+                const response = await fetch("status.json?t=" + Date.now(), {{
+                    cache: "no-store"
+                }});
+                if (response.ok) {{
+                    const status = await response.json();
+                    if (status.deadline !== CURRENT_DEADLINE || status.stage !== CURRENT_STAGE) {{
+                        console.log("State changed, reloading...");
+                        location.reload();
+                    }}
+                }}
+            }} catch (e) {{
+                console.debug("State check failed:", e);
+            }}
+        }}
+        
+        setInterval(checkForStateChange, POLL_INTERVAL);
+        document.addEventListener("visibilitychange", () => {{
+            if (!document.hidden) checkForStateChange();
+        }});
+    </script>
 </body>
 </html>
 """
