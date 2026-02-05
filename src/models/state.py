@@ -103,6 +103,7 @@ class EnabledAdapters(BaseModel):
 class Routing(BaseModel):
     """Delivery routing configuration."""
 
+    github_repository: Optional[str] = None
     operator_email: str
     operator_sms: Optional[str] = None
     custodian_emails: List[str] = Field(default_factory=list)

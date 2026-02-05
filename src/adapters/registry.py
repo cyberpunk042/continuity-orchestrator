@@ -111,11 +111,64 @@ class AdapterRegistry:
         except ImportError as e:
             self.register(MockAdapter("article_publish"))
             logger.warning(f"Article publish not available: {e}")
+        # SMS adapter (Twilio)
+        twilio_configured = all([
+            os.environ.get("TWILIO_ACCOUNT_SID"),
+            os.environ.get("TWILIO_AUTH_TOKEN"),
+            os.environ.get("TWILIO_FROM_NUMBER"),
+        ])
         
-        # Use mocks for not-yet-implemented adapters
-        self.register(MockSMSAdapter())
-        self.register(MockAdapter("x"))
-        self.register(MockAdapter("reddit"))
+        if twilio_configured:
+            try:
+                from .sms_twilio import TwilioSMSAdapter
+                self.register(TwilioSMSAdapter())
+                logger.info("Registered Twilio SMS adapter")
+            except ImportError:
+                self.register(MockSMSAdapter())
+                logger.warning("twilio package not available, using mock SMS")
+        else:
+            self.register(MockSMSAdapter())
+            logger.debug("Twilio credentials not set, using mock SMS")
+        
+        # X (Twitter) adapter
+        x_configured = all([
+            os.environ.get("X_API_KEY"),
+            os.environ.get("X_API_SECRET"),
+            os.environ.get("X_ACCESS_TOKEN"),
+            os.environ.get("X_ACCESS_SECRET"),
+        ])
+        
+        if x_configured:
+            try:
+                from .x_twitter import XAdapter
+                self.register(XAdapter())
+                logger.info("Registered X (Twitter) adapter")
+            except ImportError:
+                self.register(MockAdapter("x"))
+                logger.warning("httpx not available, using mock X adapter")
+        else:
+            self.register(MockAdapter("x"))
+            logger.debug("X API credentials not set, using mock X adapter")
+        
+        # Reddit adapter
+        reddit_configured = all([
+            os.environ.get("REDDIT_CLIENT_ID"),
+            os.environ.get("REDDIT_CLIENT_SECRET"),
+            os.environ.get("REDDIT_USERNAME"),
+            os.environ.get("REDDIT_PASSWORD"),
+        ])
+        
+        if reddit_configured:
+            try:
+                from .reddit import RedditAdapter
+                self.register(RedditAdapter())
+                logger.info("Registered Reddit adapter")
+            except ImportError:
+                self.register(MockAdapter("reddit"))
+                logger.warning("praw not available, using mock Reddit adapter")
+        else:
+            self.register(MockAdapter("reddit"))
+            logger.debug("Reddit credentials not set, using mock Reddit adapter")
 
     def register(self, adapter: Adapter) -> None:
         """Register an adapter."""

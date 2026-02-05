@@ -138,6 +138,13 @@ class SiteGenerator:
         audit_entries: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         """Build template context from state."""
+        # Get github repository from routing config if available
+        github_repo = None
+        if hasattr(state, 'integrations') and state.integrations:
+            routing = getattr(state.integrations, 'routing', None)
+            if routing and hasattr(routing, 'github_repository'):
+                github_repo = routing.github_repository
+        
         context = {
             "project": state.meta.project,
             "state_id": state.meta.state_id,
@@ -152,6 +159,7 @@ class SiteGenerator:
             "policy_version": state.meta.policy_version,
             "build_time": datetime.now(timezone.utc).isoformat(),
             "audit_entries": audit_entries or [],
+            "github_repository": github_repo or "OWNER/REPO",
         }
         
         # Load content manifest for stage-based visibility
@@ -380,6 +388,7 @@ class SiteGenerator:
         stage = context["stage"]
         deadline = context["deadline"]
         project = context["project"]
+        github_repo = context.get("github_repository", "OWNER/REPO")
         
         # Stage styling
         stage_colors = {
@@ -517,52 +526,6 @@ class SiteGenerator:
             color: var(--color-text);
         }}
         
-        .renewal-form {{
-            display: flex;
-            gap: 0.5rem;
-        }}
-        
-        .renewal-form input {{
-            flex: 1;
-            padding: 0.75rem 1rem;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            background: var(--color-bg);
-            color: var(--color-text);
-            font-size: 1rem;
-        }}
-        
-        .renewal-form input:focus {{
-            outline: none;
-            border-color: var(--color-accent);
-        }}
-        
-        .renewal-form button {{
-            padding: 0.75rem 1.5rem;
-            background: var(--color-accent);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }}
-        
-        .renewal-form button:hover {{
-            background: #4c8ed9;
-        }}
-        
-        .renewal-form button:disabled {{
-            background: var(--color-border);
-            cursor: not-allowed;
-        }}
-        
-        .renewal-note {{
-            margin-top: 1rem;
-            font-size: 0.75rem;
-            color: var(--color-text-muted);
-        }}
-        
         .renewal-status {{
             margin-top: 1rem;
             padding: 0.75rem;
@@ -615,6 +578,84 @@ class SiteGenerator:
             color: #dc2626;
         }}
         
+        .renewal-desc {{
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+            margin-bottom: 1rem;
+        }}
+        
+        .renewal-form {{
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }}
+        
+        .renewal-form input {{
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-size: 1rem;
+        }}
+        
+        .renewal-form input:focus {{
+            outline: none;
+            border-color: var(--color-accent);
+        }}
+        
+        .renewal-form button {{
+            padding: 0.75rem 1rem;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }}
+        
+        .renewal-form button:hover {{
+            border-color: var(--color-accent);
+        }}
+        
+        .github-action-btn {{
+            display: block;
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-bottom: 1rem;
+        }}
+        
+        .github-action-btn:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(46, 160, 67, 0.3);
+        }}
+        
+        .renewal-steps {{
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.875rem;
+            text-align: left;
+        }}
+        
+        .renewal-steps ol {{
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+            color: var(--color-text-muted);
+        }}
+        
+        .renewal-steps li {{
+            margin-bottom: 0.25rem;
+        }}
+        
         .nav {{
             margin-top: 2rem;
         }}
@@ -648,13 +689,30 @@ class SiteGenerator:
         
         <div class="renewal-section">
             <h2>🔐 Extend Deadline</h2>
-            <form class="renewal-form" id="renewal-form">
+            <p class="renewal-desc">Enter your renewal code, then click to trigger the renewal workflow.</p>
+            
+            <div class="renewal-form">
                 <input type="password" id="renewal-code" placeholder="Enter renewal code" autocomplete="off">
-                <button type="submit" id="renew-btn">Renew</button>
-            </form>
-            <div class="renewal-note">
-                Renewal requires a valid code. Contact the operator if you need access.
+                <button type="button" id="copy-btn" title="Copy code">📋</button>
             </div>
+            
+            <a href="https://github.com/{github_repo}/actions/workflows/renew.yml" 
+               target="_blank" 
+               class="github-action-btn"
+               id="action-link">
+                🚀 Open Renewal Workflow on GitHub
+            </a>
+            
+            <div class="renewal-steps">
+                <p><strong>Steps:</strong></p>
+                <ol>
+                    <li>Enter your code above</li>
+                    <li>Click "📋" to copy it</li>
+                    <li>Click the button to open GitHub Actions</li>
+                    <li>Click "Run workflow" and paste your code</li>
+                </ol>
+            </div>
+            
             <div class="renewal-status" id="renewal-status"></div>
         </div>
         
@@ -711,38 +769,41 @@ class SiteGenerator:
         updateCountdown();
         setInterval(updateCountdown, 1000);
         
-        // Renewal form handling
-        const form = document.getElementById("renewal-form");
+        // Copy to clipboard functionality
+        const copyBtn = document.getElementById("copy-btn");
         const codeInput = document.getElementById("renewal-code");
-        const renewBtn = document.getElementById("renew-btn");
         const statusEl = document.getElementById("renewal-status");
         
-        form.addEventListener("submit", async (e) => {{
-            e.preventDefault();
-            
+        copyBtn.addEventListener("click", async () => {{
             const code = codeInput.value.trim();
             if (!code) {{
-                showStatus("Please enter a renewal code", "error");
+                showStatus("Please enter a code first", "error");
                 return;
             }}
             
-            renewBtn.disabled = true;
-            renewBtn.textContent = "Renewing...";
-            
-            // Note: This would trigger a GitHub workflow_dispatch
-            // For now, show instructions
-            showStatus(
-                "To renew: Go to GitHub Actions → Renew Deadline → Run workflow → Enter code",
-                "error"
-            );
-            
-            renewBtn.disabled = false;
-            renewBtn.textContent = "Renew";
+            try {{
+                await navigator.clipboard.writeText(code);
+                showStatus("✓ Code copied to clipboard!", "success");
+                copyBtn.textContent = "✓";
+                setTimeout(() => {{ copyBtn.textContent = "📋"; }}, 2000);
+            }} catch (err) {{
+                // Fallback for older browsers
+                codeInput.select();
+                document.execCommand('copy');
+                showStatus("✓ Code copied!", "success");
+            }}
         }});
         
         function showStatus(message, type) {{
             statusEl.textContent = message;
             statusEl.className = `renewal-status ${{type}}`;
+            
+            // Auto-hide success messages
+            if (type === "success") {{
+                setTimeout(() => {{
+                    statusEl.className = "renewal-status";
+                }}, 3000);
+            }}
         }}
     </script>
 </body>

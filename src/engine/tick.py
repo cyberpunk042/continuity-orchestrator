@@ -126,7 +126,15 @@ def run_tick(
         previous_state=state.escalation.state,
     )
 
-    logger.info(f"Starting tick {tick_id}")
+    logger.info(
+        f"{'═' * 50}\n"
+        f"  Starting Tick {tick_id}\n"
+        f"  ├─ Project: {state.meta.project}\n"
+        f"  ├─ State: {state.escalation.state}\n"
+        f"  ├─ Plan: {state.meta.plan_id}\n"
+        f"  └─ Mode: {'ARMED' if state.mode.armed else 'DISARMED'}\n"
+        f"{'─' * 50}"
+    )
 
     # --- Phase 1: Initialization ---
     state_id = state.meta.state_id
@@ -250,8 +258,37 @@ def run_tick(
                 template_content=template_content,
             )
 
-            # Execute
+            # Execute with timing
+            action_start = time.time()
+            logger.info(
+                f"→ Executing action: {action.id} "
+                f"[adapter={action.adapter}, channel={action.channel}]"
+            )
+            
             receipt = registry.execute_action(action, context)
+            
+            action_duration_ms = int((time.time() - action_start) * 1000)
+
+            # Log result with status indicator
+            if receipt.status == "ok":
+                logger.info(
+                    f"  ✓ {action.id}: OK "
+                    f"[delivery_id={receipt.delivery_id}, {action_duration_ms}ms]"
+                )
+            elif receipt.status == "skipped":
+                skip_reason = receipt.details.get("skip_reason", "unknown") if receipt.details else "unknown"
+                logger.info(
+                    f"  ⊘ {action.id}: SKIPPED [{skip_reason}]"
+                )
+            else:
+                error_msg = receipt.error.message if receipt.error else "unknown error"
+                error_code = receipt.error.code if receipt.error else "unknown"
+                retryable = receipt.error.retryable if receipt.error else False
+                logger.warning(
+                    f"  ✗ {action.id}: FAILED "
+                    f"[code={error_code}, retryable={retryable}, {action_duration_ms}ms] "
+                    f"— {error_msg}"
+                )
 
             # Record receipt
             state.actions.executed[action.id] = ActionReceipt(
@@ -296,6 +333,19 @@ def run_tick(
             matched_rules=result.matched_rules,
         )
 
-    logger.info(f"Tick {tick_id} complete in {result.duration_ms}ms")
+    # Log detailed tick summary
+    state_indicator = "🔄" if result.state_changed else "━"
+    state_change_str = f"{result.previous_state} → {result.new_state}" if result.state_changed else result.new_state
+    
+    logger.info(
+        f"{'═' * 50}\n"
+        f"  Tick {tick_id} Complete\n"
+        f"  ├─ Duration: {result.duration_ms}ms\n"
+        f"  ├─ State: {state_indicator} {state_change_str}\n"
+        f"  ├─ Rules matched: {len(result.matched_rules)}\n"
+        f"  ├─ Actions selected: {len(result.actions_selected)}\n"
+        f"  └─ Actions executed: {len(result.actions_executed)}\n"
+        f"{'═' * 50}"
+    )
 
     return result

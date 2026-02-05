@@ -1,0 +1,102 @@
+version: "3.9"
+
+services:
+  # Main orchestrator service
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: continuity-orchestrator
+    restart: unless-stopped
+    environment:
+      - STATE_FILE=/data/state/current.json
+      - AUDIT_DIR=/data/audit
+      - POLICY_DIR=/app/policy
+      - ADAPTER_MOCK_MODE=${ADAPTER_MOCK_MODE:-false}
+      # Adapter credentials from .env
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - X_API_KEY=${X_API_KEY:-}
+      - X_API_SECRET=${X_API_SECRET:-}
+      - X_ACCESS_TOKEN=${X_ACCESS_TOKEN:-}
+      - X_ACCESS_SECRET=${X_ACCESS_SECRET:-}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - REDDIT_USERNAME=${REDDIT_USERNAME:-}
+      - REDDIT_PASSWORD=${REDDIT_PASSWORD:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
+    volumes:
+      - state-data:/data/state
+      - audit-data:/data/audit
+      - ./policy:/app/policy:ro
+      - ./templates:/app/templates:ro
+      - ./content:/app/content:ro
+    networks:
+      - continuity-net
+    # Run tick on schedule using cron in entrypoint
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Starting Continuity Orchestrator..."
+        
+        # Initialize state if not exists
+        if [ ! -f /data/state/current.json ]; then
+          echo "Initializing state..."
+          python -m src.main init --non-interactive --project "continuity" || true
+        fi
+        
+        # Run tick every 15 minutes
+        while true; do
+          echo "Running tick at $$(date -Iseconds)"
+          python -m src.main tick
+          
+          # Build site after tick
+          python -m src.main build-site --output /data/public
+          
+          echo "Sleeping 15 minutes..."
+          sleep 900
+        done
+
+  # Static site server
+  nginx:
+    image: nginx:alpine
+    container_name: continuity-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - public-data:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - orchestrator
+    networks:
+      - continuity-net
+
+  # Site builder (runs once, then exits)
+  site-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: continuity-site-builder
+    volumes:
+      - state-data:/data/state:ro
+      - public-data:/data/public
+      - ./content:/app/content:ro
+    command: ["python", "-m", "src.main", "build-site", "--output", "/data/public"]
+    profiles:
+      - tools
+
+volumes:
+  state-data:
+    name: continuity-state
+  audit-data:
+    name: continuity-audit
+  public-data:
+    name: continuity-public
+
+networks:
+  continuity-net:
+    name: continuity-network

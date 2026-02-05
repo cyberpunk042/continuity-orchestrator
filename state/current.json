@@ -52,6 +52,7 @@
             "persistence_api": true
         },
         "routing": {
+            "github_repository": "cyberpunk042/continuity-orchestrator",
             "operator_email": "operator@example.invalid",
             "operator_sms": "+15555550100",
             "custodian_emails": [
