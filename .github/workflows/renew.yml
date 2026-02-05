@@ -126,22 +126,19 @@ jobs:
           
           git push
       
-      # Only rebuild site for normal renewals (not shadow release)
+      # Rebuild site for all actions (renewals show OK, releases show DELAYED)
       - name: Build updated site
-        if: steps.validate.outputs.shadow == 'false'
         env:
           RENEWAL_TRIGGER_TOKEN: ${{ secrets.RENEWAL_TRIGGER_TOKEN }}
         run: |
           python -m src.main build-site --output public
       
       - name: Upload artifact
-        if: steps.validate.outputs.shadow == 'false'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./public
       
       - name: Deploy to GitHub Pages
-        if: steps.validate.outputs.shadow == 'false'
         id: deployment
         uses: actions/deploy-pages@v4
       
