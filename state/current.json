@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-project",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T19:58:03.203913Z",
+        "updated_at_iso": "2026-02-05T18:33:11.200885+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,28 +12,28 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-05T16:39:45.028210+00:00",
+        "deadline_iso": "2026-02-07T18:33:11.200885+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T19:58:03.203028Z",
-        "time_to_deadline_minutes": 0,
-        "overdue_minutes": 198
+        "now_iso": "2026-02-05T18:33:11.200885+00:00",
+        "time_to_deadline_minutes": 2880,
+        "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-05T17:21:56.984630+00:00",
-        "renewed_this_tick": true,
-        "renewal_count": 6
+        "last_renewal_iso": "2026-02-05T18:33:11.200885+00:00",
+        "renewed_this_tick": false,
+        "renewal_count": 0
     },
     "security": {
         "failed_attempts": 0,
-        "lockout_active": 0,
+        "lockout_active": false,
         "lockout_until_iso": null,
         "max_failed_attempts": 3,
         "attempt_window_seconds": 60
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-05T18:00:30.628593Z",
-        "last_transition_rule_id": "R00_RENEWAL_SUCCESS_RESETS",
+        "state_entered_at_iso": "2026-02-05T18:33:11.200885+00:00",
+        "last_transition_rule_id": null,
         "monotonic_enforced": true
     },
     "actions": {
@@ -52,17 +52,17 @@
     "integrations": {
         "enabled_adapters": {
             "email": true,
-            "sms": false,
-            "x": false,
-            "reddit": false,
+            "sms": true,
+            "x": true,
+            "reddit": true,
             "webhook": true,
             "github_surface": true,
             "article_publish": true,
-            "persistence_api": false
+            "persistence_api": true
         },
         "routing": {
-            "github_repository": "cyberpunk042/continuity-orchestrator",
-            "operator_email": "jfortin-moreau@outlook.com",
+            "github_repository": null,
+            "operator_email": "jfm.devops.expert@gmail.com",
             "operator_sms": null,
             "custodian_emails": [],
             "observer_webhooks": [],
@@ -72,7 +72,7 @@
     },
     "pointers": {
         "persistence": {
-            "primary_backend": "file",
+            "primary_backend": "persistence_api",
             "last_persist_iso": null
         },
         "github_surface": {

@@ -67,11 +67,25 @@ echo -e "${BOLD}STEP 2: Basic Information${NC}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-read -p "Project name (e.g., my-deadman): " PROJECT_NAME
-PROJECT_NAME=${PROJECT_NAME:-"my-project"}
+# Check for existing .env to preserve values
+EXISTING_PROJECT=""
+EXISTING_EMAIL=""
+if [ -f ".env" ]; then
+    EXISTING_PROJECT=$(grep '^PROJECT_NAME=' .env 2>/dev/null | cut -d= -f2 || true)
+    EXISTING_EMAIL=$(grep '^OPERATOR_EMAIL=' .env 2>/dev/null | cut -d= -f2 || true)
+    echo -e "${CYAN}Found existing .env - will preserve credentials${NC}"
+fi
 
-read -p "Your email address: " OPERATOR_EMAIL
-OPERATOR_EMAIL=${OPERATOR_EMAIL:-"you@example.com"}
+# Suggest folder name as default project name
+FOLDER_NAME=$(basename "$(pwd)")
+DEFAULT_NAME=${EXISTING_PROJECT:-$FOLDER_NAME}
+
+read -p "Project name [${DEFAULT_NAME}]: " PROJECT_NAME
+PROJECT_NAME=${PROJECT_NAME:-$DEFAULT_NAME}
+
+DEFAULT_EMAIL=${EXISTING_EMAIL:-"you@example.com"}
+read -p "Your email address [${DEFAULT_EMAIL}]: " OPERATOR_EMAIL
+OPERATOR_EMAIL=${OPERATOR_EMAIL:-$DEFAULT_EMAIL}
 
 read -p "Initial deadline (hours from now, default 48): " DEADLINE_HOURS
 DEADLINE_HOURS=${DEADLINE_HOURS:-48}
@@ -198,6 +212,31 @@ else
     MOCK_MODE="true"
 fi
 
+# Backup existing .env if exists
+if [ -f ".env" ]; then
+    BACKUP_DIR="backups"
+    mkdir -p "$BACKUP_DIR"
+    cp .env "$BACKUP_DIR/env_$(date +%Y%m%dT%H%M%S).bak"
+    echo -e "${CYAN}Backed up existing .env${NC}"
+    
+    # Preserve existing credentials that weren't changed
+    [ -z "$RESEND_API_KEY" ] && RESEND_API_KEY=$(grep '^RESEND_API_KEY=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$TWILIO_SID" ] && TWILIO_SID=$(grep '^TWILIO_ACCOUNT_SID=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$TWILIO_TOKEN" ] && TWILIO_TOKEN=$(grep '^TWILIO_AUTH_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$TWILIO_FROM" ] && TWILIO_FROM=$(grep '^TWILIO_FROM_NUMBER=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$OPERATOR_SMS" ] && OPERATOR_SMS=$(grep '^OPERATOR_SMS=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$GITHUB_TOKEN" ] && GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$GITHUB_REPO" ] && GITHUB_REPO=$(grep '^GITHUB_REPOSITORY=' .env 2>/dev/null | cut -d= -f2 || true)
+    [ -z "$RENEWAL_TRIGGER_TOKEN" ] && RENEWAL_TRIGGER_TOKEN=$(grep '^RENEWAL_TRIGGER_TOKEN=' .env 2>/dev/null | cut -d= -f2 || true)
+    
+    # Preserve secrets
+    RENEWAL_SECRET=$(grep '^RENEWAL_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
+    RELEASE_SECRET=$(grep '^RELEASE_SECRET=' .env 2>/dev/null | cut -d= -f2 || true)
+    
+    # Check if any real adapter was preserved
+    [ -n "$RESEND_API_KEY" ] || [ -n "$TWILIO_SID" ] || [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+fi
+
 # Create .env file
 cat > .env << ENVFILE
 # Continuity Orchestrator Configuration
@@ -259,6 +298,12 @@ REDDIT_PASSWORD=
 # WEBHOOKS
 # ═══════════════════════════════════════════════════════════════
 WEBHOOK_TIMEOUT=30
+
+# ═══════════════════════════════════════════════════════════════
+# SECRETS — Generate: python -c "import secrets; print(secrets.token_hex(16))"
+# ═══════════════════════════════════════════════════════════════
+RENEWAL_SECRET=${RENEWAL_SECRET}
+RELEASE_SECRET=${RELEASE_SECRET}
 ENVFILE
 
 echo -e "${GREEN}✓ Created .env file${NC}"

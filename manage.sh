@@ -47,8 +47,9 @@ show_menu() {
     echo ""
     echo -e "  ${BLUE}8)${NC} build-site      Generate static site"
     echo -e "  ${BLUE}9)${NC} test            Test adapters/integrations"
+    echo -e "  ${BLUE}0)${NC} setup           Run setup wizard (reconfigure)"
     echo ""
-    echo -e "  ${RED}10)${NC} trigger-release Emergency disclosure trigger"
+    echo -e "  ${RED}!)${NC}  trigger-release Emergency disclosure trigger"
     echo ""
     echo -e "  ${CYAN}h)${NC}  help           Show all CLI commands"
     echo -e "  ${CYAN}q)${NC}  quit           Exit"
@@ -137,6 +138,20 @@ show_help() {
     echo "  python -m src.main <command> --help"
 }
 
+run_setup() {
+    echo -e "\n${BOLD}=== Running Setup Wizard ===${NC}\n"
+    echo -e "${CYAN}This will let you reconfigure the project.${NC}"
+    echo -e "${CYAN}Your existing credentials will be preserved.${NC}"
+    echo ""
+    read -p "Continue? (Y/n): " confirm
+    confirm="${confirm:-Y}"
+    if [[ "$confirm" =~ ^[Yy] ]]; then
+        ./setup.sh
+    else
+        echo "Cancelled."
+    fi
+}
+
 # Main loop
 main() {
     show_banner
@@ -157,6 +172,7 @@ main() {
             build|build-site) run_build_site ;;
             test) run_test ;;
             trigger|trigger-release) run_trigger_release ;;
+            setup|wizard) run_setup ;;
             help) show_help ;;
             *) 
                 echo "Unknown command: $1"
@@ -181,7 +197,8 @@ main() {
             7) run_full_reset ;;
             8|build) run_build_site ;;
             9|test) run_test ;;
-            10|trigger) run_trigger_release ;;
+            0|setup) run_setup ;;
+            '!'|trigger) run_trigger_release ;;
             h|help) show_help ;;
             q|quit|exit) 
                 echo "Goodbye!"
