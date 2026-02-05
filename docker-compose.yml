@@ -55,6 +55,7 @@ services:
     volumes:
       - state-data:/data/state
       - audit-data:/data/audit
+      - public-data:/data/public
       - ./policy:/app/policy:ro
       - ./templates:/app/templates:ro
       - ./content:/app/content:ro
