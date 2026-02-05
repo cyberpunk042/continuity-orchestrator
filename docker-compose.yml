@@ -226,10 +226,9 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - public-data:/usr/share/nginx/html:ro
+      # For git-sync mode, serve from local public/ folder
+      - ./public:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - orchestrator
     networks:
       - continuity-net
 

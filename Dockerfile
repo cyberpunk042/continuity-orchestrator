@@ -4,9 +4,10 @@ LABEL org.opencontainers.image.title="Continuity Orchestrator"
 LABEL org.opencontainers.image.description="Policy-first automation system"
 LABEL org.opencontainers.image.source="https://github.com/cyberpunk042/continuity-orchestrator"
 
-# Install system dependencies
+# Install system dependencies (git required for git-sync mode)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
