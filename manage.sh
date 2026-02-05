@@ -48,6 +48,7 @@ show_menu() {
     echo -e "  ${BLUE}8)${NC} build-site      Generate static site"
     echo -e "  ${BLUE}9)${NC} test            Test adapters/integrations"
     echo -e "  ${BLUE}0)${NC} setup           Run setup wizard (reconfigure)"
+    echo -e "  ${BLUE}s)${NC} secrets         Push all secrets to GitHub repo"
     echo ""
     echo -e "  ${RED}!)${NC}  trigger-release Emergency disclosure trigger"
     echo ""
@@ -152,6 +153,91 @@ run_setup() {
     fi
 }
 
+run_push_secrets() {
+    echo -e "\n${BOLD}=== Push Secrets to GitHub ===${NC}\n"
+    
+    # Check for gh CLI
+    if ! command -v gh &>/dev/null; then
+        echo -e "${RED}Error: GitHub CLI (gh) not installed${NC}"
+        echo "Install: https://cli.github.com/"
+        echo ""
+        echo "Or manually add secrets at:"
+        echo "  https://github.com/\${GITHUB_REPO}/settings/secrets/actions"
+        return 1
+    fi
+    
+    # Check gh auth
+    if ! gh auth status &>/dev/null; then
+        echo -e "${YELLOW}GitHub CLI not authenticated. Running 'gh auth login'...${NC}"
+        gh auth login
+    fi
+    
+    # Load secrets from .env
+    if [ ! -f ".env" ]; then
+        echo -e "${RED}Error: .env file not found. Run setup first.${NC}"
+        return 1
+    fi
+    
+    source .env
+    
+    # Detect repo
+    REPO="${GITHUB_REPOSITORY:-}"
+    if [ -z "$REPO" ] || [ "$REPO" == "owner/repo" ]; then
+        REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@github\.com:|https://github\.com/)##' | sed 's/\.git$//')
+    fi
+    
+    if [ -z "$REPO" ]; then
+        echo -e "${RED}Error: Could not determine repository${NC}"
+        return 1
+    fi
+    
+    echo -e "Repository: ${CYAN}${REPO}${NC}"
+    echo ""
+    echo -e "${BOLD}Secrets to push:${NC}"
+    
+    # List what we'll push
+    [ -n "$RESEND_API_KEY" ] && echo -e "  ✓ RESEND_API_KEY"
+    [ -n "$TWILIO_ACCOUNT_SID" ] && echo -e "  ✓ TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER"
+    [ -n "$RENEWAL_SECRET" ] && echo -e "  ✓ RENEWAL_SECRET"
+    [ -n "$RELEASE_SECRET" ] && echo -e "  ✓ RELEASE_SECRET"
+    [ -n "$RENEWAL_TRIGGER_TOKEN" ] && echo -e "  ✓ RENEWAL_TRIGGER_TOKEN"
+    [ -n "$GITHUB_TOKEN" ] && echo -e "  ✓ GITHUB_TOKEN (as GH_TOKEN)"
+    
+    echo ""
+    read -p "Push these secrets to ${REPO}? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        echo "Cancelled."
+        return 0
+    fi
+    
+    echo ""
+    echo "Pushing secrets..."
+    
+    # Push each secret
+    push_secret() {
+        local name="$1"
+        local value="$2"
+        if [ -n "$value" ]; then
+            echo "$value" | gh secret set "$name" -R "$REPO" && \
+                echo -e "  ${GREEN}✓${NC} $name" || \
+                echo -e "  ${RED}✗${NC} $name failed"
+        fi
+    }
+    
+    push_secret "RESEND_API_KEY" "$RESEND_API_KEY"
+    push_secret "TWILIO_ACCOUNT_SID" "$TWILIO_ACCOUNT_SID"
+    push_secret "TWILIO_AUTH_TOKEN" "$TWILIO_AUTH_TOKEN"
+    push_secret "TWILIO_FROM_NUMBER" "$TWILIO_FROM_NUMBER"
+    push_secret "OPERATOR_SMS" "$OPERATOR_SMS"
+    push_secret "RENEWAL_SECRET" "$RENEWAL_SECRET"
+    push_secret "RELEASE_SECRET" "$RELEASE_SECRET"
+    push_secret "RENEWAL_TRIGGER_TOKEN" "$RENEWAL_TRIGGER_TOKEN"
+    
+    echo ""
+    echo -e "${GREEN}Done!${NC} Secrets pushed to ${REPO}"
+    echo ""
+    echo "View at: https://github.com/${REPO}/settings/secrets/actions"
+}
 # Main loop
 main() {
     show_banner
@@ -173,6 +259,7 @@ main() {
             test) run_test ;;
             trigger|trigger-release) run_trigger_release ;;
             setup|wizard) run_setup ;;
+            secrets|push-secrets) run_push_secrets ;;
             help) show_help ;;
             *) 
                 echo "Unknown command: $1"
@@ -198,6 +285,7 @@ main() {
             8|build) run_build_site ;;
             9|test) run_test ;;
             0|setup) run_setup ;;
+            s|secrets) run_push_secrets ;;
             '!'|trigger) run_trigger_release ;;
             h|help) show_help ;;
             q|quit|exit) 

@@ -70,10 +70,29 @@ echo ""
 # Check for existing .env to preserve values
 EXISTING_PROJECT=""
 EXISTING_EMAIL=""
+EXISTING_DEADLINE=""
 if [ -f ".env" ]; then
     EXISTING_PROJECT=$(grep '^PROJECT_NAME=' .env 2>/dev/null | cut -d= -f2 || true)
     EXISTING_EMAIL=$(grep '^OPERATOR_EMAIL=' .env 2>/dev/null | cut -d= -f2 || true)
     echo -e "${CYAN}Found existing .env - will preserve credentials${NC}"
+fi
+
+# Try to get deadline from state if exists
+if [ -f "state/current.json" ] && command -v python3 &>/dev/null; then
+    EXISTING_DEADLINE=$(python3 -c "
+import json
+from datetime import datetime, timezone
+try:
+    with open('state/current.json') as f:
+        state = json.load(f)
+    deadline = datetime.fromisoformat(state['escalation']['deadline'].replace('Z', '+00:00'))
+    now = datetime.now(timezone.utc)
+    hours = int((deadline - now).total_seconds() / 3600)
+    if hours > 0:
+        print(hours)
+except:
+    pass
+" 2>/dev/null || true)
 fi
 
 # Suggest folder name as default project name
@@ -87,8 +106,9 @@ DEFAULT_EMAIL=${EXISTING_EMAIL:-"you@example.com"}
 read -p "Your email address [${DEFAULT_EMAIL}]: " OPERATOR_EMAIL
 OPERATOR_EMAIL=${OPERATOR_EMAIL:-$DEFAULT_EMAIL}
 
-read -p "Initial deadline (hours from now, default 48): " DEADLINE_HOURS
-DEADLINE_HOURS=${DEADLINE_HOURS:-48}
+DEFAULT_DEADLINE=${EXISTING_DEADLINE:-48}
+read -p "Initial deadline (hours from now) [${DEFAULT_DEADLINE}]: " DEADLINE_HOURS
+DEADLINE_HOURS=${DEADLINE_HOURS:-$DEFAULT_DEADLINE}
 
 echo ""
 echo -e "${GREEN}✓ Project: ${PROJECT_NAME}${NC}"

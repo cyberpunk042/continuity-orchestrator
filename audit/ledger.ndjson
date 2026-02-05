@@ -1,1 +1,1 @@
-{"event_type": "init", "timestamp": "2026-02-05T18:42:27.468823+00:00", "tick_id": "INIT-20260205T184227", "project": "my-deadman", "github_repository": "owner/repo", "operator_email": "jfm.devops.expert@gmail.com", "deadline": "2026-02-06T18:42:27.468823+00:00"}
+{"event_type": "init", "timestamp": "2026-02-05T19:05:09.973068+00:00", "tick_id": "INIT-20260205T190509", "project": "my-deadman", "github_repository": "cyberpunk042/continuity-orchestrator", "operator_email": "jfm.devops.expert@gmail.com", "deadline": "2026-02-07T19:05:09.973068+00:00"}
