@@ -19,6 +19,7 @@ _env_file = _project_root / ".env"
 if _env_file.exists():
     load_dotenv(_env_file)
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -156,22 +157,146 @@ def set_deadline(ctx: click.Context, hours: float, state_file: str) -> None:
 
 @cli.command()
 @click.option("--state-file", default="state/current.json")
+@click.option("--full", is_flag=True, help="Full factory reset (new state + clear audit)")
+@click.option("--backup/--no-backup", default=True, help="Backup existing state before reset")
+@click.option("--hours", default=48, type=int, help="Initial deadline hours for full reset")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
-def reset(ctx: click.Context, state_file: str) -> None:
-    """Reset escalation state to OK."""
+def reset(
+    ctx: click.Context,
+    state_file: str,
+    full: bool,
+    backup: bool,
+    hours: int,
+    yes: bool,
+) -> None:
+    """Reset state to OK or perform full factory reset.
+    
+    Without --full: Just resets escalation state to OK.
+    With --full: Creates fresh state and clears audit log.
+    """
+    import json
+    import shutil
+    
     root = ctx.obj["root"]
     state_path = root / state_file
+    audit_path = root / "audit" / "ledger.ndjson"
+    backup_dir = root / "backups"
+    
+    if full and not yes:
+        click.secho("⚠️  FULL RESET will:", fg="yellow", bold=True)
+        click.echo("  - Create fresh state with new deadline")
+        click.echo("  - Clear the audit log")
+        if backup:
+            click.echo("  - Backup existing files first")
+        if not click.confirm("Continue?"):
+            click.echo("Cancelled.")
+            return
+    
+    now = datetime.now(timezone.utc)
+    
+    # Backup existing state if requested
+    if backup and state_path.exists():
+        backup_dir.mkdir(exist_ok=True)
+        timestamp = now.strftime("%Y%m%dT%H%M%S")
+        
+        # Backup state
+        backup_state = backup_dir / f"state_{timestamp}.json"
+        shutil.copy(state_path, backup_state)
+        click.echo(f"  Backed up state to: {backup_state}")
+        
+        # Backup audit log
+        if full and audit_path.exists():
+            backup_audit = backup_dir / f"audit_{timestamp}.ndjson"
+            shutil.copy(audit_path, backup_audit)
+            click.echo(f"  Backed up audit to: {backup_audit}")
+    
+    if full:
+        # Full factory reset - create new state
+        from .models.state import (
+            State, Meta, Mode, Timer, Renewal, Security,
+            Escalation, Actions, ReleaseConfig, Integrations, EnabledAdapters,
+            Routing, Pointers
+        )
+        
+        # Read operator email from env or existing state
+        operator_email = os.environ.get("OPERATOR_EMAIL", "operator@example.com")
+        project_name = os.environ.get("PROJECT_NAME", "my-project")
+        
+        new_deadline = now + timedelta(hours=hours)
+        
+        new_state = State(
+            meta=Meta(
+                schema_version=1,
+                project=project_name,
+                state_id=f"S-INIT-{now.strftime('%Y%m%d')}",
+                updated_at_iso=now.isoformat(),
+                policy_version=1,
+                plan_id="default",
+            ),
+            mode=Mode(name="renewable_countdown", armed=True),
+            timer=Timer(
+                deadline_iso=new_deadline.isoformat(),
+                grace_minutes=0,
+                now_iso=now.isoformat(),
+                time_to_deadline_minutes=hours * 60,
+                overdue_minutes=0,
+            ),
+            renewal=Renewal(
+                last_renewal_iso=now.isoformat(),
+                renewed_this_tick=False,
+                renewal_count=0,
+            ),
+            security=Security(),
+            escalation=Escalation(
+                state="OK",
+                state_entered_at_iso=now.isoformat(),
+            ),
+            actions=Actions(),
+            release=ReleaseConfig(),
+            integrations=Integrations(
+                enabled_adapters=EnabledAdapters(),
+                routing=Routing(operator_email=operator_email),
+            ),
+            pointers=Pointers(),
+        )
+        
+        save_state(new_state, state_path)
+        
+        # Clear audit log (write init entry)
+        audit_path.parent.mkdir(exist_ok=True)
+        init_entry = {
+            "event_type": "factory_reset",
+            "timestamp": now.isoformat(),
+            "tick_id": f"RESET-{now.strftime('%Y%m%dT%H%M%S')}",
+            "new_deadline": new_deadline.isoformat(),
+            "hours": hours,
+        }
+        with open(audit_path, "w") as f:
+            f.write(json.dumps(init_entry) + "\n")
+        
+        click.secho("\n✅ Full factory reset complete", fg="green", bold=True)
+        click.echo(f"  Project: {project_name}")
+        click.echo(f"  Deadline: {new_deadline.isoformat()}")
+        click.echo(f"  ({hours} hours from now)")
+    else:
+        # Simple reset - just reset escalation state
+        state = load_state(state_path)
+        
+        state.escalation.state = "OK"
+        state.escalation.state_entered_at_iso = now.isoformat()
+        state.escalation.last_transition_rule_id = "MANUAL_RESET"
+        state.actions.executed = {}
+        state.actions.last_tick_actions = []
+        state.renewal.renewed_this_tick = False
+        state.release.triggered = False
+        state.release.client_token = None
+        
+        state.meta.updated_at_iso = now.isoformat()
+        
+        save_state(state, state_path)
+        click.secho("✅ State reset to OK", fg="green")
 
-    state = load_state(state_path)
-
-    state.escalation.state = "OK"
-    state.escalation.state_entered_at_iso = datetime.now(timezone.utc).isoformat()
-    state.escalation.last_transition_rule_id = None
-    state.actions.executed = {}
-    state.actions.last_tick_actions = []
-
-    save_state(state, state_path)
-    click.secho("State reset to OK", fg="green")
 
 
 @cli.command("renew")
