@@ -158,6 +158,7 @@ services:
       - .:/repo
       # Shared volume for built site
       - public-data:/public
+    user: root
     networks:
       - continuity-net
     entrypoint: ["/bin/sh", "-c"]
@@ -170,7 +171,8 @@ services:
         
         cd /repo
         
-        # Configure git identity
+        # Configure git for root user
+        git config --global --add safe.directory /repo
         git config user.name "Continuity Orchestrator"
         git config user.email "continuity@automated.bot"
         

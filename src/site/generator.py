@@ -52,18 +52,15 @@ class SiteGenerator:
     ) -> Dict[str, Any]:
         """Build the complete static site."""
         if clean and self.output_dir.exists():
-            try:
-                shutil.rmtree(self.output_dir)
-            except PermissionError:
-                # In Docker, may have root-owned files - just clean what we can
-                for item in self.output_dir.iterdir():
-                    try:
-                        if item.is_dir():
-                            shutil.rmtree(item)
-                        else:
-                            item.unlink()
-                    except PermissionError:
-                        pass  # Skip files we can't delete
+            # Clean contents, not the directory itself (for Docker volume compatibility)
+            for item in self.output_dir.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except (PermissionError, OSError):
+                    pass  # Skip files we can't delete
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
