@@ -257,13 +257,16 @@ else
 fi
 echo ""
 
-# Part 2: GITHUB_TOKEN (for publishing content via API when escalation triggers)
-echo -e "${BOLD}   🔑 Publishing Token (GITHUB_TOKEN)${NC}"
-echo -e "${DIM}   Used when: Escalation triggers content publishing via GitHub API${NC}"
-echo -e "${DIM}   Actions: Create/update files, create releases, post gists${NC}"
-echo -e "${DIM}   Permissions: 'repo' and 'workflow'${NC}"
+# Part 2: GITHUB_TOKEN (for backend git sync + API adapter)
+echo -e "${BOLD}   🔑 Git Sync Token (GITHUB_TOKEN)${NC}"
+echo -e "${DIM}   Required for: Backend/Docker deployment to push state to GitHub${NC}"
+echo -e "${DIM}   Also used by: github_surface adapter (create files, releases, gists)${NC}"
+echo -e "${DIM}   Permissions: 'repo' (read/write) and 'workflow'${NC}"
 echo -e "${DIM}   Create at: https://github.com/settings/tokens${NC}"
-echo -e "${YELLOW}   ⚠ Most users skip this - GitHub Actions provides its own token${NC}"
+echo ""
+echo -e "${CYAN}   Who needs this?${NC}"
+echo -e "${DIM}   • Docker/backend deployment → YES (for git push to sync state)${NC}"
+echo -e "${DIM}   • GitHub Actions only → NO (Actions has its own token)${NC}"
 if [ -n "$GITHUB_TOKEN" ]; then
     echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$GITHUB_TOKEN")]"
     read -p "   Replace? (y/N): " REPLACE_TOKEN
@@ -273,7 +276,7 @@ if [ -n "$GITHUB_TOKEN" ]; then
     fi
     HAS_REAL_ADAPTER="true"
 else
-    read -p "   GitHub Token (Enter to skip - recommended): " GITHUB_TOKEN
+    read -p "   GitHub Token (required for backend, skip for Actions-only): " GITHUB_TOKEN
     [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
 fi
 echo ""

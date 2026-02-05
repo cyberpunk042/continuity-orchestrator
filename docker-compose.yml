@@ -168,9 +168,26 @@ services:
         
         cd /repo
         
-        # Configure git
+        # Configure git identity
         git config user.name "Continuity Orchestrator"
         git config user.email "continuity@automated.bot"
+        
+        # Configure git credentials for HTTPS push using GITHUB_TOKEN
+        if [ -n "$GITHUB_TOKEN" ]; then
+          echo "Configuring git credentials..."
+          git config credential.helper store
+          # Extract owner/repo from remote URL
+          REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+          if echo "$REMOTE_URL" | grep -q "github.com"; then
+            # Convert to HTTPS URL with token
+            REPO_PATH=$(echo "$REMOTE_URL" | sed -E 's#(git@github\.com:|https://github\.com/)##' | sed 's/\.git$//')
+            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
+            echo "Git configured for authenticated push"
+          fi
+        else
+          echo "WARNING: GITHUB_TOKEN not set - git push will fail!"
+          echo "Set GITHUB_TOKEN in .env for backend git sync"
+        fi
         
         while true; do
           echo "═══════════════════════════════════════════"
