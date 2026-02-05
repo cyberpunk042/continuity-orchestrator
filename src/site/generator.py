@@ -145,6 +145,9 @@ class SiteGenerator:
             if routing and hasattr(routing, 'github_repository'):
                 github_repo = routing.github_repository
         
+        # Get renewal trigger token if configured (fine-grained PAT with only actions:write)
+        renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
+        
         context = {
             "project": state.meta.project,
             "state_id": state.meta.state_id,
@@ -160,6 +163,7 @@ class SiteGenerator:
             "build_time": datetime.now(timezone.utc).isoformat(),
             "audit_entries": audit_entries or [],
             "github_repository": github_repo or "OWNER/REPO",
+            "renewal_trigger_token": renewal_trigger_token,  # For direct API renewal
         }
         
         # Load content manifest for stage-based visibility
@@ -389,6 +393,7 @@ class SiteGenerator:
         deadline = context["deadline"]
         project = context["project"]
         github_repo = context.get("github_repository", "OWNER/REPO")
+        renewal_token = context.get("renewal_trigger_token", "")
         
         # Stage styling
         stage_colors = {
@@ -621,13 +626,17 @@ class SiteGenerator:
         
         .github-action-btn {{
             display: block;
+            width: 100%;
             padding: 1rem 1.5rem;
             background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
             color: white;
             text-decoration: none;
+            border: none;
             border-radius: 8px;
             font-weight: 600;
+            font-size: 1rem;
             text-align: center;
+            cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
             margin-bottom: 1rem;
         }}
@@ -637,23 +646,149 @@ class SiteGenerator:
             box-shadow: 0 4px 12px rgba(46, 160, 67, 0.3);
         }}
         
-        .renewal-steps {{
-            background: var(--color-bg);
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            padding: 1rem;
-            font-size: 0.875rem;
-            text-align: left;
+        .github-action-btn:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
         }}
         
-        .renewal-steps ol {{
-            margin-left: 1.5rem;
+        .renewal-form select {{
+            padding: 0.75rem 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-size: 0.875rem;
+            cursor: pointer;
+        }}
+        
+        .hidden {{
+            display: none !important;
+        }}
+        
+        .renewal-instructions {{
+            background: var(--color-bg);
+            border: 1px solid var(--color-accent);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            text-align: left;
+            animation: slideIn 0.3s ease-out;
+        }}
+        
+        @keyframes slideIn {{
+            from {{ opacity: 0; transform: translateY(-10px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        
+        .instruction-card {{
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 0.75rem 0;
+        }}
+        
+        .instruction-card:not(:last-child) {{
+            border-bottom: 1px solid var(--color-border);
+        }}
+        
+        .step-number {{
+            width: 28px;
+            height: 28px;
+            background: var(--color-accent);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }}
+        
+        .step-content {{
+            flex: 1;
+        }}
+        
+        .step-content p {{
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }}
+        
+        .step-content ol {{
+            margin-left: 1.25rem;
             margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }}
+        
+        .step-content li {{
+            margin-bottom: 0.25rem;
+        }}
+        
+        .step-check {{
+            color: #10b981;
+            font-size: 1.5rem;
+        }}
+        
+        .code-inline {{
+            background: var(--color-surface);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8em;
+            border: 1px solid var(--color-border);
+        }}
+        
+        .link-btn {{
+            width: 100%;
+            padding: 0.75rem;
+            background: transparent;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            color: var(--color-accent);
+            font-size: 0.875rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }}
+        
+        .link-btn:hover {{
+            background: var(--color-surface);
+        }}
+        
+        .alt-method {{
+            margin-top: 1.5rem;
+            font-size: 0.875rem;
             color: var(--color-text-muted);
         }}
         
-        .renewal-steps li {{
+        .alt-method summary {{
+            cursor: pointer;
+            padding: 0.5rem;
+        }}
+        
+        .alt-method summary:hover {{
+            color: var(--color-text);
+        }}
+        
+        .alt-content {{
+            padding: 1rem;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            margin-top: 0.5rem;
+        }}
+        
+        .alt-content ol {{
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+        }}
+        
+        .alt-content li {{
             margin-bottom: 0.25rem;
+        }}
+        
+        .alt-content a {{
+            color: var(--color-accent);
         }}
         
         .nav {{
@@ -688,32 +823,65 @@ class SiteGenerator:
         </div>
         
         <div class="renewal-section">
-            <h2>🔐 Extend Deadline</h2>
-            <p class="renewal-desc">Enter your renewal code, then click to trigger the renewal workflow.</p>
+            <h2>🔐 Check In</h2>
+            <p class="renewal-desc">Enter your renewal code to extend the deadline.</p>
             
             <div class="renewal-form">
                 <input type="password" id="renewal-code" placeholder="Enter renewal code" autocomplete="off">
-                <button type="button" id="copy-btn" title="Copy code">📋</button>
+                <select id="extend-hours" title="Hours to extend">
+                    <option value="24">+24h</option>
+                    <option value="48" selected>+48h</option>
+                    <option value="72">+72h</option>
+                    <option value="168">+1 week</option>
+                </select>
             </div>
             
-            <a href="https://github.com/{github_repo}/actions/workflows/renew.yml" 
-               target="_blank" 
-               class="github-action-btn"
-               id="action-link">
-                🚀 Open Renewal Workflow on GitHub
-            </a>
+            <button type="button" class="github-action-btn" id="renew-btn" onclick="handleRenewal()">
+                🚀 Renew Now
+            </button>
             
-            <div class="renewal-steps">
-                <p><strong>Steps:</strong></p>
-                <ol>
-                    <li>Enter your code above</li>
-                    <li>Click "📋" to copy it</li>
-                    <li>Click the button to open GitHub Actions</li>
-                    <li>Click "Run workflow" and paste your code</li>
-                </ol>
+            <div id="renewal-instructions" class="renewal-instructions hidden">
+                <div class="instruction-card">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <strong>Code copied to clipboard!</strong>
+                        <p>Your renewal code is ready to paste.</p>
+                    </div>
+                    <div class="step-check" id="step1-check">✓</div>
+                </div>
+                
+                <div class="instruction-card">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <strong>On GitHub:</strong>
+                        <ol>
+                            <li>Click <span class="code-inline">Run workflow</span></li>
+                            <li>Paste your code in <span class="code-inline">Renewal code</span></li>
+                            <li>Click <span class="code-inline">Run workflow</span> (green button)</li>
+                        </ol>
+                    </div>
+                </div>
+                
+                <button type="button" class="link-btn" onclick="openGitHub()">
+                    Didn't open? Click here to go to GitHub →
+                </button>
             </div>
             
             <div class="renewal-status" id="renewal-status"></div>
+            
+            <details class="alt-method">
+                <summary>Alternative: Manual renewal</summary>
+                <div class="alt-content">
+                    <p>If the button doesn't work, you can renew manually:</p>
+                    <ol>
+                        <li>Go to <a href="https://github.com/{github_repo}/actions/workflows/renew.yml" target="_blank">Renew Workflow →</a></li>
+                        <li>Click "Run workflow"</li>
+                        <li>Enter your renewal code</li>
+                        <li>Choose hours to extend</li>
+                        <li>Click "Run workflow"</li>
+                    </ol>
+                </div>
+            </details>
         </div>
         
         <nav class="nav">
@@ -769,32 +937,127 @@ class SiteGenerator:
         updateCountdown();
         setInterval(updateCountdown, 1000);
         
-        // Copy to clipboard functionality
-        const copyBtn = document.getElementById("copy-btn");
-        const codeInput = document.getElementById("renewal-code");
-        const statusEl = document.getElementById("renewal-status");
+        // Renewal functionality
+        const GITHUB_REPO = "{github_repo}";
+        const GITHUB_WORKFLOW_URL = "https://github.com/" + GITHUB_REPO + "/actions/workflows/renew.yml";
+        const TRIGGER_TOKEN = "{renewal_token}";  // Fine-grained PAT with only actions:write
         
-        copyBtn.addEventListener("click", async () => {{
+        async function handleRenewal() {{
+            const codeInput = document.getElementById("renewal-code");
+            const hoursSelect = document.getElementById("extend-hours");
+            const statusEl = document.getElementById("renewal-status");
+            const instructionsEl = document.getElementById("renewal-instructions");
+            const renewBtn = document.getElementById("renew-btn");
             const code = codeInput.value.trim();
+            const hours = hoursSelect.value;
+            
             if (!code) {{
-                showStatus("Please enter a code first", "error");
+                showStatus("Please enter your renewal code", "error");
+                codeInput.focus();
                 return;
             }}
             
+            // If we have a trigger token, use direct API!
+            if (TRIGGER_TOKEN) {{
+                renewBtn.disabled = true;
+                renewBtn.textContent = "⏳ Sending...";
+                
+                try {{
+                    const response = await fetch(
+                        `https://api.github.com/repos/${{GITHUB_REPO}}/actions/workflows/renew.yml/dispatches`,
+                        {{
+                            method: "POST",
+                            headers: {{
+                                "Accept": "application/vnd.github+json",
+                                "Authorization": `Bearer ${{TRIGGER_TOKEN}}`,
+                                "X-GitHub-Api-Version": "2022-11-28",
+                                "Content-Type": "application/json",
+                            }},
+                            body: JSON.stringify({{
+                                ref: "main",
+                                inputs: {{
+                                    renewal_code: code,
+                                    extend_hours: hours
+                                }}
+                            }})
+                        }}
+                    );
+                    
+                    if (response.status === 204) {{
+                        showStatus("✅ Renewal triggered! Check GitHub Actions for status.", "success");
+                        renewBtn.textContent = "✓ Sent!";
+                        renewBtn.classList.add("success");
+                        
+                        // Show link to check status
+                        instructionsEl.innerHTML = `
+                            <div class="instruction-card">
+                                <div class="step-number">✓</div>
+                                <div class="step-content">
+                                    <strong>Renewal request sent!</strong>
+                                    <p>The workflow is now running. Your deadline will be extended if the code is correct.</p>
+                                </div>
+                            </div>
+                            <a href="${{GITHUB_WORKFLOW_URL}}" target="_blank" class="link-btn">
+                                View workflow status on GitHub →
+                            </a>
+                        `;
+                        instructionsEl.classList.remove("hidden");
+                        
+                        setTimeout(() => {{
+                            renewBtn.textContent = "🚀 Renew Now";
+                            renewBtn.disabled = false;
+                            renewBtn.classList.remove("success");
+                        }}, 5000);
+                    }} else if (response.status === 401 || response.status === 403) {{
+                        showStatus("⚠️ Token expired or invalid. Using manual flow.", "error");
+                        fallbackToManual(code);
+                    }} else {{
+                        const error = await response.text();
+                        console.error("API error:", response.status, error);
+                        showStatus("⚠️ API error. Using manual flow.", "error");
+                        fallbackToManual(code);
+                    }}
+                }} catch (err) {{
+                    console.error("Network error:", err);
+                    showStatus("⚠️ Network error. Using manual flow.", "error");
+                    fallbackToManual(code);
+                }}
+                
+                renewBtn.disabled = false;
+                if (renewBtn.textContent === "⏳ Sending...") {{
+                    renewBtn.textContent = "🚀 Renew Now";
+                }}
+            }} else {{
+                // No token - use manual flow
+                fallbackToManual(code);
+            }}
+        }}
+        
+        async function fallbackToManual(code) {{
+            const instructionsEl = document.getElementById("renewal-instructions");
+            
+            // Copy to clipboard
             try {{
                 await navigator.clipboard.writeText(code);
-                showStatus("✓ Code copied to clipboard!", "success");
-                copyBtn.textContent = "✓";
-                setTimeout(() => {{ copyBtn.textContent = "📋"; }}, 2000);
             }} catch (err) {{
-                // Fallback for older browsers
+                const codeInput = document.getElementById("renewal-code");
                 codeInput.select();
                 document.execCommand('copy');
-                showStatus("✓ Code copied!", "success");
             }}
-        }});
+            
+            // Show instructions
+            instructionsEl.classList.remove("hidden");
+            
+            // Open GitHub in new tab
+            window.open(GITHUB_WORKFLOW_URL, "_blank");
+        }}
+        
+        function openGitHub() {{
+            window.open(GITHUB_WORKFLOW_URL, "_blank");
+        }}
         
         function showStatus(message, type) {{
+            const statusEl = document.getElementById("renewal-status");
             statusEl.textContent = message;
             statusEl.className = `renewal-status ${{type}}`;
             
@@ -802,7 +1065,7 @@ class SiteGenerator:
             if (type === "success") {{
                 setTimeout(() => {{
                     statusEl.className = "renewal-status";
-                }}, 3000);
+                }}, 5000);
             }}
         }}
     </script>
