@@ -25,10 +25,10 @@
     <script>
         const CURRENT_DEADLINE = "{{ deadline }}";
         const CURRENT_STAGE = "{{ stage }}";
-        const CURRENT_RELEASE_TRIGGERED = {{ release_triggered|default (false) | lower }};
+        const CURRENT_RELEASE_TRIGGERED = {{ release_triggered|default (false) | tojson }};
         const POLL_INTERVAL = 15000;
 
-        // Check if release is triggered (from status.json)
+        // Instant check - no waiting, uses value from template
         function isReleaseTriggered() {
             return CURRENT_RELEASE_TRIGGERED;
         }
@@ -38,7 +38,6 @@
                 const response = await fetch("{{ base_path|default('') }}status.json?t=" + Date.now(), { cache: "no-store" });
                 if (response.ok) {
                     const status = await response.json();
-                    // Reload if anything changed (deadline, stage, or release_triggered)
                     if (status.deadline !== CURRENT_DEADLINE ||
                         status.stage !== CURRENT_STAGE ||
                         status.release_triggered !== CURRENT_RELEASE_TRIGGERED) {
@@ -49,6 +48,7 @@
         }
 
         setInterval(checkForStateChange, POLL_INTERVAL);
+        checkForStateChange(); // Check immediately on load
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) checkForStateChange();
         });

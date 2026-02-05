@@ -114,8 +114,9 @@
 
     // Format deadline display nicely
     if (isReleaseFaked) {
-        deadlineEl.textContent = "CANCELLED";
-        deadlineEl.style.color = "var(--color-danger)";
+        deadlineEl.textContent = "DELAYED";
+        deadlineEl.style.color = "var(--color-warning)";
+        deadlineEl.style.fontWeight = "bold";
     } else {
         deadlineEl.textContent = deadline.toLocaleString(undefined, {
             weekday: 'short',
@@ -128,11 +129,12 @@
     }
 
     function updateCountdown() {
-        // If release is faked, show cancelled state
+        // If release is triggered, show delayed state prominently
         if (isReleaseFaked) {
-            timerEl.textContent = "STOPPED";
-            timerEl.className = "countdown-timer cancelled";
-            timerEl.style.color = "#888";
+            timerEl.textContent = "⏸️ RELEASE DELAYED";
+            timerEl.className = "countdown-timer delayed";
+            timerEl.style.color = "var(--color-warning)";
+            timerEl.style.fontSize = "2rem";
             return;
         }
 
