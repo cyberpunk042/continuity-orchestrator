@@ -15,8 +15,10 @@ on:
   push:
     branches: [main]
     paths:
+      - 'public/**'
       - 'state/**'
       - 'templates/**'
+      - 'src/site/**'
 
 # Sets permissions for GitHub Pages
 permissions:
