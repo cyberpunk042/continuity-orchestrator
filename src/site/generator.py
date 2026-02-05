@@ -189,6 +189,7 @@ class SiteGenerator:
         # Override if release is triggered (delayed)
         release_triggered = state.release.triggered if hasattr(state, 'release') else False
         if release_triggered:
+            stage = "DELAYED"
             status_class = "status-delayed"
             status_message = "Release delayed. Awaiting confirmation."
         
