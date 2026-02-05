@@ -1,7 +1,7 @@
 # Continuity Orchestrator — Roadmap
 
 > **Last Updated**: 2026-02-04  
-> **Status**: Foundation Complete → Building Toward Autonomy
+> **Status**: Production Ready → Expanding Capabilities
 
 ---
 
@@ -14,30 +14,46 @@
 | **Core Engine** | ✅ Working | ~600 | Tick lifecycle, rules, time eval |
 | **State Management** | ✅ Working | ~200 | Pydantic models, JSON persistence |
 | **Policy System** | ✅ Working | ~300 | YAML loader, rule evaluation |
-| **Adapter Framework** | ✅ Working | ~400 | Base interface, mock implementations |
-| **Template System** | ✅ Working | ~200 | Resolver, context, 7 template files |
+| **Adapter Framework** | ✅ Working | ~1200 | 8 production adapters |
+| **Template System** | ✅ Working | ~200 | Resolver, context, templates |
 | **Audit Trail** | ✅ Working | ~180 | NDJSON append-only ledger |
-| **CLI** | ✅ Working | ~165 | tick, status, set-deadline, reset |
-| **GitHub Workflow** | ✅ Fixed | ~90 | Valid YAML, dry-run support |
+| **CLI** | ✅ Enhanced | ~780 | 12 commands, health/metrics |
+| **Site Generator** | ✅ Working | ~1100 | Static HTML, articles |
+| **Reliability** | ✅ New | ~500 | Retry queue, circuit breakers |
+| **Observability** | ✅ New | ~400 | Metrics, health checks |
+| **Testing** | ✅ Strong | ~3000 | 255 tests, ~80% coverage |
 
-**Total**: ~2,180 lines of Python across 16 modules, ~83 docstrings
+**Total**: ~8,500 lines of Python across 25+ modules
 
-### What's Missing / Incomplete ⚠️
+### Adapters ✅
 
-| Area | Gap | Priority |
-|------|-----|----------|
-| **Documentation** | ✅ DEVELOPMENT.md, updated README | Done |
-| **Code Comments** | ✅ Enhanced docstrings in rules.py, tick.py | Done |
-| **Type Hints** | Present but incomplete in some places | P2 |
-| **Tests** | ✅ 40 tests passing (time, rules, state) | Done |
-| **Real Adapters** | ✅ Webhook adapter, others mocked | In Progress |
-| **CI Automation** | ✅ test.yml workflow created | Done |
-| **Asset Management** | No system for posts/articles/messages | P3 |
-| **Site Generation** | No static site or public surface | P3 |
-| **Renewal Interface** | No web UI or API for renewal | P2 |
-| **Secrets Management** | Defined in workflow but not used | P2 |
-| **Logging** | Uses stdlib logging but not configured | P2 |
-| **Error Handling** | Minimal, needs hardening | P2 |
+| Adapter | Status | Description |
+|---------|--------|-------------|
+| Email (Resend) | ✅ | Production email notifications |
+| SMS (Twilio) | ✅ | SMS alerts with E.164 validation |
+| X (Twitter) | ✅ | OAuth 1.0a, API v2 |
+| Reddit | ✅ | PRAW multi-subreddit posting |
+| Webhook | ✅ | HTTP POST integrations |
+| GitHub Surface | ✅ | Gists/Pages artifacts |
+| Persistence API | ✅ | Remote state sync |
+| Article Publish | ✅ | Stage-based content |
+
+### CLI Commands ✅
+
+| Command | Description |
+|---------|-------------|
+| `tick` | Execute engine tick |
+| `status` | Show system status |
+| `health` | Health check with components |
+| `metrics` | Prometheus/JSON metrics |
+| `retry-queue` | Manage failed actions |
+| `circuit-breakers` | View/reset breakers |
+| `check-config` | Validate adapters |
+| `build-site` | Generate static site |
+| `renew` | Extend deadline |
+| `set-deadline` | Adjust deadline |
+| `reset` | Reset escalation |
+| `init` | New project wizard |
 
 ---
 

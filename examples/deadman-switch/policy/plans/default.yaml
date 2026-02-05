@@ -1,0 +1,60 @@
+# Deadman Switch Action Plan
+#
+# Defines what happens at each escalation stage
+
+plan_id: deadman-default
+version: 1
+
+stages:
+  OK:
+    # No actions in OK state
+    actions: []
+
+  WARNING:
+    # Remind the operator
+    actions:
+      - id: ACT_WARN_EMAIL
+        type: email
+        to: "{{operator_email}}"
+        template: reminder
+        subject: "⏰ Continuity reminder - 24h remaining"
+        idempotent: true
+
+  CRITICAL:
+    # Urgent alert to operator + notify custodians
+    actions:
+      - id: ACT_URGENT_EMAIL
+        type: email
+        to: "{{operator_email}}"
+        template: urgent
+        subject: "🚨 URGENT - 6h until deadline"
+        idempotent: true
+
+      - id: ACT_NOTIFY_CUSTODIANS
+        type: email
+        to: "{{custodian_emails}}"
+        template: custodian_alert
+        subject: "Continuity alert - action may be required"
+        idempotent: true
+
+  FINAL:
+    # Full release
+    actions:
+      - id: ACT_FINAL_EMAIL
+        type: email
+        to: "{{operator_email}}"
+        template: final_notice
+        subject: "📋 Continuity executed"
+        idempotent: true
+
+      - id: ACT_CUSTODIAN_FINAL
+        type: email
+        to: "{{custodian_emails}}"
+        template: final_release
+        subject: "Continuity release - please read"
+        idempotent: true
+
+      - id: ACT_PUBLISH_SITE
+        type: github_surface
+        artifact: public_letter
+        idempotent: true

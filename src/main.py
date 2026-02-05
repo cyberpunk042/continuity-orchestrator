@@ -9,8 +9,17 @@ Usage:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+# Load .env file FIRST, before any other imports that might read env vars
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Find .env in project root
+_project_root = Path(__file__).parent.parent
+_env_file = _project_root / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
+
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import click
@@ -335,6 +344,46 @@ def check_config(ctx: click.Context) -> None:
                 click.echo(f"    → {status.guidance}")
 
 
+@cli.command("generate-config")
+@click.option("--output", "-o", help="Output file (default: stdout)")
+@click.pass_context
+def generate_config(ctx: click.Context, output: str) -> None:
+    """
+    Generate a CONTINUITY_CONFIG template.
+    
+    This creates a JSON template you can use as a single GitHub secret
+    instead of configuring each adapter secret individually.
+    """
+    from .config.loader import generate_master_config_template
+    
+    template = generate_master_config_template()
+    
+    if output:
+        with open(output, "w") as f:
+            f.write(template)
+        click.secho(f"✅ Template written to {output}", fg="green")
+        click.echo()
+        click.echo("Next steps:")
+        click.echo("  1. Edit the file with your credentials")
+        click.echo("  2. Add as GitHub secret named CONTINUITY_CONFIG")
+        click.echo("     (paste the entire JSON content)")
+    else:
+        click.echo()
+        click.secho("CONTINUITY_CONFIG Template", bold=True)
+        click.echo("─" * 40)
+        click.echo()
+        click.echo(template)
+        click.echo()
+        click.echo("─" * 40)
+        click.echo()
+        click.echo("To use this:")
+        click.echo("  1. Copy the JSON above")
+        click.echo("  2. Fill in your credentials")
+        click.echo("  3. Go to GitHub → Settings → Secrets → Actions")
+        click.echo("  4. Create secret named: CONTINUITY_CONFIG")
+        click.echo("  5. Paste the JSON as the value")
+
+
 @cli.command("status")
 @click.option(
     "--state-file",
@@ -379,31 +428,175 @@ def status(ctx: click.Context, state_file: str) -> None:
     click.echo()
 
 
+@cli.command("health")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--state-file", default="state/current.json", help="Path to state file")
+@click.pass_context
+def health(ctx: click.Context, as_json: bool, state_file: str) -> None:
+    """Check system health status."""
+    from .observability.health import HealthChecker, HealthStatus
+    
+    root = ctx.obj["root"]
+    state_path = root / state_file
+    audit_path = root / "audit" / "ledger.ndjson"
+    
+    checker = HealthChecker(state_path=state_path, audit_path=audit_path)
+    result = checker.check()
+    
+    if as_json:
+        import json
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        return
+    
+    # Status header
+    status_colors = {
+        HealthStatus.HEALTHY: ("✅", "green"),
+        HealthStatus.DEGRADED: ("⚠️", "yellow"),
+        HealthStatus.UNHEALTHY: ("❌", "red"),
+    }
+    icon, color = status_colors.get(result.status, ("❓", "white"))
+    
+    click.echo()
+    click.secho(f"{icon} System Health: {result.status.value.upper()}", fg=color, bold=True)
+    click.echo(f"   Uptime: {result.uptime_seconds:.0f}s")
+    click.echo()
+    
+    # Components
+    click.echo("Components:")
+    for component in result.components:
+        c_icon, c_color = status_colors.get(component.status, ("❓", "white"))
+        click.echo(f"  {c_icon} ", nl=False)
+        click.secho(f"{component.name}", fg=c_color, bold=True, nl=False)
+        click.echo(f": {component.message}")
+        if component.latency_ms:
+            click.echo(f"      Latency: {component.latency_ms:.1f}ms")
+    
+    click.echo()
+    
+    # Exit code based on health
+    if result.status == HealthStatus.UNHEALTHY:
+        raise SystemExit(1)
+
+
+@cli.command("metrics")
+@click.option("--format", "output_format", type=click.Choice(["prometheus", "json"]), default="prometheus")
+@click.pass_context
+def metrics_cmd(ctx: click.Context, output_format: str) -> None:
+    """Export metrics for monitoring."""
+    from .observability.metrics import metrics
+    
+    if output_format == "json":
+        import json
+        click.echo(json.dumps(metrics.export_json(), indent=2))
+    else:
+        click.echo(metrics.export_prometheus())
+
+
+@cli.command("retry-queue")
+@click.option("--action", type=click.Choice(["status", "clear"]), default="status")
+@click.pass_context
+def retry_queue_cmd(ctx: click.Context, action: str) -> None:
+    """Manage the retry queue for failed actions."""
+    from .reliability.retry_queue import RetryQueue
+    
+    root = ctx.obj["root"]
+    queue = RetryQueue(root / "state" / "retry_queue.json")
+    
+    if action == "status":
+        stats = queue.get_stats()
+        click.echo()
+        click.echo("📋 Retry Queue Status")
+        click.echo()
+        click.echo(f"  Total items:   {stats['total_items']}")
+        click.echo(f"  Pending now:   {stats['pending_now']}")
+        
+        if stats["by_adapter"]:
+            click.echo()
+            click.echo("  By adapter:")
+            for adapter, count in stats["by_adapter"].items():
+                click.echo(f"    {adapter}: {count}")
+        
+        click.echo()
+    
+    elif action == "clear":
+        count = queue.clear()
+        click.secho(f"✅ Cleared {count} items from retry queue", fg="green")
+
+
+@cli.command("circuit-breakers")
+@click.option("--reset", "do_reset", is_flag=True, help="Reset all circuit breakers")
+@click.pass_context
+def circuit_breakers_cmd(ctx: click.Context, do_reset: bool) -> None:
+    """View and manage circuit breakers."""
+    from .reliability.circuit_breaker import get_registry, CircuitState
+    
+    registry = get_registry()
+    
+    if do_reset:
+        registry.reset_all()
+        click.secho("✅ All circuit breakers reset", fg="green")
+        return
+    
+    stats = registry.get_all_stats()
+    
+    if not stats:
+        click.echo("No circuit breakers registered")
+        return
+    
+    click.echo()
+    click.echo("🔌 Circuit Breakers")
+    click.echo()
+    
+    for name, data in stats.items():
+        state = data["state"]
+        color = {
+            "closed": "green",
+            "open": "red",
+            "half_open": "yellow",
+        }.get(state, "white")
+        
+        icon = {
+            "closed": "🟢",
+            "open": "🔴",
+            "half_open": "🟡",
+        }.get(state, "⚪")
+        
+        click.echo(f"  {icon} ", nl=False)
+        click.secho(f"{name}", fg=color, bold=True, nl=False)
+        click.echo(f": {state}")
+        
+        stats_data = data.get("stats", {})
+        click.echo(f"      Success: {stats_data.get('success_count', 0)} | "
+                   f"Failures: {stats_data.get('failure_count', 0)} | "
+                   f"Rejected: {stats_data.get('rejected_count', 0)}")
+    
+    click.echo()
+
+
 @cli.command("init")
 @click.option(
     "--project",
     "-p",
-    prompt="Project name",
+    default="continuity",
     help="Name for this project",
 )
 @click.option(
     "--github-repo",
     "-g",
-    prompt="GitHub repository (owner/repo)",
+    default="owner/repo",
     help="GitHub repository in owner/repo format",
 )
 @click.option(
     "--deadline-hours",
     "-d",
     default=48,
-    prompt="Initial deadline (hours from now)",
     type=int,
     help="Hours until initial deadline",
 )
 @click.option(
     "--operator-email",
     "-e",
-    prompt="Operator email",
+    default="operator@example.com",
     help="Email address for the primary operator",
 )
 @click.option(
@@ -411,6 +604,11 @@ def status(ctx: click.Context, state_file: str) -> None:
     "-f",
     is_flag=True,
     help="Overwrite existing state file",
+)
+@click.option(
+    "--non-interactive",
+    is_flag=True,
+    help="Skip prompts, use defaults",
 )
 @click.pass_context
 def init(
@@ -420,6 +618,7 @@ def init(
     deadline_hours: int,
     operator_email: str,
     force: bool,
+    non_interactive: bool,
 ) -> None:
     """Initialize a new Continuity Orchestrator project."""
     import json
@@ -626,6 +825,580 @@ stages:
     click.echo()
 
 
+# =============================================================================
+# TEST COMMANDS — Verify each adapter works
+# =============================================================================
+
+@cli.group()
+def test():
+    """Test individual adapters with real API calls."""
+    pass
+
+
+@test.command("email")
+@click.option("--to", "-t", help="Email address to send to (default: OPERATOR_EMAIL)")
+@click.option("--subject", "-s", default="Continuity Orchestrator Test", help="Email subject")
+@click.option("--body", "-b", default="This is a test email from Continuity Orchestrator.", help="Email body")
+def test_email(to: str, subject: str, body: str):
+    """Send a test email via Resend."""
+    import os
+    
+    # Check configuration
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        click.secho("❌ RESEND_API_KEY not set", fg="red")
+        click.echo("   Set it in your .env file or export it:")
+        click.echo("   export RESEND_API_KEY=re_xxxxx")
+        raise SystemExit(1)
+    
+    to_email = to or os.environ.get("OPERATOR_EMAIL")
+    if not to_email:
+        click.secho("❌ No email address specified", fg="red")
+        click.echo("   Use --to <email> or set OPERATOR_EMAIL in .env")
+        raise SystemExit(1)
+    
+    from_email = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+    
+    click.echo()
+    click.secho("📧 Testing Email (Resend)", bold=True)
+    click.echo(f"   From: {from_email}")
+    click.echo(f"   To: {to_email}")
+    click.echo(f"   Subject: {subject}")
+    click.echo()
+    
+    try:
+        import resend
+        resend.api_key = api_key
+        
+        result = resend.Emails.send({
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+            "html": f"<p>{body}</p><p><small>Sent by Continuity Orchestrator test command.</small></p>",
+        })
+        
+        email_id = result.get("id") if isinstance(result, dict) else str(result)
+        click.secho(f"✅ Email sent successfully!", fg="green")
+        click.echo(f"   Email ID: {email_id}")
+        click.echo()
+        click.echo(f"   Check your inbox at {to_email}")
+        
+    except ImportError:
+        click.secho("❌ resend package not installed", fg="red")
+        click.echo("   pip install resend")
+        raise SystemExit(1)
+    except Exception as e:
+        click.secho(f"❌ Email failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
+@test.command("sms")
+@click.option("--to", "-t", help="Phone number to send to (default: OPERATOR_SMS)")
+@click.option("--message", "-m", default="Continuity Orchestrator test message", help="SMS message")
+def test_sms(to: str, message: str):
+    """Send a test SMS via Twilio."""
+    import os
+    
+    # Check configuration
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+    
+    missing = []
+    if not account_sid:
+        missing.append("TWILIO_ACCOUNT_SID")
+    if not auth_token:
+        missing.append("TWILIO_AUTH_TOKEN")
+    if not from_number:
+        missing.append("TWILIO_FROM_NUMBER")
+    
+    if missing:
+        click.secho(f"❌ Missing: {', '.join(missing)}", fg="red")
+        click.echo("   Set these in your .env file")
+        raise SystemExit(1)
+    
+    to_number = to or os.environ.get("OPERATOR_SMS")
+    if not to_number:
+        click.secho("❌ No phone number specified", fg="red")
+        click.echo("   Use --to <number> or set OPERATOR_SMS in .env")
+        raise SystemExit(1)
+    
+    click.echo()
+    click.secho("📱 Testing SMS (Twilio)", bold=True)
+    click.echo(f"   From: {from_number}")
+    click.echo(f"   To: {to_number}")
+    click.echo(f"   Message: {message}")
+    click.echo()
+    
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        
+        result = client.messages.create(
+            body=message,
+            from_=from_number,
+            to=to_number,
+        )
+        
+        click.secho(f"✅ SMS sent successfully!", fg="green")
+        click.echo(f"   Message SID: {result.sid}")
+        click.echo(f"   Status: {result.status}")
+        
+    except ImportError:
+        click.secho("❌ twilio package not installed", fg="red")
+        click.echo("   pip install twilio")
+        raise SystemExit(1)
+    except Exception as e:
+        click.secho(f"❌ SMS failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
+@test.command("webhook")
+@click.option("--url", "-u", required=True, help="Webhook URL to POST to")
+@click.option("--payload", "-p", default='{"test": true, "source": "continuity-orchestrator"}', help="JSON payload")
+def test_webhook(url: str, payload: str):
+    """Send a test webhook POST."""
+    import json
+    
+    click.echo()
+    click.secho("🔗 Testing Webhook", bold=True)
+    click.echo(f"   URL: {url}")
+    click.echo(f"   Payload: {payload}")
+    click.echo()
+    
+    try:
+        import httpx
+        
+        data = json.loads(payload)
+        response = httpx.post(url, json=data, timeout=30)
+        
+        if response.status_code < 400:
+            click.secho(f"✅ Webhook successful!", fg="green")
+            click.echo(f"   Status: {response.status_code}")
+            click.echo(f"   Response: {response.text[:200]}")
+        else:
+            click.secho(f"⚠️ Webhook returned error", fg="yellow")
+            click.echo(f"   Status: {response.status_code}")
+            click.echo(f"   Response: {response.text[:200]}")
+        
+    except ImportError:
+        click.secho("❌ httpx package not installed", fg="red")
+        click.echo("   pip install httpx")
+        raise SystemExit(1)
+    except json.JSONDecodeError:
+        click.secho("❌ Invalid JSON payload", fg="red")
+        raise SystemExit(1)
+    except Exception as e:
+        click.secho(f"❌ Webhook failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
+@test.command("github")
+@click.option("--repo", "-r", help="Repository (owner/repo) — default: GITHUB_REPOSITORY")
+def test_github(repo: str):
+    """Verify GitHub token and repository access."""
+    import os
+    
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        click.secho("❌ GITHUB_TOKEN not set", fg="red")
+        click.echo("   Set it in your .env file")
+        raise SystemExit(1)
+    
+    repository = repo or os.environ.get("GITHUB_REPOSITORY")
+    if not repository:
+        click.secho("❌ No repository specified", fg="red")
+        click.echo("   Use --repo owner/repo or set GITHUB_REPOSITORY in .env")
+        raise SystemExit(1)
+    
+    click.echo()
+    click.secho("🐙 Testing GitHub", bold=True)
+    click.echo(f"   Token: {token[:10]}...")
+    click.echo(f"   Repository: {repository}")
+    click.echo()
+    
+    try:
+        import httpx
+        
+        # Test token by getting user info
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        user_response = httpx.get("https://api.github.com/user", headers=headers, timeout=30)
+        if user_response.status_code != 200:
+            click.secho(f"❌ Token invalid: {user_response.status_code}", fg="red")
+            raise SystemExit(1)
+        
+        user_data = user_response.json()
+        click.secho(f"✅ Token valid!", fg="green")
+        click.echo(f"   User: {user_data.get('login')}")
+        
+        # Test repository access
+        repo_response = httpx.get(
+            f"https://api.github.com/repos/{repository}",
+            headers=headers,
+            timeout=30,
+        )
+        
+        if repo_response.status_code == 200:
+            repo_data = repo_response.json()
+            click.secho(f"✅ Repository accessible!", fg="green")
+            click.echo(f"   Name: {repo_data.get('full_name')}")
+            click.echo(f"   Visibility: {repo_data.get('visibility')}")
+        elif repo_response.status_code == 404:
+            click.secho(f"⚠️ Repository not found or no access", fg="yellow")
+            click.echo(f"   Check repository exists and token has permissions")
+        else:
+            click.secho(f"⚠️ Repository check failed: {repo_response.status_code}", fg="yellow")
+        
+    except ImportError:
+        click.secho("❌ httpx package not installed", fg="red")
+        click.echo("   pip install httpx")
+        raise SystemExit(1)
+    except Exception as e:
+        click.secho(f"❌ GitHub test failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
+@test.command("all")
+def test_all():
+    """Show configuration status for all adapters."""
+    from .config.validator import ConfigValidator
+    
+    click.echo()
+    click.secho("🧪 Adapter Configuration Status", bold=True)
+    click.echo()
+    
+    validator = ConfigValidator()
+    results = validator.validate_all()
+    
+    for name, status in sorted(results.items()):
+        if status.configured:
+            if status.mode == "real":
+                click.secho(f"  ✅ {name}", fg="green", nl=False)
+                click.echo(f" — ready (real mode)")
+            else:
+                click.secho(f"  ⚠️  {name}", fg="yellow", nl=False)
+                click.echo(f" — configured but mock mode enabled")
+        else:
+            click.secho(f"  ❌ {name}", fg="red", nl=False)
+            if status.missing:
+                click.echo(f" — missing: {', '.join(status.missing)}")
+            else:
+                click.echo(f" — not configured")
+    
+    click.echo()
+    click.echo("To test an adapter:")
+    click.echo("  python -m src.main test email")
+    click.echo("  python -m src.main test sms")
+    click.echo("  python -m src.main test webhook --url https://example.com/hook")
+    click.echo("  python -m src.main test github")
+    click.echo()
+
+
+# =============================================================================
+# DEPLOYMENT COMMANDS
+# =============================================================================
+
+@cli.command("export-secrets")
+@click.option("--format", "-f", type=click.Choice(["text", "gh-cli"]), default="text", help="Output format")
+def export_secrets(format: str):
+    """Export secrets for GitHub Actions deployment.
+    
+    Shows which secrets need to be added to your GitHub repository
+    for the scheduled tick workflow to run.
+    """
+    import os
+    
+    # Read current .env values
+    secrets = {
+        "RESEND_API_KEY": os.environ.get("RESEND_API_KEY", ""),
+        "RESEND_FROM_EMAIL": os.environ.get("RESEND_FROM_EMAIL", ""),
+        "TWILIO_ACCOUNT_SID": os.environ.get("TWILIO_ACCOUNT_SID", ""),
+        "TWILIO_AUTH_TOKEN": os.environ.get("TWILIO_AUTH_TOKEN", ""),
+        "TWILIO_FROM_NUMBER": os.environ.get("TWILIO_FROM_NUMBER", ""),
+        "OPERATOR_SMS": os.environ.get("OPERATOR_SMS", ""),
+        "GITHUB_TOKEN": os.environ.get("GITHUB_TOKEN", ""),
+        "X_API_KEY": os.environ.get("X_API_KEY", ""),
+        "X_API_SECRET": os.environ.get("X_API_SECRET", ""),
+        "X_ACCESS_TOKEN": os.environ.get("X_ACCESS_TOKEN", ""),
+        "X_ACCESS_SECRET": os.environ.get("X_ACCESS_SECRET", ""),
+        "REDDIT_CLIENT_ID": os.environ.get("REDDIT_CLIENT_ID", ""),
+        "REDDIT_CLIENT_SECRET": os.environ.get("REDDIT_CLIENT_SECRET", ""),
+        "REDDIT_USERNAME": os.environ.get("REDDIT_USERNAME", ""),
+        "REDDIT_PASSWORD": os.environ.get("REDDIT_PASSWORD", ""),
+    }
+    
+    # Core settings
+    core = {
+        "OPERATOR_EMAIL": os.environ.get("OPERATOR_EMAIL", ""),
+        "PROJECT_NAME": os.environ.get("PROJECT_NAME", ""),
+        "ADAPTER_MOCK_MODE": os.environ.get("ADAPTER_MOCK_MODE", "false"),
+    }
+    
+    # Also need RENEWAL_SECRET for the renewal workflow
+    renewal_secret = os.environ.get("RENEWAL_SECRET", "")
+    
+    repo = os.environ.get("GITHUB_REPOSITORY", "owner/repo")
+    
+    click.echo()
+    click.secho("🔐 GitHub Actions Secrets", bold=True)
+    click.echo()
+    click.echo(f"Add these secrets to: https://github.com/{repo}/settings/secrets/actions")
+    click.echo()
+    
+    if format == "gh-cli":
+        click.echo("# Run these commands (requires gh CLI):")
+        click.echo()
+        for name, value in {**core, **secrets}.items():
+            if value:
+                # Mask the actual value
+                click.echo(f'echo "{value}" | gh secret set {name}')
+        if renewal_secret:
+            click.echo(f'echo "{renewal_secret}" | gh secret set RENEWAL_SECRET')
+        else:
+            click.echo('# Generate a renewal secret:')
+            click.echo('echo "$(openssl rand -hex 16)" | gh secret set RENEWAL_SECRET')
+        click.echo()
+    else:
+        click.secho("Required secrets:", bold=True)
+        click.echo()
+        
+        # Show which are configured
+        click.echo("  Core settings:")
+        for name, value in core.items():
+            if value:
+                masked = value[:4] + "..." if len(value) > 4 else "***"
+                click.secho(f"    ✅ {name}", fg="green", nl=False)
+                click.echo(f" = {masked}")
+            else:
+                click.secho(f"    ⬚  {name}", fg="dim", nl=False)
+                click.echo(f" = (not set)")
+        click.echo()
+        
+        click.echo("  Adapter credentials (only those you use):")
+        for name, value in secrets.items():
+            if value:
+                masked = value[:6] + "..." if len(value) > 6 else "***"
+                click.secho(f"    ✅ {name}", fg="green", nl=False)
+                click.echo(f" = {masked}")
+        click.echo()
+        
+        click.echo("  Renewal secret (for manual check-in):")
+        if renewal_secret:
+            click.secho(f"    ✅ RENEWAL_SECRET", fg="green", nl=False)
+            click.echo(f" = {renewal_secret[:6]}...")
+        else:
+            click.secho(f"    ⚠️  RENEWAL_SECRET", fg="yellow", nl=False)
+            click.echo(" = (generate one)")
+            click.echo()
+            click.echo("    Generate with: python -c \"import secrets; print(secrets.token_hex(16))\"")
+        click.echo()
+    
+    click.echo()
+    click.secho("📋 Quick copy-paste guide:", bold=True)
+    click.echo()
+    click.echo("1. Go to your repository settings → Secrets → Actions")
+    click.echo("2. Click 'New repository secret' for each secret")
+    click.echo("3. Copy the name and value from your .env file")
+    click.echo()
+    click.echo("Alternatively, use the GitHub CLI:")
+    click.echo("  python -m src.main export-secrets --format gh-cli")
+    click.echo()
+
+
+@cli.command("explain")
+@click.option("--policy-dir", default="policy", help="Path to policy directory")
+@click.option("--stage", "-s", help="Show only a specific stage")
+@click.pass_context
+def explain_stages(ctx: click.Context, policy_dir: str, stage: str):
+    """Show what happens at each escalation stage.
+    
+    Displays the full action plan for every stage, so you can understand
+    exactly what will trigger when.
+    """
+    root = ctx.obj["root"]
+    policy_path = root / policy_dir
+    
+    # Load policy
+    policy = load_policy(policy_path)
+    
+    # Get the plan
+    plan = policy.plan
+    if not plan:
+        click.secho("❌ No plan found", fg="red")
+        raise SystemExit(1)
+    
+    click.echo()
+    click.secho("📋 Escalation Plan: " + (plan.plan_id or plan.name or "default"), bold=True)
+    click.echo(f"   {plan.description or 'No description'}")
+    click.echo()
+    
+    # Stage order
+    stage_order = ["OK", "REMIND_1", "REMIND_2", "PRE_RELEASE", "PARTIAL", "FULL"]
+    
+    # Filter if specific stage requested
+    if stage:
+        stage_order = [s for s in stage_order if s.upper() == stage.upper()]
+        if not stage_order:
+            click.secho(f"❌ Unknown stage: {stage}", fg="red")
+            click.echo("   Valid stages: OK, REMIND_1, REMIND_2, PRE_RELEASE, PARTIAL, FULL")
+            raise SystemExit(1)
+    
+    for stage_name in stage_order:
+        stage_config = plan.stages.get(stage_name)
+        
+        if not stage_config:
+            continue
+        
+        # Color based on severity
+        if stage_name == "OK":
+            color = "green"
+            icon = "✅"
+        elif stage_name in ["REMIND_1", "REMIND_2"]:
+            color = "yellow"
+            icon = "⚠️"
+        elif stage_name == "PRE_RELEASE":
+            color = "yellow"
+            icon = "🔔"
+        elif stage_name == "PARTIAL":
+            color = "red"
+            icon = "🚨"
+        else:  # FULL
+            color = "red"
+            icon = "💀"
+        
+        click.secho(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", bold=True)
+        click.secho(f"{icon} {stage_name}", fg=color, bold=True)
+        click.echo(f"   {stage_config.description}")
+        click.echo()
+        
+        if not stage_config.actions:
+            click.echo("   No actions configured for this stage.")
+        else:
+            click.echo(f"   Actions ({len(stage_config.actions)}):")
+            for action in stage_config.actions:
+                adapter_icon = {
+                    "email": "📧",
+                    "sms": "📱",
+                    "x": "🐦",
+                    "reddit": "🔴",
+                    "webhook": "🔗",
+                    "github_surface": "🐙",
+                    "article_publish": "📄",
+                    "persistence_api": "💾",
+                }.get(action.adapter, "⚙️")
+                
+                click.echo(f"   {adapter_icon} {action.id}")
+                click.echo(f"      Adapter: {action.adapter}")
+                click.echo(f"      Channel: {action.channel}")
+                if action.template:
+                    click.echo(f"      Template: {action.template}")
+                if hasattr(action, 'constraints') and action.constraints:
+                    try:
+                        c_dict = action.constraints.model_dump(exclude_defaults=True)
+                        if c_dict:
+                            constraints = ", ".join(f"{k}={v}" for k, v in c_dict.items())
+                            click.echo(f"      Constraints: {constraints}")
+                    except Exception:
+                        pass
+        click.echo()
+    
+    click.secho("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", bold=True)
+    click.echo()
+    
+    # Show triggers
+    click.secho("📅 When do stages trigger?", bold=True)
+    click.echo()
+    click.echo("   Based on policy/rules.yaml, checked every tick:")
+    click.echo()
+    
+    # Load rules - policy.rules is RulesPolicy, .rules is the list
+    try:
+        rules_list = policy.rules.rules if hasattr(policy.rules, 'rules') else []
+        for rule in rules_list[:10]:  # First 10 rules
+            if hasattr(rule, 'then') and rule.then and hasattr(rule.then, 'transition_to') and rule.then.transition_to:
+                click.echo(f"   • {rule.id}")
+                if hasattr(rule, 'description') and rule.description:
+                    click.echo(f"     {rule.description}")
+    except Exception:
+        click.echo("   (See policy/rules.yaml for full rule definitions)")
+    
+    click.echo()
+    click.echo("To modify this plan: edit policy/plans/default.yaml")
+    click.echo("To modify triggers: edit policy/rules.yaml")
+    click.echo()
+
+
+@cli.command("simulate")
+@click.option("--hours", "-h", default=72, help="Hours to simulate")
+@click.option("--state-file", default="state/current.json", help="Path to state file")
+@click.option("--policy-dir", default="policy", help="Path to policy directory")
+@click.pass_context
+def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_dir: str):
+    """Simulate the escalation timeline from now.
+    
+    Shows what would happen if you don't renew - when each stage would trigger.
+    """
+    root = ctx.obj["root"]
+    state_path = root / state_file
+    
+    if not state_path.exists():
+        click.secho("❌ No state file found. Run init first.", fg="red")
+        click.echo("   python -m src.main init")
+        raise SystemExit(1)
+    
+    state = load_state(state_path)
+    
+    click.echo()
+    click.secho("🔮 Escalation Timeline Simulation", bold=True)
+    click.echo()
+    
+    deadline = state.timer.deadline_iso
+    now = datetime.now(timezone.utc)
+    
+    # Handle deadline being a string or datetime
+    if isinstance(deadline, str):
+        from dateutil.parser import parse
+        deadline = parse(deadline)
+    
+    click.echo(f"   Current time:  {now.strftime('%Y-%m-%d %H:%M UTC')}")
+    click.echo(f"   Deadline:      {deadline.strftime('%Y-%m-%d %H:%M UTC')}")
+    click.echo(f"   Current stage: {state.escalation.state}")
+    click.echo()
+    
+    # Calculate when each stage would trigger based on rules
+    minutes_to_deadline = (deadline - now).total_seconds() / 60
+    
+    click.secho("   If you DON'T renew:", bold=True)
+    click.echo()
+    
+    # These are approximate based on typical rule configuration
+    stages = [
+        ("OK", "Always", "green"),
+        ("REMIND_1", "When < 24h remaining", "yellow"),
+        ("REMIND_2", "When < 6h remaining", "yellow"),
+        ("PRE_RELEASE", "When < 1h remaining", "yellow"),
+        ("PARTIAL", "When deadline passes", "red"),
+        ("FULL", "When 24h overdue", "red"),
+    ]
+    
+    for stage_name, when, color in stages:
+        if stage_name == state.escalation.state:
+            click.secho(f"   → {stage_name}", fg=color, bold=True, nl=False)
+            click.echo(f" ← YOU ARE HERE")
+        else:
+            click.secho(f"     {stage_name}", fg=color, nl=False)
+            click.echo(f" — {when}")
+    
+    click.echo()
+    click.echo("   To see what happens at each stage:")
+    click.echo("     python -m src.main explain")
+    click.echo()
+    click.echo("   To renew and reset the deadline:")
+    click.echo("     python -m src.main renew --hours 48")
+    click.echo()
+
+
 if __name__ == "__main__":
     cli()
-

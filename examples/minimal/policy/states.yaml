@@ -1,0 +1,25 @@
+# Escalation states
+#
+# Progression is monotonic: OK → WARNING → CRITICAL → FINAL
+# Once you advance, you cannot go back (except via manual reset)
+
+states:
+  OK:
+    description: "Normal operation, countdown running"
+    severity: 0
+    terminal: false
+
+  WARNING:
+    description: "Deadline approaching, reminders sent"
+    severity: 1
+    terminal: false
+
+  CRITICAL:
+    description: "Deadline imminent, urgent alerts"
+    severity: 2
+    terminal: false
+
+  FINAL:
+    description: "Deadline passed, final actions executing"
+    severity: 3
+    terminal: true

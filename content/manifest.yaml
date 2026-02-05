@@ -1,84 +1,45 @@
-# Content Manifest — Article Visibility Rules
-# 
-# This file defines which articles are published at which escalation stage.
-# Articles are only visible when the system reaches their designated stage.
+# Content Manifest
+# Defines article visibility rules and stage-specific behavior
 
 version: 1
 
-# Stage order for reference:
-# OK=0, REMIND_1=10, REMIND_2=20, PRE_RELEASE=30, PARTIAL=40, FULL=50
-
 articles:
-  # Always visible (informational)
   - slug: about
-    title: About This System
+    title: "About my-project"
     visibility:
-      min_stage: OK           # Visible from OK onwards (always)
+      min_stage: OK
       include_in_nav: true
       pin_to_top: false
     meta:
-      description: Information about the continuity orchestrator system.
-      author: System
+      description: "Project overview and objectives"
+      author: "Operator"
+      tags: ["info"]
 
-  # Partial disclosure article
-  - slug: partial_notice
-    title: Initial Disclosure Notice
-    visibility:
-      min_stage: PARTIAL      # Only visible at PARTIAL and FULL
-      include_in_nav: true
-      pin_to_top: true        # Pin when visible
-    meta:
-      description: Initial public notice regarding the disclosure.
-      author: System
-
-  # Full disclosure article  
-  - slug: full_disclosure
-    title: Full Disclosure Statement
-    visibility:
-      min_stage: FULL         # Only visible at FULL (terminal state)
-      include_in_nav: true
-      pin_to_top: true
-    meta:
-      description: Complete disclosure of all relevant information.
-      author: System
-
-# Default visibility for articles not in manifest
 defaults:
-  min_stage: FULL             # Unlisted articles require FULL stage
-  include_in_nav: false
-  pin_to_top: false
+  visibility:
+    min_stage: FULL
+    include_in_nav: false
 
-# Stage-specific site behavior
-site_behavior:
+stages:
   OK:
-    show_countdown: true
-    show_articles: false      # No articles section in OK
-    banner: null
-    
+    show_countdown: false
   REMIND_1:
-    show_countdown: true
-    show_articles: false
-    banner: "System reminder active"
-    
-  REMIND_2:
-    show_countdown: true
-    show_articles: false
-    banner: "Urgent: Action required"
-    
-  PRE_RELEASE:
-    show_countdown: true
-    show_articles: false
-    banner: "Final warning: Disclosure imminent"
+    banner: "⏰ Reminder: Deadline approaching"
     banner_class: warning
-    
-  PARTIAL:
-    show_countdown: false
-    show_articles: true
-    banner: "Partial disclosure in progress"
+    show_countdown: true
+  REMIND_2:
+    banner: "⚠️ Final warning: Action required"
+    banner_class: warning
+    show_countdown: true
+  PRE_RELEASE:
+    banner: "🔴 Pre-release mode active"
     banner_class: alert
-    
-  FULL:
-    show_countdown: false
-    show_articles: true
-    banner: "Full disclosure active"
+    show_countdown: true
+  PARTIAL:
+    banner: "📢 Partial disclosure in effect"
     banner_class: critical
+    show_countdown: true
+  FULL:
+    banner: "🚨 Full disclosure mode"
+    banner_class: critical
+    show_countdown: false

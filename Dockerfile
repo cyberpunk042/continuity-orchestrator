@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir \
 COPY policy ./policy
 COPY templates ./templates
 COPY content ./content
+COPY scripts ./scripts
 
 # Create data directories
 RUN mkdir -p /data/state /data/audit && \

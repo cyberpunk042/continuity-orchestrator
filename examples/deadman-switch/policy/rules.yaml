@@ -1,0 +1,52 @@
+# Deadman Switch Rules
+#
+# Standard escalation:
+# - OK: Normal operation, countdown running
+# - WARNING: 24h before deadline, operator reminded
+# - CRITICAL: 6h before deadline, urgent alerts + custodians notified
+# - FINAL: Deadline passed, full release
+
+rules:
+  # Enforce monotonic progression (cannot go backwards)
+  - id: R90_ENFORCE_MONOTONIC
+    description: "Ensure escalation only advances"
+    when: []
+    priority: 100
+
+  # Enter WARNING at 24 hours
+  - id: R10_WARNING
+    description: "Warn operator at 24h before deadline"
+    when:
+      - time_to_deadline_minutes <= 1440
+      - escalation_state == "OK"
+    then:
+      transition_to: WARNING
+
+  # Enter CRITICAL at 6 hours
+  - id: R20_CRITICAL
+    description: "Critical alerts at 6h before deadline"
+    when:
+      - time_to_deadline_minutes <= 360
+      - escalation_state == "WARNING"
+    then:
+      transition_to: CRITICAL
+
+  # Enter FINAL when deadline passes
+  - id: R30_FINAL
+    description: "Execute release when deadline passes"
+    when:
+      - overdue_minutes > 0
+      - escalation_state == "CRITICAL"
+    then:
+      transition_to: FINAL
+
+  # Additional reminder at 12 hours (still in WARNING)
+  - id: R15_REMINDER
+    description: "Additional reminder at 12h"
+    when:
+      - time_to_deadline_minutes <= 720
+      - time_to_deadline_minutes > 360
+      - escalation_state == "WARNING"
+    then:
+      actions:
+        - email_reminder

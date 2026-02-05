@@ -1,0 +1,34 @@
+# Minimal rules - just the essentials
+#
+# This config has only 3 rules:
+# - WARNING at 24h before deadline
+# - CRITICAL at 6h before deadline
+# - FINAL when deadline passes
+
+rules:
+  # Enter WARNING at 24 hours before deadline
+  - id: R10_WARNING
+    description: "Enter warning state at 24h before deadline"
+    when:
+      - time_to_deadline_minutes <= 1440
+      - escalation_state == "OK"
+    then:
+      transition_to: WARNING
+
+  # Enter CRITICAL at 6 hours before deadline
+  - id: R20_CRITICAL
+    description: "Enter critical state at 6h before deadline"
+    when:
+      - time_to_deadline_minutes <= 360
+      - escalation_state == "WARNING"
+    then:
+      transition_to: CRITICAL
+
+  # Enter FINAL when deadline passes
+  - id: R30_FINAL
+    description: "Enter final state when deadline passes"
+    when:
+      - overdue_minutes > 0
+      - escalation_state == "CRITICAL"
+    then:
+      transition_to: FINAL

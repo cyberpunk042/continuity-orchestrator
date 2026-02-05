@@ -1,9 +1,9 @@
 {
     "meta": {
         "schema_version": 1,
-        "project": "continuity-orchestrator",
-        "state_id": "S-INIT-001",
-        "updated_at_iso": "2026-02-04T23:58:29.537271Z",
+        "project": "my-project",
+        "state_id": "S-INIT-20260205",
+        "updated_at_iso": "2026-02-05T01:02:21.098805+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,29 +12,28 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-06T23:20:39.324910+00:00",
+        "deadline_iso": "2026-02-07T01:02:21.098805+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-04T23:58:29.536632Z",
-        "time_to_deadline_minutes": 2842,
+        "now_iso": "2026-02-05T01:02:21.098805+00:00",
+        "time_to_deadline_minutes": 2880,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-04T23:20:39.324910+00:00",
-        "renewed_this_tick": true,
-        "renewal_count": 1
+        "last_renewal_iso": "2026-02-05T01:02:21.098805+00:00",
+        "renewed_this_tick": false,
+        "renewal_count": 0
     },
     "security": {
         "failed_attempts": 0,
-        "lockout_active": 0,
+        "lockout_active": false,
         "lockout_until_iso": null,
         "max_failed_attempts": 3,
-        "attempt_window_seconds": 60
+        "lockout_minutes": 60
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-04T23:20:39.324910+00:00",
-        "last_transition_rule_id": "MANUAL_RENEWAL",
-        "monotonic_enforced": true
+        "state_entered_at_iso": "2026-02-05T01:02:21.098805+00:00",
+        "last_transition_rule_id": null
     },
     "actions": {
         "executed": {},
@@ -43,34 +42,27 @@
     "integrations": {
         "enabled_adapters": {
             "email": true,
-            "sms": true,
-            "x": true,
-            "reddit": true,
+            "sms": false,
+            "x": false,
+            "reddit": false,
             "webhook": true,
             "github_surface": true,
             "article_publish": true,
-            "persistence_api": true
+            "persistence_api": false
         },
         "routing": {
-            "github_repository": "cyberpunk042/continuity-orchestrator",
-            "operator_email": "operator@example.invalid",
-            "operator_sms": "+15555550100",
-            "custodian_emails": [
-                "custodian-a@example.invalid",
-                "custodian-b@example.invalid"
-            ],
-            "observer_webhooks": [
-                "https://observer.example.invalid/hook/a"
-            ],
-            "reddit_targets": [
-                "r/example"
-            ],
-            "x_account_ref": "x_account_demo"
+            "github_repository": "owner/repo",
+            "operator_email": "jfortin-moreau@outlook.com",
+            "operator_sms": null,
+            "custodian_emails": [],
+            "observer_webhooks": [],
+            "reddit_targets": [],
+            "x_account_ref": null
         }
     },
     "pointers": {
         "persistence": {
-            "primary_backend": "persistence_api",
+            "primary_backend": "file",
             "last_persist_iso": null
         },
         "github_surface": {
