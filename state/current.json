@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T23:20:47.041721+00:00",
+        "updated_at_iso": "2026-02-05T23:27:37.442797+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,9 +12,9 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-05T22:20:47.041721+00:00",
+        "deadline_iso": "2026-02-05T22:27:37.442797+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T23:20:47.041721+00:00",
+        "now_iso": "2026-02-05T23:27:37.442797+00:00",
         "time_to_deadline_minutes": -60,
         "overdue_minutes": 60
     },
@@ -32,7 +32,7 @@
     },
     "escalation": {
         "state": "FULL",
-        "state_entered_at_iso": "2026-02-05T23:20:47.041721+00:00",
+        "state_entered_at_iso": "2026-02-05T23:27:37.442797+00:00",
         "last_transition_rule_id": "MANUAL_TRIGGER",
         "monotonic_enforced": true
     },
@@ -42,12 +42,12 @@
     },
     "release": {
         "triggered": true,
-        "trigger_time_iso": "2026-02-05T23:20:47.041721+00:00",
+        "trigger_time_iso": "2026-02-05T23:27:37.442797+00:00",
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-05T23:20:47.041721+00:00",
-        "client_token": "fR-66Z5VTaBt2dbpjb65Sw"
+        "execute_after_iso": "2026-02-05T23:27:37.442797+00:00",
+        "client_token": "MSwJ_YuteFiLOr56vCssAw"
     },
     "integrations": {
         "enabled_adapters": {
