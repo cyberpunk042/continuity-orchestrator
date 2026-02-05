@@ -136,12 +136,22 @@ Run ticks on a schedule using GitHub Actions — no server required.
              git push
    ```
 
-2. **Add secrets** in repository Settings → Secrets:
-   - `RESEND_API_KEY`
-   - `TWILIO_ACCOUNT_SID`
+2. **Add secrets** in repository Settings → Secrets → Actions:
+   
+   **Required:**
+   - `RENEWAL_SECRET` — The code users enter to renew (you create this)
+   
+   **For One-Click Renewal (recommended):**
+   - `RENEWAL_TRIGGER_TOKEN` — Fine-grained PAT with only Actions:write permission
+     (See "One-Click Renewal" section below)
+   
+   **For Adapters (as needed):**
+   - `RESEND_API_KEY` — Email notifications
+   - `TWILIO_ACCOUNT_SID` — SMS notifications
    - `TWILIO_AUTH_TOKEN`
    - `TWILIO_FROM_NUMBER`
-   - Any other adapter credentials
+   - `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET` — Twitter/X
+   - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`
 
 ### Renewal Workflow
 

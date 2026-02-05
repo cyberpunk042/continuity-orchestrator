@@ -175,6 +175,15 @@ class SiteGenerator:
         # Get renewal trigger token if configured (fine-grained PAT with only actions:write)
         renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
         
+        # Warn if token is set locally but we're not in CI (user might forget to add GitHub secret)
+        if renewal_trigger_token and not os.environ.get("GITHUB_ACTIONS"):
+            import logging
+            logging.getLogger(__name__).warning(
+                "RENEWAL_TRIGGER_TOKEN is set locally. "
+                "Make sure to also add it as a GitHub secret for the deployed site to work: "
+                "Settings → Secrets → Actions → RENEWAL_TRIGGER_TOKEN"
+            )
+        
         context = {
             "project": state.meta.project,
             "state_id": state.meta.state_id,
