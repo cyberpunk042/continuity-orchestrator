@@ -1139,6 +1139,9 @@ def export_secrets(format: str):
     # Also need RENEWAL_SECRET for the renewal workflow
     renewal_secret = os.environ.get("RENEWAL_SECRET", "")
     
+    # RENEWAL_TRIGGER_TOKEN for one-click renewal from website
+    renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
+    
     repo = os.environ.get("GITHUB_REPOSITORY", "owner/repo")
     
     click.echo()
@@ -1159,6 +1162,10 @@ def export_secrets(format: str):
         else:
             click.echo('# Generate a renewal secret:')
             click.echo('echo "$(openssl rand -hex 16)" | gh secret set RENEWAL_SECRET')
+        if renewal_trigger_token:
+            click.echo(f'echo "{renewal_trigger_token}" | gh secret set RENEWAL_TRIGGER_TOKEN')
+        else:
+            click.echo('# RENEWAL_TRIGGER_TOKEN not set - create a fine-grained PAT for one-click renewal')
         click.echo()
     else:
         click.secho("Required secrets:", bold=True)
@@ -1193,6 +1200,18 @@ def export_secrets(format: str):
             click.echo(" = (generate one)")
             click.echo()
             click.echo("    Generate with: python -c \"import secrets; print(secrets.token_hex(16))\"")
+        click.echo()
+        
+        click.echo("  One-click renewal from website (optional but recommended):")
+        if renewal_trigger_token:
+            click.secho(f"    ✅ RENEWAL_TRIGGER_TOKEN", fg="green", nl=False)
+            click.echo(f" = {renewal_trigger_token[:12]}...")
+        else:
+            click.secho(f"    ⬚  RENEWAL_TRIGGER_TOKEN", fg="dim", nl=False)
+            click.echo(" = (not set)")
+            click.echo()
+            click.echo("    Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta")
+            click.echo("    With ONLY 'Actions: Read and write' permission for this repo")
         click.echo()
     
     click.echo()
