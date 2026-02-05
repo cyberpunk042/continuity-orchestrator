@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T22:58:19.963235Z",
+        "updated_at_iso": "2026-02-05T23:04:37.332269+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,16 +12,16 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-05T21:33:07.199845+00:00",
+        "deadline_iso": "2026-02-07T23:04:37.332269+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T22:58:19.950886Z",
-        "time_to_deadline_minutes": 0,
-        "overdue_minutes": 85
+        "now_iso": "2026-02-05T23:04:37.332269+00:00",
+        "time_to_deadline_minutes": 2880,
+        "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-05T22:13:00.553708+00:00",
-        "renewed_this_tick": false,
-        "renewal_count": 5
+        "last_renewal_iso": "2026-02-05T23:04:37.332269+00:00",
+        "renewed_this_tick": true,
+        "renewal_count": 6
     },
     "security": {
         "failed_attempts": 0,
@@ -31,52 +31,14 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "FULL",
-        "state_entered_at_iso": "2026-02-05T22:33:07.199845+00:00",
-        "last_transition_rule_id": "MANUAL_TRIGGER",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-05T23:04:37.332269+00:00",
+        "last_transition_rule_id": "MANUAL_RENEWAL",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "post_x_full": {
-                "status": "ok",
-                "last_delivery_id": "mock_ea0ca813",
-                "last_executed_iso": "2026-02-05T22:58:19.960934+00:00"
-            },
-            "post_reddit_full": {
-                "status": "ok",
-                "last_delivery_id": "mock_2c71b6a9",
-                "last_executed_iso": "2026-02-05T22:58:19.961530+00:00"
-            },
-            "publish_github_full_documents": {
-                "status": "ok",
-                "last_delivery_id": "mock_gh_cc91049a",
-                "last_executed_iso": "2026-02-05T22:58:19.961812+00:00"
-            },
-            "publish_article": {
-                "status": "ok",
-                "last_delivery_id": "mock_71c1fba5",
-                "last_executed_iso": "2026-02-05T22:58:19.962543+00:00"
-            },
-            "notify_all_webhooks": {
-                "status": "ok",
-                "last_delivery_id": "mock_webhook_34007d3d",
-                "last_executed_iso": "2026-02-05T22:58:19.962818+00:00"
-            },
-            "persist_final_state": {
-                "status": "ok",
-                "last_delivery_id": "mock_ced03247",
-                "last_executed_iso": "2026-02-05T22:58:19.963093+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "post_x_full",
-            "post_reddit_full",
-            "publish_github_full_documents",
-            "publish_article",
-            "notify_all_webhooks",
-            "persist_final_state"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
         "triggered": true,
