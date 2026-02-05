@@ -249,60 +249,20 @@ print(json.dumps(config, indent=2))
     
     echo -e "Repository: ${CYAN}${REPO}${NC}"
     echo ""
-    echo -e "${BOLD}Secrets to push:${NC}"
-    
-    # List what we'll push
-    [ -n "$RESEND_API_KEY" ] && echo -e "  ✓ RESEND_API_KEY"
-    [ -n "$TWILIO_ACCOUNT_SID" ] && echo -e "  ✓ TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER"
-    [ -n "$RENEWAL_SECRET" ] && echo -e "  ✓ RENEWAL_SECRET"
-    [ -n "$RELEASE_SECRET" ] && echo -e "  ✓ RELEASE_SECRET"
-    [ -n "$RENEWAL_TRIGGER_TOKEN" ] && echo -e "  ✓ RENEWAL_TRIGGER_TOKEN"
-    [ -n "$GITHUB_TOKEN" ] && echo -e "  ✓ GITHUB_TOKEN (as GH_TOKEN)"
+    echo -e "${BOLD}How do you want to store secrets?${NC}"
+    echo ""
+    echo "  1) Master JSON (recommended)"
+    echo "     → Single secret: CONTINUITY_CONFIG"
+    echo "     → Cleaner, all-in-one"
+    echo ""
+    echo "  2) Individual secrets"
+    echo "     → Multiple secrets: RENEWAL_SECRET, RELEASE_SECRET, etc."
+    echo "     → Traditional approach"
+    echo ""
+    read -p "Choose (1/2): " secret_mode
+    secret_mode="${secret_mode:-1}"
     
     echo ""
-    read -p "Push these secrets to ${REPO}? (Y/n): " confirm
-    confirm="${confirm:-Y}"
-    if [[ ! "$confirm" =~ ^[Yy] ]]; then
-        echo "Cancelled."
-        return 0
-    fi
-    
-    echo ""
-    echo "Pushing secrets..."
-    
-    # Push each secret
-    # Build master JSON config
-    MASTER_JSON=$(python3 -c "
-import json
-import os
-
-config = {}
-
-# Add all non-empty values
-for key in ['RESEND_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 
-            'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'RENEWAL_SECRET', 
-            'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN', 'GITHUB_TOKEN',
-            'OPERATOR_EMAIL', 'PROJECT_NAME']:
-    val = os.environ.get(key, '')
-    if val:
-        config[key] = val
-
-print(json.dumps(config, indent=2))
-")
-    
-    echo -e "${BOLD}Master JSON Secret (CONTINUITY_CONFIG):${NC}"
-    echo "$MASTER_JSON"
-    echo ""
-    
-    # Push as single secret
-    echo "Pushing CONTINUITY_CONFIG..."
-    echo "$MASTER_JSON" | gh secret set "CONTINUITY_CONFIG" -R "$REPO" && \
-        echo -e "${GREEN}✓${NC} CONTINUITY_CONFIG pushed" || \
-        echo -e "${RED}✗${NC} Failed to push CONTINUITY_CONFIG"
-    
-    # Also push individual secrets that workflows might reference directly
-    echo ""
-    echo "Also pushing individual secrets for workflow compatibility..."
     
     push_secret() {
         local name="$1"
@@ -314,15 +274,49 @@ print(json.dumps(config, indent=2))
         fi
     }
     
-    push_secret "RENEWAL_SECRET" "$RENEWAL_SECRET"
-    push_secret "RELEASE_SECRET" "$RELEASE_SECRET"
-    push_secret "RENEWAL_TRIGGER_TOKEN" "$RENEWAL_TRIGGER_TOKEN"
-    push_secret "RESEND_API_KEY" "$RESEND_API_KEY"
+    if [[ "$secret_mode" == "1" ]]; then
+        # Master JSON mode
+        MASTER_JSON=$(python3 -c "
+import json
+import os
+
+config = {}
+for key in ['RESEND_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 
+            'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'RENEWAL_SECRET', 
+            'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN', 'GITHUB_TOKEN',
+            'OPERATOR_EMAIL', 'PROJECT_NAME']:
+    val = os.environ.get(key, '')
+    if val:
+        config[key] = val
+
+print(json.dumps(config, indent=2))
+")
+        
+        echo -e "${BOLD}Pushing CONTINUITY_CONFIG:${NC}"
+        echo "$MASTER_JSON"
+        echo ""
+        
+        echo "$MASTER_JSON" | gh secret set "CONTINUITY_CONFIG" -R "$REPO" && \
+            echo -e "${GREEN}✓${NC} CONTINUITY_CONFIG pushed" || \
+            echo -e "${RED}✗${NC} Failed"
+        
+    else
+        # Individual secrets mode
+        echo "Pushing individual secrets..."
+        echo ""
+        
+        push_secret "RESEND_API_KEY" "$RESEND_API_KEY"
+        push_secret "TWILIO_ACCOUNT_SID" "$TWILIO_ACCOUNT_SID"
+        push_secret "TWILIO_AUTH_TOKEN" "$TWILIO_AUTH_TOKEN"
+        push_secret "TWILIO_FROM_NUMBER" "$TWILIO_FROM_NUMBER"
+        push_secret "OPERATOR_SMS" "$OPERATOR_SMS"
+        push_secret "RENEWAL_SECRET" "$RENEWAL_SECRET"
+        push_secret "RELEASE_SECRET" "$RELEASE_SECRET"
+        push_secret "RENEWAL_TRIGGER_TOKEN" "$RENEWAL_TRIGGER_TOKEN"
+    fi
     
     echo ""
-    echo -e "${GREEN}Done!${NC} Secrets pushed to ${REPO}"
-    echo ""
-    echo "Master secret: CONTINUITY_CONFIG (contains all credentials as JSON)"
+    echo -e "${GREEN}Done!${NC}"
     echo "View at: https://github.com/${REPO}/settings/secrets/actions"
 }
 # Main loop
