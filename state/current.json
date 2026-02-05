@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T20:55:51.614664Z",
+        "updated_at_iso": "2026-02-05T20:56:26.336263+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,27 +12,27 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-05T23:40:20.796298+00:00",
+        "deadline_iso": "2026-02-07T20:56:26.336263+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T20:55:51.613094Z",
-        "time_to_deadline_minutes": 164,
+        "now_iso": "2026-02-05T20:56:26.336263+00:00",
+        "time_to_deadline_minutes": 2880,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-05T20:40:20.796298+00:00",
+        "last_renewal_iso": "2026-02-05T20:56:26.336263+00:00",
         "renewed_this_tick": true,
-        "renewal_count": 1
+        "renewal_count": 2
     },
     "security": {
         "failed_attempts": 0,
-        "lockout_active": 0,
+        "lockout_active": false,
         "lockout_until_iso": null,
         "max_failed_attempts": 3,
         "attempt_window_seconds": 60
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-05T20:40:20.796298+00:00",
+        "state_entered_at_iso": "2026-02-05T20:56:26.336263+00:00",
         "last_transition_rule_id": "MANUAL_RENEWAL",
         "monotonic_enforced": true
     },
