@@ -175,19 +175,29 @@ run_push_secrets() {
         echo ""
         echo "Options:"
         echo "  1) Install gh: https://cli.github.com/"
-        echo "  2) Manually add secrets at:"
+        echo "  2) Manually add ONE secret at:"
         echo "     https://github.com/${REPO}/settings/secrets/actions"
         echo ""
-        echo -e "${BOLD}Your secrets (copy these values):${NC}"
+        echo -e "${BOLD}Create a secret named: CONTINUITY_CONFIG${NC}"
+        echo -e "${BOLD}With this JSON value:${NC}"
         echo ""
-        [ -n "$RESEND_API_KEY" ] && echo "RESEND_API_KEY=$RESEND_API_KEY"
-        [ -n "$TWILIO_ACCOUNT_SID" ] && echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID"
-        [ -n "$TWILIO_AUTH_TOKEN" ] && echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN"
-        [ -n "$TWILIO_FROM_NUMBER" ] && echo "TWILIO_FROM_NUMBER=$TWILIO_FROM_NUMBER"
-        [ -n "$OPERATOR_SMS" ] && echo "OPERATOR_SMS=$OPERATOR_SMS"
-        [ -n "$RENEWAL_SECRET" ] && echo "RENEWAL_SECRET=$RENEWAL_SECRET"
-        [ -n "$RELEASE_SECRET" ] && echo "RELEASE_SECRET=$RELEASE_SECRET"
-        [ -n "$RENEWAL_TRIGGER_TOKEN" ] && echo "RENEWAL_TRIGGER_TOKEN=$RENEWAL_TRIGGER_TOKEN"
+        
+        # Generate master JSON
+        python3 -c "
+import json
+import os
+
+config = {}
+for key in ['RESEND_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 
+            'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'RENEWAL_SECRET', 
+            'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN', 'GITHUB_TOKEN',
+            'OPERATOR_EMAIL', 'PROJECT_NAME']:
+    val = os.environ.get(key, '')
+    if val:
+        config[key] = val
+
+print(json.dumps(config, indent=2))
+"
         echo ""
         return 0
     fi
