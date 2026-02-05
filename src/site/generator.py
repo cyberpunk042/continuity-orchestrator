@@ -186,6 +186,12 @@ class SiteGenerator:
             status_class = "status-full"
             status_message = "Full disclosure active."
         
+        # Override if release is triggered (delayed)
+        release_triggered = state.release.triggered if hasattr(state, 'release') else False
+        if release_triggered:
+            status_class = "status-delayed"
+            status_message = "Release delayed. Awaiting confirmation."
+        
         # Banner from manifest
         banner_html = ""
         stage_behavior = None
