@@ -16,6 +16,19 @@ on:
         required: false
         default: '48'
         type: number
+      release_delay:
+        description: 'Release delay in minutes (0=immediate)'
+        required: false
+        default: '0'
+        type: number
+      release_delay_scope:
+        description: 'What to delay: full or site_only'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - site_only
 
 permissions:
   contents: write
@@ -91,8 +104,10 @@ jobs:
       
       - name: Execute release trigger
         if: steps.validate.outputs.action == 'release'
+        id: release
         run: |
-          python -m src.main trigger-release --stage FULL --silent
+          TOKEN=$(python -m src.main trigger-release --stage FULL --delay ${{ inputs.release_delay }} --delay-scope ${{ inputs.release_delay_scope }} --silent)
+          echo "client_token=$TOKEN" >> $GITHUB_OUTPUT
       
       - name: Commit state changes
         run: |

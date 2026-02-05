@@ -259,6 +259,18 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     help="Target disclosure stage",
 )
 @click.option(
+    "--delay",
+    default=0,
+    type=int,
+    help="Delay in minutes before release executes (0 = next cron)",
+)
+@click.option(
+    "--delay-scope",
+    default="full",
+    type=click.Choice(["full", "site_only"]),
+    help="What to delay: full (integrations+site) or site_only",
+)
+@click.option(
     "--state-file",
     default="state/current.json",
     help="Path to state file",
@@ -269,9 +281,17 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     help="Silent mode - minimal output for stealth operations",
 )
 @click.pass_context
-def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: bool) -> None:
+def trigger_release(
+    ctx: click.Context,
+    stage: str,
+    delay: int,
+    delay_scope: str,
+    state_file: str,
+    silent: bool,
+) -> None:
     """Manually trigger disclosure escalation (emergency release)."""
     import json
+    import secrets
     
     root = ctx.obj["root"]
     state_path = root / state_file
@@ -281,16 +301,33 @@ def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: boo
     
     old_state = state.escalation.state
     
-    # Force escalation to requested stage
-    state.escalation.state = stage
-    state.escalation.state_entered_at_iso = now.isoformat()
-    state.escalation.last_transition_rule_id = "MANUAL_TRIGGER"
+    # Generate client token for fake success display
+    client_token = secrets.token_urlsafe(16)
     
-    # Set deadline to past (overdue)
-    state.timer.deadline_iso = (now - timedelta(hours=1)).isoformat()
-    state.timer.now_iso = now.isoformat()
-    state.timer.time_to_deadline_minutes = -60
-    state.timer.overdue_minutes = 60
+    # Calculate execute time
+    execute_after = now + timedelta(minutes=delay)
+    
+    # Set release config
+    state.release.triggered = True
+    state.release.trigger_time_iso = now.isoformat()
+    state.release.target_stage = stage
+    state.release.delay_minutes = delay
+    state.release.delay_scope = delay_scope
+    state.release.execute_after_iso = execute_after.isoformat()
+    state.release.client_token = client_token
+    
+    if delay == 0:
+        # Immediate: set state now
+        state.escalation.state = stage
+        state.escalation.state_entered_at_iso = now.isoformat()
+        state.escalation.last_transition_rule_id = "MANUAL_TRIGGER"
+        
+        # Set deadline to past (overdue)
+        state.timer.deadline_iso = (now - timedelta(hours=1)).isoformat()
+        state.timer.now_iso = now.isoformat()
+        state.timer.time_to_deadline_minutes = -60
+        state.timer.overdue_minutes = 60
+    # else: delayed - tick will handle state change after execute_after_iso
     
     # CRITICAL: Clear renewal flag so tick doesn't reset state back to OK
     state.renewal.renewed_this_tick = False
@@ -306,9 +343,13 @@ def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: boo
         "timestamp": now.isoformat(),
         "tick_id": f"M-{now.strftime('%Y%m%dT%H%M%S')}-RELEASE",
         "previous_state": old_state,
-        "new_state": stage,
+        "new_state": stage if delay == 0 else f"{stage}(delayed:{delay}m)",
         "trigger": "MANUAL",
         "silent": silent,
+        "delay_minutes": delay,
+        "delay_scope": delay_scope,
+        "execute_after": execute_after.isoformat(),
+        "client_token": client_token,
     }
     
     with open(audit_path, "a") as f:
@@ -317,11 +358,13 @@ def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: boo
     if not silent:
         click.secho(f"⚠️  RELEASE TRIGGERED", fg="red", bold=True)
         click.echo(f"  Previous state: {old_state}")
-        click.echo(f"  New state: {stage}")
-        click.echo(f"  Timestamp: {now.isoformat()}")
+        click.echo(f"  Target state: {stage}")
+        click.echo(f"  Delay: {delay} minutes ({delay_scope})")
+        click.echo(f"  Execute after: {execute_after.isoformat()}")
+        click.echo(f"  Client token: {client_token}")
     else:
-        # Minimal output for shadow mode
-        click.echo(f"{stage}")
+        # Output token for client-side fake success
+        click.echo(f"{client_token}")
 
 
 @cli.command("build-site")

@@ -87,6 +87,25 @@ class Actions(BaseModel):
     last_tick_actions: List[str] = Field(default_factory=list)
 
 
+class ReleaseConfig(BaseModel):
+    """Manual release trigger configuration."""
+    
+    # Release trigger state
+    triggered: bool = False
+    trigger_time_iso: Optional[str] = None
+    target_stage: Optional[str] = None
+    
+    # Delay settings
+    delay_minutes: int = 0  # 0 = immediate on next cron
+    delay_scope: Literal["full", "site_only"] = "full"  # full = integrations + site, site_only = just site
+    
+    # Computed: when the release should execute
+    execute_after_iso: Optional[str] = None
+    
+    # Client-side verification token (for fake success display)
+    client_token: Optional[str] = None
+
+
 class EnabledAdapters(BaseModel):
     """Adapter enable/disable flags."""
 
@@ -153,5 +172,6 @@ class State(BaseModel):
     security: Security
     escalation: Escalation
     actions: Actions = Field(default_factory=Actions)
+    release: ReleaseConfig = Field(default_factory=ReleaseConfig)
     integrations: Integrations
     pointers: Pointers = Field(default_factory=Pointers)
