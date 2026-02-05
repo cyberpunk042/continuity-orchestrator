@@ -158,7 +158,8 @@ services:
       - .:/repo
       # Shared volume for built site
       - public-data:/public
-    user: root
+    # Use host user's UID/GID to preserve file permissions
+    user: "${UID:-1000}:${GID:-1000}"
     networks:
       - continuity-net
     entrypoint: ["/bin/sh", "-c"]
