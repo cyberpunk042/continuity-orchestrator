@@ -26,6 +26,8 @@ on:
 permissions:
   contents: write
   actions: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: continuity-tick
@@ -40,6 +42,9 @@ jobs:
   run-tick:
     name: Execute Continuity Tick
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
       - name: Checkout repository
@@ -117,10 +122,13 @@ jobs:
           echo "Site built to public/"
           ls -la public/
       
+      - name: Upload artifact
+        if: inputs.dry_run != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+      
       - name: Deploy to GitHub Pages
         if: inputs.dry_run != 'true'
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
-          commit_message: "site: Deploy from tick"
+        id: deployment
+        uses: actions/deploy-pages@v4
