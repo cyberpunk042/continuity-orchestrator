@@ -42,4 +42,4 @@ temp/public/
 public/
 
 # Stale build artifacts (should only be in public/)
-/*.html
+/*.htmlbackups/
