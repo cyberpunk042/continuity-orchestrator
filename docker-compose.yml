@@ -205,10 +205,13 @@ services:
         # Clear and prepare shared volume for nginx
         rm -rf /public/* 2>/dev/null || true
         
-        # Background sync - keep repo always in sync
+        # Background sync - keep repo always in sync and rebuild site
         (while true; do
           git stash 2>/dev/null
-          git pull --rebase origin main 2>/dev/null || true
+          if git pull --rebase origin main 2>/dev/null | grep -q "Fast-forward"; then
+            echo "New changes detected, rebuilding site..."
+            python -m src.main build-site --output /public 2>/dev/null || true
+          fi
           git stash pop 2>/dev/null
           sleep 30
         done) &
