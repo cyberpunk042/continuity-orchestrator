@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Timeline — {{ project }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="assets/css/timeline.css">
+{% endblock %}
+
+{% block body_class %}page-timeline{% endblock %}
+
+{% block content %}
+<header>
+    <h1>Escalation Timeline</h1>
+    <a href="index.html">← Back</a>
+</header>
+
+<main>
+    {% if audit_entries %}
+    <ul class="timeline">
+        {% for entry in audit_entries|reverse %}
+        <li class="timeline-item">
+            <span class="time">{{ entry.timestamp }}</span>
+            <span class="event">
+                <strong>{{ entry.event_type }}</strong>
+                {% if entry.tick_id %} — {{ entry.tick_id }}{% endif %}
+                {% if entry.new_state %} → {{ entry.new_state }}{% endif %}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="status-message">No timeline events recorded yet.</p>
+    {% endif %}
+</main>
+
+<footer>
+    <p>Generated: {{ build_time }}</p>
+</footer>
+{% endblock %}

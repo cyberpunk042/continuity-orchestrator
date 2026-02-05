@@ -1,0 +1,35 @@
+/* Timeline page styles */
+.page-timeline {
+    padding: 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.page-timeline header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.timeline {
+    list-style: none;
+    padding-left: 1rem;
+    border-left: 2px solid var(--color-border);
+}
+
+.timeline-item {
+    padding: 0.75rem 0 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    gap: 1rem;
+}
+
+.timeline-item .time {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    min-width: 200px;
+}
+
+.timeline-item .event {
+    flex: 1;
+}

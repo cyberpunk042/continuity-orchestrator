@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}{{ article.title }} — {{ project }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="../assets/css/articles.css">
+{% endblock %}
+
+{% block body_class %}page-articles{% endblock %}
+
+{% block content %}
+<header>
+    <h1>{{ article.title }}</h1>
+    <a href="index.html">← Back to Articles</a>
+</header>
+
+{% if banner_html %}{{ banner_html }}{% endif %}
+
+<main>
+    <article class="editor-content">
+        {{ article.content|safe }}
+    </article>
+</main>
+
+<footer>
+    <p>Generated: {{ build_time }}</p>
+</footer>
+{% endblock %}

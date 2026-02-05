@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ project }}{% endblock %}</title>
+    <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="feed.xml">
+    <link rel="stylesheet" href="assets/css/base.css">
+    {% block extra_css %}{% endblock %}
+    <style>{% block inline_css %}{% endblock %}</style>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+    
+    <script>
+        const CURRENT_DEADLINE = "{{ deadline }}";
+        const CURRENT_STAGE = "{{ stage }}";
+        const POLL_INTERVAL = 15000;
+        
+        async function checkForStateChange() {
+            try {
+                const response = await fetch("status.json?t=" + Date.now(), {cache: "no-store"});
+                if (response.ok) {
+                    const status = await response.json();
+                    if (status.deadline !== CURRENT_DEADLINE || status.stage !== CURRENT_STAGE) {
+                        location.reload();
+                    }
+                }
+            } catch (e) {}
+        }
+        
+        setInterval(checkForStateChange, POLL_INTERVAL);
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) checkForStateChange();
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

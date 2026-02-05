@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Full Status — {{ project }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="assets/css/status.css">
+{% endblock %}
+
+{% block body_class %}page-status{% endblock %}
+
+{% block content %}
+<header>
+    <h1>Full System Status</h1>
+    <a href="index.html">← Back</a>
+</header>
+
+<main>
+    <section class="status-card">
+        <h2>Current State</h2>
+        <table>
+            <tr>
+                <td>Stage</td>
+                <td><strong>{{ stage }}</strong></td>
+            </tr>
+            <tr>
+                <td>Deadline</td>
+                <td>{{ deadline }}</td>
+            </tr>
+            <tr>
+                <td>Time to Deadline</td>
+                <td>{{ time_to_deadline }} minutes</td>
+            </tr>
+            <tr>
+                <td>Renewal Count</td>
+                <td>{{ renewal_count|default(0) }}</td>
+            </tr>
+            <tr>
+                <td>Last Renewal</td>
+                <td>{{ last_renewal|default('Never') }}</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="status-card">
+        <h2>Enabled Integrations</h2>
+        <p>{{ enabled_adapters_list|default('None') }}</p>
+    </section>
+
+    {% if integration_executions %}
+    <section>
+        <h2>Integration Executions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Adapter</th>
+                    <th>Action</th>
+                    <th>Time</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exec in integration_executions %}
+                <tr>
+                    <td>{% if exec.success %}✅{% else %}❌{% endif %}</td>
+                    <td>{{ exec.adapter }}</td>
+                    <td>{{ exec.action }}</td>
+                    <td>{{ exec.timestamp }}</td>
+                    <td>{{ exec.tick_id }}{% if exec.error %} — {{ exec.error }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% else %}
+    <section>
+        <h2>Integration Executions</h2>
+        <p class="status-message">No integration executions recorded yet.</p>
+    </section>
+    {% endif %}
+
+    <section>
+        <h2>Raw State</h2>
+        <details>
+            <summary>View full state JSON</summary>
+            <pre>{{ raw_state_json }}</pre>
+        </details>
+    </section>
+</main>
+
+<footer>
+    <p>Generated: {{ build_time }}</p>
+</footer>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Articles — {{ project }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="../assets/css/articles.css">
+{% endblock %}
+
+{% block body_class %}page-articles{% endblock %}
+
+{% block content %}
+<header>
+    <h1>Articles</h1>
+    <a href="../index.html">← Back to Status</a>
+</header>
+
+{% if banner_html %}{{ banner_html }}{% endif %}
+
+<main>
+    {% if articles %}
+    <ul class="article-list">
+        {% for article in articles %}
+        <li>
+            <a href="{{ article.slug }}.html">{{ article.title }}</a>
+            {% if article.description %}
+            <p class="subtitle">{{ article.description }}</p>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="status-message">No articles available at this stage.</p>
+    {% endif %}
+</main>
+
+<footer>
+    <p>Generated: {{ build_time }}</p>
+</footer>
+{% endblock %}

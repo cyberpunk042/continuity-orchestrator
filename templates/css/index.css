@@ -1,0 +1,26 @@
+/* Index page styles */
+.page-index {
+    padding: 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.page-index header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.page-index footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+nav {
+    display: flex;
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
