@@ -24,11 +24,11 @@
             </tr>
             <tr>
                 <td>Deadline</td>
-                <td>{{ deadline }}</td>
+                <td><span id="deadline-display">{{ deadline }}</span></td>
             </tr>
             <tr>
                 <td>Time to Deadline</td>
-                <td>{{ time_to_deadline }} minutes</td>
+                <td>{{ time_to_deadline }} minutes (~{{ (time_to_deadline / 60)|round(1) }} hours)</td>
             </tr>
             <tr>
                 <td>Renewal Count</td>
@@ -36,7 +36,7 @@
             </tr>
             <tr>
                 <td>Last Renewal</td>
-                <td>{{ last_renewal|default('Never') }}</td>
+                <td><span id="last-renewal-display">{{ last_renewal|default('Never') }}</span></td>
             </tr>
         </table>
     </section>
@@ -91,4 +91,27 @@
 <footer>
     <p>Generated: {{ build_time }}</p>
 </footer>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Format dates nicely
+    function formatDate(el) {
+        if (el && el.textContent && el.textContent !== 'Never') {
+            const d = new Date(el.textContent);
+            if (!isNaN(d)) {
+                el.textContent = d.toLocaleString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZoneName: 'short'
+                });
+            }
+        }
+    }
+    formatDate(document.getElementById("deadline-display"));
+    formatDate(document.getElementById("last-renewal-display"));
+</script>
 {% endblock %}

@@ -24,11 +24,11 @@
     <table>
         <tr>
             <td>Deadline</td>
-            <td>{{ deadline }}</td>
+            <td><span id="deadline-display">{{ deadline }}</span></td>
         </tr>
         <tr>
             <td>Time Remaining</td>
-            <td>{{ time_to_deadline }} minutes</td>
+            <td>{{ time_to_deadline }} minutes (~{{ (time_to_deadline / 60)|round(1) }} hours)</td>
         </tr>
         <tr>
             <td>Mode</td>
@@ -47,4 +47,24 @@
 <footer>
     <p>Generated: {{ build_time }}</p>
 </footer>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Format deadline nicely
+    const deadlineEl = document.getElementById("deadline-display");
+    if (deadlineEl && deadlineEl.textContent) {
+        const d = new Date(deadlineEl.textContent);
+        if (!isNaN(d)) {
+            deadlineEl.textContent = d.toLocaleString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
+    }
+</script>
 {% endblock %}

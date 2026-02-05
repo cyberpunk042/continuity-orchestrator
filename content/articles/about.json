@@ -1,0 +1,51 @@
+{
+    "time": 1738774200000,
+    "blocks": [
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "This project implements a continuity orchestration system designed for scheduled operations with escalating disclosure."
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "How It Works",
+                "level": 2
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "The system operates on a simple principle: maintain regular check-ins to confirm continuity. If check-ins stop, the system escalates through defined stages."
+            }
+        },
+        {
+            "type": "list",
+            "data": {
+                "style": "ordered",
+                "items": [
+                    "<b>OK</b> — Normal operation. All systems go.",
+                    "<b>REMIND</b> — Deadline approaching. Reminders sent.",
+                    "<b>PRE_RELEASE</b> — Final warning before escalation.",
+                    "<b>PARTIAL</b> — Limited disclosure begins.",
+                    "<b>FULL</b> — Complete disclosure activated."
+                ]
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "Renewal Process",
+                "level": 2
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "To extend the deadline and reset the timer, use the Check In feature on the countdown page. You will need your renewal code and can choose how many hours to extend."
+            }
+        }
+    ],
+    "version": "2.28.2"
+}

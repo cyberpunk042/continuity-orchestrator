@@ -35,6 +35,10 @@
         <div class="renewal-form">
             <input type="password" id="renewal-code" placeholder="Enter renewal code" autocomplete="off">
             <select id="extend-hours" title="Hours to extend">
+                <option value="1">+1h</option>
+                <option value="3">+3h</option>
+                <option value="6">+6h</option>
+                <option value="12">+12h</option>
                 <option value="24">+24h</option>
                 <option value="48" selected>+48h</option>
                 <option value="72">+72h</option>
@@ -103,6 +107,17 @@
 <script>
     const deadline = new Date("{{ deadline }}");
     const timerEl = document.getElementById("timer");
+
+    // Format deadline display nicely
+    const deadlineEl = document.getElementById("deadline");
+    deadlineEl.textContent = deadline.toLocaleString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    });
 
     function updateCountdown() {
         const now = new Date();
