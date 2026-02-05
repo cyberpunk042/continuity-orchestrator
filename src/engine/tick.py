@@ -202,6 +202,51 @@ def run_tick(
     else:
         result.new_state = state.escalation.state
 
+    # --- Phase 5b: Manual Release Trigger Check ---
+    # If release was manually triggered, check if delay has passed and execute
+    if hasattr(state, 'release') and state.release.triggered:
+        from dateutil import parser as date_parser
+        
+        execute_after = state.release.execute_after_iso
+        should_execute = False
+        
+        if execute_after:
+            # Delayed release - check if time has passed
+            execute_time = date_parser.isoparse(execute_after)
+            if execute_time.tzinfo is None:
+                execute_time = execute_time.replace(tzinfo=timezone.utc)
+            should_execute = now >= execute_time
+        else:
+            # Immediate release (no delay)
+            should_execute = True
+        
+        if should_execute:
+            target_stage = state.release.target_stage or "FULL"
+            logger.info(f"🚨 Manual release triggered - forcing stage to {target_stage}")
+            
+            # Force state transition to target stage
+            if state.escalation.state != target_stage:
+                result.state_changed = True
+                result.previous_state = state.escalation.state
+                state.escalation.state = target_stage
+                state.escalation.state_entered_at_iso = now.isoformat().replace("+00:00", "Z")
+                state.escalation.last_transition_rule_id = "MANUAL_RELEASE"
+                result.new_state = target_stage
+                
+                if audit_writer:
+                    audit_writer.emit_state_transition(
+                        tick_id=tick_id,
+                        state_id=state_id,
+                        from_state=result.previous_state,
+                        to_state=target_stage,
+                        rule_id="MANUAL_RELEASE",
+                        policy_version=state.meta.policy_version,
+                        plan_id=state.meta.plan_id,
+                    )
+            
+            # Keep release.triggered set so site continues showing DELAYED
+            logger.info("Release executed (triggered flag retained)")
+
     # --- Phase 6: Action Selection ---
     current_stage = state.escalation.state
     actions_for_stage = policy.plan.get_actions_for_stage(current_stage)

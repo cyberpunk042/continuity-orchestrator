@@ -145,11 +145,12 @@ jobs:
       - name: Summary
         run: |
           if [ "${{ steps.validate.outputs.action }}" = "release" ]; then
-            echo "## ⚠️ RELEASE TRIGGERED (Shadow Mode)" >> $GITHUB_STEP_SUMMARY
+            echo "## ⚠️ RELEASE TRIGGERED" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "- Stage: **FULL**" >> $GITHUB_STEP_SUMMARY
             echo "- Triggered at: **$(date -u +%Y-%m-%dT%H:%M:%SZ)**" >> $GITHUB_STEP_SUMMARY
-            echo "- Site rebuild: **Delayed (cron will pick up)**" >> $GITHUB_STEP_SUMMARY
+            echo "- Site: **Rebuilt with DELAYED status**" >> $GITHUB_STEP_SUMMARY
+            echo "- Integrations: **Cron will execute on next tick**" >> $GITHUB_STEP_SUMMARY
           else
             echo "## ✅ Renewal Successful" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
