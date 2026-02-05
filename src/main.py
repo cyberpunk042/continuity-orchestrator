@@ -292,6 +292,9 @@ def trigger_release(ctx: click.Context, stage: str, state_file: str, silent: boo
     state.timer.time_to_deadline_minutes = -60
     state.timer.overdue_minutes = 60
     
+    # CRITICAL: Clear renewal flag so tick doesn't reset state back to OK
+    state.renewal.renewed_this_tick = False
+    
     state.meta.updated_at_iso = now.isoformat()
     
     save_state(state, state_path)
