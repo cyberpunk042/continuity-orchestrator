@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-project",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T01:02:21.098805+00:00",
+        "updated_at_iso": "2026-02-05T02:41:52.096028Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-07T01:02:21.098805+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T01:02:21.098805+00:00",
-        "time_to_deadline_minutes": 2880,
+        "now_iso": "2026-02-05T02:41:52.095350Z",
+        "time_to_deadline_minutes": 2780,
         "overdue_minutes": 0
     },
     "renewal": {
@@ -28,12 +28,13 @@
         "lockout_active": false,
         "lockout_until_iso": null,
         "max_failed_attempts": 3,
-        "lockout_minutes": 60
+        "attempt_window_seconds": 60
     },
     "escalation": {
         "state": "OK",
         "state_entered_at_iso": "2026-02-05T01:02:21.098805+00:00",
-        "last_transition_rule_id": null
+        "last_transition_rule_id": null,
+        "monotonic_enforced": true
     },
     "actions": {
         "executed": {},
