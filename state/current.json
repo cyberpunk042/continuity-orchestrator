@@ -52,7 +52,7 @@
             "persistence_api": false
         },
         "routing": {
-            "github_repository": "owner/repo",
+            "github_repository": "cyberpunk042/continuity-orchestrator",
             "operator_email": "jfortin-moreau@outlook.com",
             "operator_sms": null,
             "custodian_emails": [],

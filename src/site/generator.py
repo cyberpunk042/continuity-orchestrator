@@ -187,6 +187,18 @@ class SiteGenerator:
                 "Make sure to also add it as a GitHub secret for the deployed site to work: "
                 "Settings → Secrets → Actions → RENEWAL_TRIGGER_TOKEN"
             )
+        # Get enabled adapters from state
+        enabled_adapters = {}
+        if hasattr(state, 'integrations') and state.integrations:
+            if hasattr(state.integrations, 'enabled_adapters') and state.integrations.enabled_adapters:
+                ea = state.integrations.enabled_adapters
+                enabled_adapters = {
+                    "email": getattr(ea, 'email', False),
+                    "sms": getattr(ea, 'sms', False),
+                    "reddit": getattr(ea, 'reddit', False),
+                    "x": getattr(ea, 'x', False),
+                    "github_surface": getattr(ea, 'github_surface', False),
+                }
         
         context = {
             "project": state.meta.project,
@@ -204,6 +216,9 @@ class SiteGenerator:
             "audit_entries": audit_entries or [],
             "github_repository": github_repo or "OWNER/REPO",
             "renewal_trigger_token": renewal_trigger_token,  # For direct API renewal
+            "enabled_adapters": enabled_adapters,
+            "renewal_count": state.renewal.renewal_count if hasattr(state, 'renewal') else 0,
+            "last_renewal": state.renewal.last_renewal_iso if hasattr(state, 'renewal') else None,
         }
         
         # Load content manifest for stage-based visibility
@@ -335,7 +350,67 @@ class SiteGenerator:
         return output_path
     
     def _generate_status(self, context: Dict[str, Any]) -> Path:
-        """Generate detailed status page."""
+        """Generate detailed status page with integration tracking."""
+        # Parse audit entries for integration executions
+        audit_entries = context.get("audit_entries", [])
+        integration_executions = []
+        for entry in audit_entries:
+            if entry.get("event_type") == "action_executed":
+                integration_executions.append({
+                    "action": entry.get("action", "unknown"),
+                    "adapter": entry.get("adapter", "unknown"),
+                    "timestamp": entry.get("timestamp", ""),
+                    "success": entry.get("success", True),
+                    "error": entry.get("error"),
+                    "tick_id": entry.get("tick_id", ""),
+                })
+        
+        # Build integration status HTML
+        if integration_executions:
+            execution_rows = ""
+            for exec in reversed(integration_executions[-20:]):  # Last 20
+                status_icon = "✅" if exec["success"] else "❌"
+                error_text = f" — {exec['error']}" if exec.get("error") else ""
+                execution_rows += f"""
+                <tr>
+                    <td>{status_icon}</td>
+                    <td>{exec['adapter']}</td>
+                    <td>{exec['action']}</td>
+                    <td>{exec['timestamp']}</td>
+                    <td>{exec['tick_id']}{error_text}</td>
+                </tr>
+                """
+            integration_html = f"""
+            <section>
+                <h2>Integration Executions</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Adapter</th>
+                            <th>Action</th>
+                            <th>Time</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {execution_rows}
+                    </tbody>
+                </table>
+            </section>
+            """
+        else:
+            integration_html = """
+            <section>
+                <h2>Integration Executions</h2>
+                <p class="status-message">No integration executions recorded yet.</p>
+            </section>
+            """
+        
+        # Enabled adapters
+        enabled_adapters = context.get("enabled_adapters", {})
+        adapter_list = ", ".join([k for k, v in enabled_adapters.items() if v]) or "None"
+        
         html = self._render_html_page(
             title=f"Full Status — {context['project']}",
             content=f"""
@@ -345,9 +420,30 @@ class SiteGenerator:
             </header>
             
             <main>
+                <section class="status-card">
+                    <h2>Current State</h2>
+                    <table>
+                        <tr><td>Stage</td><td><strong>{context['stage']}</strong></td></tr>
+                        <tr><td>Deadline</td><td>{context['deadline']}</td></tr>
+                        <tr><td>Time to Deadline</td><td>{context['time_to_deadline']} minutes</td></tr>
+                        <tr><td>Renewal Count</td><td>{context.get('renewal_count', 0)}</td></tr>
+                        <tr><td>Last Renewal</td><td>{context.get('last_renewal', 'Never')}</td></tr>
+                    </table>
+                </section>
+                
+                <section class="status-card">
+                    <h2>Enabled Integrations</h2>
+                    <p>{adapter_list}</p>
+                </section>
+                
+                {integration_html}
+                
                 <section>
-                    <h2>State Information</h2>
-                    <pre>{json.dumps(context, indent=2, default=str)}</pre>
+                    <h2>Raw State</h2>
+                    <details>
+                        <summary>View full state JSON</summary>
+                        <pre>{json.dumps(context, indent=2, default=str)}</pre>
+                    </details>
                 </section>
             </main>
             
@@ -366,6 +462,14 @@ class SiteGenerator:
         """Generate RSS/Atom feed."""
         entries = context.get("audit_entries", [])
         
+        # Compute site URL from GitHub repository
+        github_repo = context.get("github_repository", "")
+        if github_repo and "/" in github_repo:
+            owner, repo = github_repo.split("/", 1)
+            site_url = f"https://{owner}.github.io/{repo}/"
+        else:
+            site_url = ""
+        
         items = ""
         for entry in reversed(entries[-10:]):
             items += f"""
@@ -380,7 +484,7 @@ class SiteGenerator:
 <rss version="2.0">
     <channel>
         <title>{context['project']} — Continuity Status</title>
-        <link>https://example.com/</link>
+        <link>{site_url}</link>
         <description>Continuity orchestrator status updates</description>
         <lastBuildDate>{context['build_time']}</lastBuildDate>
         {items}
