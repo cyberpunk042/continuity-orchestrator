@@ -1,9 +1,9 @@
 {
     "meta": {
         "schema_version": 1,
-        "project": "my-project",
+        "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T18:33:11.200885+00:00",
+        "updated_at_iso": "2026-02-05T18:42:27.468823+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,14 +12,14 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-07T18:33:11.200885+00:00",
+        "deadline_iso": "2026-02-06T18:42:27.468823+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T18:33:11.200885+00:00",
-        "time_to_deadline_minutes": 2880,
+        "now_iso": "2026-02-05T18:42:27.468823+00:00",
+        "time_to_deadline_minutes": 1440,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-05T18:33:11.200885+00:00",
+        "last_renewal_iso": "2026-02-05T18:42:27.468823+00:00",
         "renewed_this_tick": false,
         "renewal_count": 0
     },
@@ -28,40 +28,30 @@
         "lockout_active": false,
         "lockout_until_iso": null,
         "max_failed_attempts": 3,
-        "attempt_window_seconds": 60
+        "lockout_minutes": 60
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-05T18:33:11.200885+00:00",
-        "last_transition_rule_id": null,
-        "monotonic_enforced": true
+        "state_entered_at_iso": "2026-02-05T18:42:27.468823+00:00",
+        "last_transition_rule_id": null
     },
     "actions": {
         "executed": {},
         "last_tick_actions": []
     },
-    "release": {
-        "triggered": false,
-        "trigger_time_iso": null,
-        "target_stage": null,
-        "delay_minutes": 0,
-        "delay_scope": "full",
-        "execute_after_iso": null,
-        "client_token": null
-    },
     "integrations": {
         "enabled_adapters": {
             "email": true,
-            "sms": true,
-            "x": true,
-            "reddit": true,
+            "sms": false,
+            "x": false,
+            "reddit": false,
             "webhook": true,
             "github_surface": true,
             "article_publish": true,
-            "persistence_api": true
+            "persistence_api": false
         },
         "routing": {
-            "github_repository": null,
+            "github_repository": "owner/repo",
             "operator_email": "jfm.devops.expert@gmail.com",
             "operator_sms": null,
             "custodian_emails": [],
@@ -72,7 +62,7 @@
     },
     "pointers": {
         "persistence": {
-            "primary_backend": "persistence_api",
+            "primary_backend": "file",
             "last_persist_iso": null
         },
         "github_surface": {

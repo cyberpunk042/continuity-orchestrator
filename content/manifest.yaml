@@ -5,7 +5,7 @@ version: 1
 
 articles:
   - slug: about
-    title: "About my-project"
+    title: "About my-deadman"
     visibility:
       min_stage: OK
       include_in_nav: true

@@ -1,1 +1,1 @@
-{"event_type": "factory_reset", "timestamp": "2026-02-05T18:33:11.200885+00:00", "tick_id": "RESET-20260205T183311", "new_deadline": "2026-02-07T18:33:11.200885+00:00", "hours": 48}
+{"event_type": "init", "timestamp": "2026-02-05T18:42:27.468823+00:00", "tick_id": "INIT-20260205T184227", "project": "my-deadman", "github_repository": "owner/repo", "operator_email": "jfm.devops.expert@gmail.com", "deadline": "2026-02-06T18:42:27.468823+00:00"}

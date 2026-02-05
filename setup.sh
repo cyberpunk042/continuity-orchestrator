@@ -214,75 +214,110 @@ fi
 echo ""
 
 # ─────────────────────────────────────────────────────────────────
-# GitHub
+# GitHub Integration
 # ─────────────────────────────────────────────────────────────────
-echo -e "${BOLD}🐙 GitHub (for publishing & state sync)${NC}"
-if [ -n "$GITHUB_TOKEN" ]; then
-    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$GITHUB_TOKEN")]"
-    echo -e "   ${GREEN}  Repository: ${GITHUB_REPO:-not set}${NC}"
-    read -p "   Replace? (y/N): " REPLACE_GITHUB
-    if [[ $REPLACE_GITHUB =~ ^[Yy] ]]; then
-        echo -e "${DIM}   Create a token at https://github.com/settings/tokens${NC}"
-        echo -e "${DIM}   (needs 'repo' and 'workflow' permissions)${NC}"
-        read -p "   GitHub Token: " NEW_TOKEN
+echo -e "${BOLD}🐙 GitHub Integration${NC}"
+echo ""
+
+# Part 1: Repository
+echo -e "${BOLD}   📂 Repository${NC}"
+if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "owner/repo" ]; then
+    echo -e "   ${GREEN}✓ Repository: ${GITHUB_REPO}${NC}"
+    read -p "   Change? (y/N): " CHANGE_REPO
+    if [[ $CHANGE_REPO =~ ^[Yy] ]]; then
         read -p "   Repository (owner/repo): " NEW_REPO
-        [ -n "$NEW_TOKEN" ] && GITHUB_TOKEN="$NEW_TOKEN"
         [ -n "$NEW_REPO" ] && GITHUB_REPO="$NEW_REPO"
     fi
+else
+    read -p "   Repository (owner/repo): " GITHUB_REPO
+fi
+echo ""
+
+# Part 2: GITHUB_TOKEN (server-side adapter)
+echo -e "${BOLD}   🔑 Server Token (GITHUB_TOKEN)${NC}"
+echo -e "${DIM}   Used by: github_surface adapter (create files, releases, gists)${NC}"
+echo -e "${DIM}   Permissions: 'repo' and 'workflow'${NC}"
+echo -e "${DIM}   Create at: https://github.com/settings/tokens${NC}"
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$GITHUB_TOKEN")]"
+    read -p "   Replace? (y/N): " REPLACE_TOKEN
+    if [[ $REPLACE_TOKEN =~ ^[Yy] ]]; then
+        read -p "   GitHub Token: " NEW_TOKEN
+        [ -n "$NEW_TOKEN" ] && GITHUB_TOKEN="$NEW_TOKEN"
+    fi
     HAS_REAL_ADAPTER="true"
-    
-    # Check for renewal trigger token
-    if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
-        echo -e "   ${GREEN}✓ One-click renewal: configured${NC}"
-    else
-        echo ""
-        echo -e "${BOLD}   🔐 One-Click Renewal (optional)${NC}"
-        echo -e "${DIM}   Allows renewing directly from the countdown page.${NC}"
-        read -p "   Add renewal trigger token? (y/N): " ADD_RENEWAL
-        if [[ $ADD_RENEWAL =~ ^[Yy] ]]; then
-            echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
-            echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
-            read -p "   Renewal Trigger Token: " RENEWAL_TRIGGER_TOKEN
-            if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
-                echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
-            fi
-        fi
+else
+    echo -e "${DIM}   (Optional - only needed if using github_surface adapter)${NC}"
+    read -p "   GitHub Token (or Enter to skip): " GITHUB_TOKEN
+    [ -n "$GITHUB_TOKEN" ] && HAS_REAL_ADAPTER="true"
+fi
+echo ""
+
+# Part 3: RENEWAL_TRIGGER_TOKEN (client-side one-click)
+echo -e "${BOLD}   🖱️  One-Click Token (RENEWAL_TRIGGER_TOKEN)${NC}"
+echo -e "${DIM}   Used by: Website 'Renew Now' button (browser → GitHub API)${NC}"
+echo -e "${DIM}   Permissions: ONLY 'Actions: Read and write' for this repo${NC}"
+echo -e "${DIM}   Create at: https://github.com/settings/tokens?type=beta${NC}"
+echo -e "${YELLOW}   ⚠ This token is embedded in static HTML (exposed to browser)${NC}"
+if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
+    echo -e "   ${GREEN}✓ Already configured${NC} [$(mask_key "$RENEWAL_TRIGGER_TOKEN")]"
+    read -p "   Replace? (y/N): " REPLACE_TRIGGER
+    if [[ $REPLACE_TRIGGER =~ ^[Yy] ]]; then
+        read -p "   Renewal Trigger Token: " NEW_TRIGGER
+        [ -n "$NEW_TRIGGER" ] && RENEWAL_TRIGGER_TOKEN="$NEW_TRIGGER"
     fi
 else
-    read -p "   Configure GitHub? (y/N): " ENABLE_GITHUB
-    if [[ $ENABLE_GITHUB =~ ^[Yy] ]]; then
-        echo -e "${DIM}   Create a token at https://github.com/settings/tokens${NC}"
-        echo -e "${DIM}   (needs 'repo' and 'workflow' permissions)${NC}"
-        read -p "   GitHub Token: " GITHUB_TOKEN
-        read -p "   Repository (owner/repo): " GITHUB_REPO
-        if [ -n "$GITHUB_TOKEN" ]; then
-            HAS_REAL_ADAPTER="true"
-            echo -e "${GREEN}   ✓ GitHub configured${NC}"
-            
-            # One-click renewal token
-            echo ""
-            echo -e "${BOLD}   🔐 One-Click Renewal (optional)${NC}"
-            echo -e "${DIM}   Allows renewing directly from the countdown page.${NC}"
-            echo -e "${DIM}   Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
-            echo -e "${DIM}   With ONLY 'Actions: Read and write' permission for this repo.${NC}"
-            read -p "   Renewal Trigger Token (or skip): " RENEWAL_TRIGGER_TOKEN
-            if [ -n "$RENEWAL_TRIGGER_TOKEN" ]; then
-                echo -e "${GREEN}   ✓ One-click renewal enabled${NC}"
-            fi
-        else
-            echo -e "${YELLOW}   ⚠ Skipped (mock mode)${NC}"
-        fi
-    else
-        echo -e "${DIM}   Skipped${NC}"
+    read -p "   Renewal Trigger Token (or Enter to skip): " RENEWAL_TRIGGER_TOKEN
+fi
+echo ""
+
+# Part 4: Secret Codes (passwords)
+echo -e "${BOLD}   🔐 Secret Codes${NC}"
+echo -e "${DIM}   These are passwords you create. Users type them to renew/release.${NC}"
+echo -e "${DIM}   Store in GitHub Secrets AND .env (for local testing).${NC}"
+echo ""
+
+# RENEWAL_SECRET
+echo -e "   ${CYAN}RENEWAL_SECRET${NC} — Code to extend the deadline"
+if [ -n "$RENEWAL_SECRET" ]; then
+    echo -e "   ${GREEN}✓ Already set${NC} [$(mask_key "$RENEWAL_SECRET")]"
+    read -p "   Replace? (y/N): " REPLACE_RENEW_SECRET
+    if [[ $REPLACE_RENEW_SECRET =~ ^[Yy] ]]; then
+        read -p "   New renewal secret: " NEW_SECRET
+        [ -n "$NEW_SECRET" ] && RENEWAL_SECRET="$NEW_SECRET"
+    fi
+else
+    read -p "   Create renewal secret (or Enter to generate): " RENEWAL_SECRET
+    if [ -z "$RENEWAL_SECRET" ]; then
+        RENEWAL_SECRET=$(openssl rand -hex 16 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(16))")
+        echo -e "   ${GREEN}Generated: ${RENEWAL_SECRET}${NC}"
+    fi
+fi
+
+# RELEASE_SECRET
+echo -e "   ${CYAN}RELEASE_SECRET${NC} — Code to trigger emergency release"
+if [ -n "$RELEASE_SECRET" ]; then
+    echo -e "   ${GREEN}✓ Already set${NC} [$(mask_key "$RELEASE_SECRET")]"
+    read -p "   Replace? (y/N): " REPLACE_RELEASE_SECRET
+    if [[ $REPLACE_RELEASE_SECRET =~ ^[Yy] ]]; then
+        read -p "   New release secret: " NEW_SECRET
+        [ -n "$NEW_SECRET" ] && RELEASE_SECRET="$NEW_SECRET"
+    fi
+else
+    read -p "   Create release secret (or Enter to generate): " RELEASE_SECRET
+    if [ -z "$RELEASE_SECRET" ]; then
+        RELEASE_SECRET=$(openssl rand -hex 16 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(16))")
+        echo -e "   ${GREEN}Generated: ${RELEASE_SECRET}${NC}"
     fi
 fi
 echo ""
 
 # ─────────────────────────────────────────────────────────────────
-# X (Twitter) — Skip for now, can add later
+# Other adapters
 # ─────────────────────────────────────────────────────────────────
-echo -e "${DIM}   ℹ️  X, Reddit, Webhooks can be configured later in .env${NC}"
+echo -e "${DIM}ℹ️  X, Reddit, Webhooks can be configured later in .env${NC}"
 echo ""
+
 
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
