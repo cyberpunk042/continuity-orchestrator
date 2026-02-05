@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-project",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-05T18:16:53.251061Z",
+        "updated_at_iso": "2026-02-05T19:13:47.663372Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,9 +14,9 @@
     "timer": {
         "deadline_iso": "2026-02-05T16:39:45.028210+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-05T18:16:53.250298Z",
+        "now_iso": "2026-02-05T19:13:47.662720Z",
         "time_to_deadline_minutes": 0,
-        "overdue_minutes": 97
+        "overdue_minutes": 154
     },
     "renewal": {
         "last_renewal_iso": "2026-02-05T17:21:56.984630+00:00",
@@ -39,6 +39,15 @@
     "actions": {
         "executed": {},
         "last_tick_actions": []
+    },
+    "release": {
+        "triggered": false,
+        "trigger_time_iso": null,
+        "target_stage": null,
+        "delay_minutes": 0,
+        "delay_scope": "full",
+        "execute_after_iso": null,
+        "client_token": null
     },
     "integrations": {
         "enabled_adapters": {
