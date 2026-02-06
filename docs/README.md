@@ -1,84 +1,55 @@
 # Documentation
 
-Comprehensive documentation for Continuity Orchestrator.
-
 ---
 
 ## ⚠️ Read First
 
 | Document | Description |
 |----------|-------------|
-| [DISCLAIMER.md](../DISCLAIMER.md) | Legal disclaimer and warnings |
+| [DISCLAIMER.md](../DISCLAIMER.md) | Legal disclaimer — please read |
 | [SECURITY.md](../SECURITY.md) | Security best practices |
 
 ---
 
-## Quick Links
+## Getting Started
 
 | Document | Description |
 |----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup guide |
-| [FORKING_GUIDE.md](FORKING_GUIDE.md) | Fork and deploy your own |
-| [CONFIGURATION.md](CONFIGURATION.md) | All configuration options |
+| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup |
+| [FORKING_GUIDE.md](FORKING_GUIDE.md) | Fork your own instance |
+| [PROJECT_REFERENCE.md](PROJECT_REFERENCE.md) | **Where everything is** — complete file map |
+
+---
+
+## Configuration
+
+Each directory has its own README:
+
+| Directory | What it configures |
+|-----------|-------------------|
+| [`policy/README.md`](../policy/README.md) | Rules and action plans |
+| [`content/README.md`](../content/README.md) | Your disclosure documents |
+| [`templates/README.md`](../templates/README.md) | Email, SMS, and site templates |
+| [`.env.example`](../.env.example) | All environment variables |
+
+---
+
+## Deployment
+
+| Document | Description |
+|----------|-------------|
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker, GitHub Actions, production |
+
+---
+
+## Reference
+
+| Document | Description |
+|----------|-------------|
+| [RELEASE_TRIGGER.md](RELEASE_TRIGGER.md) | Manual disclosure trigger |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the engine works |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Contributing and development |
+| [CONFIGURATION.md](CONFIGURATION.md) | Detailed configuration options |
 
 ---
 
-## By Topic
-
-### Getting Started
-
-| Document | Description |
-|----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | New here? Start here |
-| [FORKING_GUIDE.md](FORKING_GUIDE.md) | Self-hosting your own instance |
-
-### Configuration
-
-| Document | Description |
-|----------|-------------|
-| [CONFIGURATION.md](CONFIGURATION.md) | Rules, states, plans, adapters |
-| [AUTHORING.md](AUTHORING.md) | Writing templates and content |
-
-### Deployment
-
-| Document | Description |
-|----------|-------------|
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker, Actions, production setup |
-
-### Development
-
-| Document | Description |
-|----------|-------------|
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Running tests, contributing |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and internals |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to contribute |
-
-### Features
-
-| Document | Description |
-|----------|-------------|
-| [RELEASE_TRIGGER.md](RELEASE_TRIGGER.md) | Manual release/disclosure |
-
-### Reference
-
-| Document | Description |
-|----------|-------------|
-| [ROADMAP.md](ROADMAP.md) | Planned features |
-| [specs/](specs/) | Technical specifications |
-
----
-
-## Root Documents
-
-These live in the repository root:
-
-| Document | Description |
-|----------|-------------|
-| [README.md](../README.md) | Project overview |
-| [DISCLAIMER.md](../DISCLAIMER.md) | Legal disclaimer |
-| [SECURITY.md](../SECURITY.md) | Security guide |
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution guide |
-| [LICENSE](../LICENSE) | MIT License |
+*Start with `./setup.sh`. Manage with `./manage.sh`.*

@@ -23,6 +23,8 @@ build/
 .coverage
 htmlcov/
 .tox/
+.benchmarks/
+.ruff_cache/
 
 # Environment
 .env
@@ -36,10 +38,6 @@ Thumbs.db
 # Logs
 *.log
 
-# Temporary
-tmp/
-temp/public/
+# Generated (rebuilt by build-site)
 public/
-
-# Stale build artifacts (should only be in public/)
-/*.htmlbackups/
+temp/
