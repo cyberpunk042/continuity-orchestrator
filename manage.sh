@@ -50,6 +50,9 @@ show_menu() {
     echo -e "  ${BLUE}0)${NC} setup           Run setup wizard (reconfigure)"
     echo -e "  ${BLUE}s)${NC} secrets         Push all secrets to GitHub repo"
     echo ""
+    echo -e "  ${CYAN}w)${NC}  web            Open web admin panel (browser)"
+    echo -e "  ${CYAN}c)${NC}  config-status  Show comprehensive status"
+    echo ""
     echo -e "  ${RED}!)${NC}  trigger-release Emergency disclosure trigger"
     echo ""
     echo -e "  ${CYAN}h)${NC}  help           Show all CLI commands"
@@ -151,6 +154,19 @@ run_setup() {
     else
         echo "Cancelled."
     fi
+}
+
+run_admin() {
+    echo -e "\n${BOLD}=== Web Admin Panel ===${NC}\n"
+    echo -e "${CYAN}Opening browser to local admin panel...${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
+    echo ""
+    python -m src.admin
+}
+
+run_config_status() {
+    echo -e "\n${BOLD}=== Configuration Status ===${NC}\n"
+    python -m src.main config-status
 }
 
 run_push_secrets() {
@@ -343,6 +359,8 @@ main() {
             trigger|trigger-release) run_trigger_release ;;
             setup|wizard) run_setup ;;
             secrets|push-secrets) run_push_secrets ;;
+            web|admin) run_admin ;;
+            config-status|cs) run_config_status ;;
             help) show_help ;;
             *) 
                 echo "Unknown command: $1"
@@ -369,6 +387,8 @@ main() {
             9|test) run_test ;;
             0|setup) run_setup ;;
             s|secrets) run_push_secrets ;;
+            w|web|admin) run_admin ;;
+            c|config-status|cs) run_config_status ;;
             '!'|trigger) run_trigger_release ;;
             h|help) show_help ;;
             q|quit|exit) 
