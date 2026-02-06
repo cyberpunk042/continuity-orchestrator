@@ -201,9 +201,9 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
             # Create request with headers
             request = urllib.request.Request(save_url, headers=headers)
             
-            # Use a custom opener that handles redirects
-            # but also captures the final URL
-            with urllib.request.urlopen(request, timeout=60) as response:
+            # archive.org Save Page Now can take up to 2+ minutes
+            # Use a long timeout to allow the archive to complete
+            with urllib.request.urlopen(request, timeout=180) as response:
                 response_url = response.geturl()
                 response_code = response.status
                 
