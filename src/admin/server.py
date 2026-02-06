@@ -844,10 +844,79 @@ read -p "Press Enter to close..."
                     "steps": steps,
                 })
 
-            # Stage all changes
+            # Step 1: Stage everything so stash captures it all
             _run(["git", "add", "-A"], "git add")
 
-            # Check if there's anything to commit
+            # Check if there's anything to sync
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            has_local_changes = result.returncode != 0
+
+            if not has_local_changes:
+                logger.info("[git-sync] Nothing to commit — already up to date")
+                return jsonify({
+                    "success": True,
+                    "message": "Already up to date (nothing to commit)",
+                    "steps": steps,
+                })
+
+            # Step 2: Stash our changes (so working tree is clean for pull)
+            result = _run(
+                ["git", "stash", "push", "-m", "admin-sync-temp"],
+                "git stash",
+            )
+            stashed = result.returncode == 0 and "No local changes" not in result.stdout
+
+            # Step 3: Pull latest from remote (clean working tree → always works)
+            result = _run(["git", "pull", "--ff"], "git pull", timeout=30)
+            pull_ok = result.returncode == 0
+
+            if not pull_ok:
+                # If pull fails even with clean tree, try merge strategy
+                logger.warning("[git-sync] Fast-forward pull failed, trying merge")
+                result = _run(
+                    ["git", "pull", "--no-rebase", "-X", "theirs"],
+                    "git pull (merge)",
+                    timeout=30,
+                )
+                pull_ok = result.returncode == 0
+                if not pull_ok:
+                    # Abort merge if in progress
+                    _run(["git", "merge", "--abort"], "merge abort")
+                    # Recover stash
+                    if stashed:
+                        _run(["git", "stash", "pop"], "stash recover")
+                    return jsonify({
+                        "success": False,
+                        "error": "Could not pull remote changes. Check git status manually.",
+                        "steps": steps,
+                    })
+
+            # Step 4: Re-apply our changes on top of latest
+            if stashed:
+                result = _run(["git", "stash", "pop"], "git stash pop")
+                if result.returncode != 0:
+                    # Stash pop conflict — auto-resolve: our changes win
+                    logger.warning("[git-sync] Stash pop conflict — resolving with our version")
+                    # Accept the partially-merged state (our files are there, just with conflict markers)
+                    # Re-add everything to resolve
+                    _run(["git", "checkout", "--theirs", "."], "resolve: keep ours")
+                    _run(["git", "add", "-A"], "re-stage after resolve")
+                    steps.append({
+                        "step": "conflict resolved",
+                        "ok": True,
+                        "output": "Auto-resolved in favor of local changes",
+                    })
+
+            # Step 5: Stage and commit
+            _run(["git", "add", "-A"], "git add (final)")
+            
+            # Check if there's still something to commit (pull might have already included our changes)
             result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
                 cwd=str(project_root),
@@ -856,14 +925,14 @@ read -p "Press Enter to close..."
                 timeout=10,
             )
             if result.returncode == 0:
-                logger.info("[git-sync] Nothing to commit — already up to date")
+                # Our changes were identical to what was pulled
+                logger.info("[git-sync] Changes already present in remote")
                 return jsonify({
                     "success": True,
-                    "message": "Already up to date (nothing to commit)",
+                    "message": "Already up to date (changes match remote)",
                     "steps": steps,
                 })
 
-            # Commit
             result = _run(["git", "commit", "-m", message], "git commit")
             if result.returncode != 0:
                 return jsonify({
@@ -872,24 +941,7 @@ read -p "Press Enter to close..."
                     "steps": steps,
                 })
 
-            # Pull with rebase (avoids merge conflicts from parallel changes)
-            result = _run(
-                ["git", "pull", "--rebase", "--autostash"],
-                "git pull --rebase",
-                timeout=30,
-            )
-            if result.returncode != 0:
-                # Rebase conflict — abort and report
-                logger.error("[git-sync] Rebase conflict, aborting")
-                _run(["git", "rebase", "--abort"], "rebase abort")
-                return jsonify({
-                    "success": False,
-                    "error": "Pull failed (rebase conflict). Your commit was made but not pushed. "
-                             "Resolve conflicts manually: git pull --rebase && git push",
-                    "steps": steps,
-                })
-
-            # Push
+            # Step 6: Push (should be clean since we just pulled)
             result = _run(["git", "push"], "git push", timeout=30)
             if result.returncode != 0:
                 return jsonify({
