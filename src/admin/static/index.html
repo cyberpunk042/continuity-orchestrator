@@ -571,6 +571,17 @@
             transform: translateY(-1px);
         }
 
+        .wizard-step.skippable {
+            background: rgba(74, 222, 128, 0.1);
+            color: var(--accent);
+            border: 1px dashed rgba(74, 222, 128, 0.4);
+        }
+
+        .wizard-step.skippable:hover {
+            background: rgba(74, 222, 128, 0.2);
+            transform: translateY(-1px);
+        }
+
         .wizard-step-num {
             width: 24px;
             height: 24px;
@@ -1808,15 +1819,17 @@
 
         // Check if required steps have been satisfied (have data)
         function areRequiredStepsSatisfied() {
-            // Check for minimum required values
+            // Check for minimum required values from envData (already configured)
             const hasProject = envData.PROJECT_NAME && envData.PROJECT_NAME.length > 0;
-            const hasRenewal = envData.RENEWAL_SECRET || (wizardData.RENEWAL_SECRET && wizardData.RENEWAL_SECRET.length > 0);
-            return hasProject || hasRenewal || wizardData.PROJECT_NAME;
-        }
+            const hasRenewal = envData.RENEWAL_SECRET && envData.RENEWAL_SECRET.length > 0;
+            const hasGithub = envData.GITHUB_REPOSITORY && envData.GITHUB_REPOSITORY.length > 0;
 
-        // Get the index of the first optional step
-        function getFirstOptionalStepIndex() {
-            return REQUIRED_STEP_COUNT; // After security step
+            // Also check wizardData (entered this session)
+            const wizHasProject = wizardData.PROJECT_NAME && wizardData.PROJECT_NAME.length > 0;
+            const wizHasRenewal = wizardData.RENEWAL_SECRET && wizardData.RENEWAL_SECRET.length > 0;
+
+            // If we have project AND some security value, consider it satisfied
+            return (hasProject || wizHasProject) && (hasRenewal || wizHasRenewal || hasGithub);
         }
 
         // Check if a step is optional (can be skipped)
@@ -1825,8 +1838,24 @@
             return ['email', 'sms', 'twitter', 'reddit'].includes(step?.id);
         }
 
+        // Check if we can skip ahead (some configuration already exists)
+        function canSkipAhead() {
+            // If any values exist in envData, allow free navigation
+            const hasAnyConfig = Object.keys(envData).some(key =>
+                envData[key] && envData[key].length > 0 &&
+                !['ADAPTER_MOCK_MODE'].includes(key) // Exclude defaults
+            );
+            return hasAnyConfig;
+        }
+
         // Navigate to a specific step (if allowed)
         function goToStep(stepIndex) {
+            // Collect current step data first
+            const currentStep = wizardSteps[currentWizardStep];
+            if (currentStep?.collect) {
+                Object.assign(wizardData, currentStep.collect());
+            }
+
             // Can always go back
             if (stepIndex < currentWizardStep) {
                 currentWizardStep = stepIndex;
@@ -1834,17 +1863,22 @@
                 return;
             }
 
-            // Can skip ahead only if:
-            // 1. Required steps are satisfied, OR
-            // 2. We're going to an earlier required step
+            // If user already has config, allow free navigation
+            if (canSkipAhead()) {
+                currentWizardStep = stepIndex;
+                renderWizard();
+                return;
+            }
+
+            // Otherwise, stricter rules:
+            // - Required steps: can only go forward one at a time
+            // - Optional steps: can jump if required are satisfied
             if (stepIndex < REQUIRED_STEP_COUNT) {
-                // For required steps, only allow going to completed ones or current+1
                 if (stepIndex <= currentWizardStep + 1) {
                     currentWizardStep = stepIndex;
                     renderWizard();
                 }
-            } else if (areRequiredStepsSatisfied() || currentWizardStep >= REQUIRED_STEP_COUNT) {
-                // For optional steps, allow jumping if required are done
+            } else if (areRequiredStepsSatisfied()) {
                 currentWizardStep = stepIndex;
                 renderWizard();
             }
@@ -1852,6 +1886,7 @@
 
         function renderWizard() {
             const requiredSatisfied = areRequiredStepsSatisfied();
+            const skipAllowed = canSkipAhead();
 
             // Render step indicators
             const stepsHtml = wizardSteps.map((step, idx) => {
@@ -1864,8 +1899,11 @@
                 } else if (idx === currentWizardStep) {
                     cls = 'active';
                 } else {
-                    // Future steps: clickable if optional and required steps are satisfied
-                    if (idx >= REQUIRED_STEP_COUNT && (requiredSatisfied || currentWizardStep >= REQUIRED_STEP_COUNT)) {
+                    // Future steps: clickable if skip is allowed OR if it's optional and required are satisfied
+                    if (skipAllowed) {
+                        clickable = true;
+                        cls = isOptionalStep(idx) ? 'optional' : 'skippable';
+                    } else if (idx >= REQUIRED_STEP_COUNT && requiredSatisfied) {
                         clickable = true;
                         cls = 'optional';
                     }
