@@ -532,6 +532,7 @@
             justify-content: center;
             gap: 0.5rem;
             margin-bottom: 2rem;
+            flex-wrap: wrap;
         }
 
         .wizard-step {
@@ -623,6 +624,7 @@
         <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
         <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
         <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
+        <button class="tab" onclick="switchTab('debugging')">🐛 Debugging</button>
     </nav>
 
     <!-- Dashboard Tab -->
@@ -745,6 +747,61 @@
                 </div>
             </div>
 
+            <div class="card full-width">
+                <h2><span class="icon">📟</span> Terminal Output</h2>
+                <pre class="terminal" id="cmd-terminal">Ready. Click a command above to run.</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debugging Tab -->
+    <div id="tab-debugging" class="tab-content">
+        <header class="header">
+            <h1>🐛 Debugging</h1>
+            <p class="subtitle">Deadline overrides, archival tools, and testing utilities</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">⏰</span> Deadline Management</h2>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <div>
+                        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Renew Deadline</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <button class="btn" onclick="renewDeadline(24)">+24h</button>
+                            <button class="btn primary" onclick="renewDeadline(48)">+48h</button>
+                            <button class="btn" onclick="renewDeadline(72)">+72h</button>
+                            <span style="color: var(--text-dim); margin: 0 0.25rem;">or</span>
+                            <input type="number" id="renew-custom-hours" placeholder="hours" min="1" max="720"
+                                style="width: 80px; padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text);" />
+                            <button class="btn"
+                                onclick="renewDeadline(document.getElementById('renew-custom-hours').value)">Renew</button>
+                        </div>
+                    </div>
+                    <div class="divider" style="border-top: 1px solid var(--border);"></div>
+                    <div>
+                        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Set Manual Deadline
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">(testing)</span></label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <input type="datetime-local" id="manual-deadline"
+                                style="padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); color-scheme: dark;" />
+                            <button class="btn" onclick="setManualDeadline()">Set Deadline</button>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(3)">⚡ 3 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(10)">⚡ 10 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(30)">⚡ 30 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(60)">⚡ 1 hour</button>
+                        </div>
+                    </div>
+                    <div id="deadline-status" style="font-size: 0.85rem;"></div>
+                </div>
+            </div>
+
             <div class="card">
                 <h2><span class="icon">📦</span> Archive</h2>
                 <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
@@ -766,9 +823,16 @@
                 <div id="archive-status" style="margin-top: 0.75rem; font-size: 0.85rem;"></div>
             </div>
 
-            <div class="card full-width">
-                <h2><span class="icon">📟</span> Terminal Output</h2>
-                <pre class="terminal" id="cmd-terminal">Ready. Click a command above to run.</pre>
+            <div class="card">
+                <h2><span class="icon">🔧</span> State Controls</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="resetState()" style="width: 100%;">
+                        🔄 Reset Timer (keep secrets, reset to OK + 48h)
+                    </button>
+                    <button class="btn danger" onclick="factoryReset()" style="width: 100%;">
+                        🗑️ Factory Reset (fresh state + clear audit)
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -815,6 +879,9 @@
             document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
             document.getElementById(`tab-${tabId}`).classList.add('active');
 
+            // Update URL hash without scrolling
+            history.replaceState(null, '', `#${tabId}`);
+
             // Load data for the tab
             if (tabId === 'secrets') {
                 loadSecretsForm();
@@ -851,7 +918,9 @@
                 'OK': 'ok', 'WARNING': 'warning', 'CRITICAL': 'critical', 'FINAL': 'critical'
             }[data.state.stage] || 'unknown';
 
+            // Format deadline info
             let countdownHtml = '';
+            let deadlineInfoHtml = '';
             if (data.state.time_to_deadline_minutes !== null) {
                 const ttd = data.state.time_to_deadline_minutes;
                 if (ttd > 0) {
@@ -863,10 +932,19 @@
                     countdownHtml = `<div class="countdown danger">⚠️ PASSED</div>`;
                 }
             } else if (data.state.stage === 'UNKNOWN') {
-                // No state file yet - show helpful message
                 countdownHtml = `<div class="alert info" style="margin-bottom: 1rem;">
                     💡 <strong>Not initialized</strong> — Run a tick or renew to start the deadline.
                 </div>`;
+            }
+            if (data.state.deadline) {
+                const dl = new Date(data.state.deadline);
+                deadlineInfoHtml = `
+                    <div class="status-row">
+                        <span class="status-label">Deadline</span>
+                        <span class="status-value" style="font-size: 0.85rem;">
+                            ${dl.toLocaleDateString()} ${dl.toLocaleTimeString()}
+                        </span>
+                    </div>`;
             }
 
             const ghTool = data.tools.find(t => t.name === 'gh');
@@ -907,6 +985,7 @@
                         <span class="status-label">Mode</span>
                         <span class="status-value">${data.config.mock_mode ? '🧪 Mock' : '🔴 Live'}</span>
                     </div>
+                    ${deadlineInfoHtml}
                     <div class="status-row">
                         <span class="status-label">Renewals</span>
                         <span class="status-value">${data.state.renewal_count}</span>
@@ -970,6 +1049,7 @@
                     </div>
                 </div>
                 
+
                 <div class="card">
                     <h2><span class="icon">⚡</span> Quick Actions</h2>
                     <div class="actions" style="flex-direction: column; gap: 1rem;">
@@ -977,10 +1057,8 @@
                             <button class="btn primary" onclick="switchTab('commands')">Open Command Center →</button>
                             <button class="btn primary" onclick="runCommand('tick-dry')">🧪 Dry Run</button>
                         </div>
-                        <div class="divider" style="border-top: 1px solid var(--border); margin: 0.5rem 0;"></div>
                         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <button class="btn" onclick="resetState()">🔄 Reset Timer</button>
-                            <button class="btn danger" onclick="factoryReset()">🗑️ Factory Reset</button>
+                            <button class="btn" onclick="switchTab('debugging')">🐛 Debugging & Deadline →</button>
                         </div>
                     </div>
                 </div>
@@ -1349,7 +1427,8 @@
                     </p>
                     <ul style="color: var(--text-dim); line-height: 1.8; margin-left: 1.5rem;">
                         <li>🚀 <strong>Deployment mode</strong> (GitHub Pages, Docker, etc.)</li>
-                        <li>📋 Basic project settings</li>
+                        <li>📋 Basic project settings & <strong>operating mode</strong></li>
+                        <li>⏰ Countdown deadline <em style="opacity:0.6;"> — if countdown mode</em></li>
                         <li>📧 Email notifications (Resend)</li>
                         <li>📱 SMS notifications (Twilio) <em style="opacity:0.6;">— optional</em></li>
                         <li>🐦 X/Twitter posting <em style="opacity:0.6;">— optional</em></li>
@@ -1433,6 +1512,32 @@
                         </select>
                         <div class="form-hint">Keep ON for testing, turn OFF for production</div>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Operating Mode</label>
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.MODE || 'renewable_countdown') === 'renewable_countdown' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="wiz-mode" value="renewable_countdown" ${(wizardData.MODE || 'renewable_countdown') === 'renewable_countdown' ? 'checked' : ''} onchange="wizardData.MODE='renewable_countdown'">
+                                <div>
+                                    <strong>⏰ Renewable Countdown</strong> <span style="color: var(--accent);">Default</span>
+                                    <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">Dead man's switch. Renew before the deadline or escalation begins.</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.MODE || 'renewable_countdown') === 'one_way_fuse' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="wiz-mode" value="one_way_fuse" ${(wizardData.MODE || 'renewable_countdown') === 'one_way_fuse' ? 'checked' : ''} onchange="wizardData.MODE='one_way_fuse'">
+                                <div>
+                                    <strong>💣 One-Way Fuse</strong>
+                                    <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">Once armed, the deadline cannot be renewed. Escalation is irreversible.</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.MODE || 'renewable_countdown') === 'manual_arm' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="wiz-mode" value="manual_arm" ${(wizardData.MODE || 'renewable_countdown') === 'manual_arm' ? 'checked' : ''} onchange="wizardData.MODE='manual_arm'">
+                                <div>
+                                    <strong>🔒 Manual Arm</strong>
+                                    <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">System stays disarmed until explicitly activated. No countdown until you arm it.</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
                 `,
                 validate: () => {
                     const name = document.getElementById('wiz-project-name')?.value;
@@ -1441,11 +1546,74 @@
                     if (!email) { alert('Operator email is required'); return false; }
                     return true;
                 },
-                collect: () => ({
-                    PROJECT_NAME: document.getElementById('wiz-project-name').value,
-                    OPERATOR_EMAIL: document.getElementById('wiz-operator-email').value,
-                    ADAPTER_MOCK_MODE: document.getElementById('wiz-mock-mode').value,
-                })
+                collect: () => {
+                    const mode = document.querySelector('input[name="wiz-mode"]:checked')?.value || 'renewable_countdown';
+                    wizardData.MODE = mode;
+                    return {
+                        PROJECT_NAME: document.getElementById('wiz-project-name').value,
+                        OPERATOR_EMAIL: document.getElementById('wiz-operator-email').value,
+                        ADAPTER_MOCK_MODE: document.getElementById('wiz-mock-mode').value,
+                    };
+                }
+            },
+            {
+                id: 'deadline',
+                title: 'Timer',
+                // Only show this step in renewable_countdown mode
+                skip: () => (wizardData.MODE || 'renewable_countdown') !== 'renewable_countdown',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">⏰ Countdown Deadline</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                        How long before the system activates? This is the dead man's switch timer.
+                        If you don't renew before the deadline, escalation begins.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Initial Deadline (hours from now)</label>
+                        <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 24 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="24" ${(wizardData.DEADLINE_HOURS || 48) == 24 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=24">
+                                <div><strong>24h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">1 day</div></div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 48 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="48" ${(wizardData.DEADLINE_HOURS || 48) == 48 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=48">
+                                <div><strong>48h</strong> <span style="color: var(--accent);">Default</span><div style="color: var(--text-dim); font-size: 0.8rem;">2 days</div></div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 72 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="72" ${(wizardData.DEADLINE_HOURS || 48) == 72 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=72">
+                                <div><strong>72h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">3 days</div></div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 168 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="168" ${(wizardData.DEADLINE_HOURS || 48) == 168 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=168">
+                                <div><strong>168h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">1 week</div></div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label class="form-label">Or set a custom value:</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <input type="number" class="form-input" id="wiz-custom-deadline" 
+                                   placeholder="hours" min="1" max="8760"
+                                   style="width: 120px;"
+                                   value="${wizardData.DEADLINE_HOURS && ![24, 48, 72, 168].includes(wizardData.DEADLINE_HOURS) ? wizardData.DEADLINE_HOURS : ''}"
+                                   oninput="wizardData.DEADLINE_HOURS=parseInt(this.value)">
+                            <span style="color: var(--text-dim);">hours</span>
+                        </div>
+                    </div>
+                    <div class="alert info" style="margin-top: 1rem;">
+                        ⏱️ <strong>How it works:</strong> You must renew before the deadline expires.
+                        The system checks every 30 minutes. As the deadline approaches, escalation
+                        stages trigger (reminders → warnings → disclosure).
+                        You can always change this later from the Dashboard.
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const radio = document.querySelector('input[name="deadline-hours"]:checked');
+                    const custom = document.getElementById('wiz-custom-deadline')?.value;
+                    return {
+                        DEADLINE_HOURS: custom ? parseInt(custom) : (radio ? parseInt(radio.value) : 48)
+                    };
+                }
             },
             {
                 id: 'email',
@@ -1769,25 +1937,54 @@
                 title: 'Push',
                 content: () => {
                     const ghTool = appData?.tools?.find(t => t.name === 'gh');
+                    const gitTool = appData?.tools?.find(t => t.name === 'git');
                     const ghOk = ghTool?.installed && ghTool?.authenticated;
+                    const gitOk = gitTool?.installed;
 
                     return `
-                        <h2 style="margin-bottom: 1rem;">🚀 Push to GitHub</h2>
+                        <h2 style="margin-bottom: 1rem;">🚀 Push & Sync</h2>
                         <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
-                            Push your configuration to GitHub repository secrets.
+                            Save configuration, push GitHub secrets, and sync your repo.
                         </p>
-                        ${ghOk ? `
-                            <div class="alert success">
-                                ✅ <strong>gh CLI is ready</strong> — Your secrets will be pushed to GitHub.
+
+                        <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
+                            <!-- gh CLI status -->
+                            ${ghOk ? `
+                                <div class="alert success">
+                                    ✅ <strong>gh CLI authenticated</strong> — Secrets will be pushed to GitHub.
+                                </div>
+                            ` : `
+                                <div class="alert warning">
+                                    ⚠️ <strong>gh CLI ${!ghTool?.installed ? 'not installed' : 'not authenticated'}</strong><br>
+                                    <span style="font-size: 0.85rem; color: var(--text-dim);">
+                                        Secrets will still be saved to <code>.env</code> locally.
+                                    </span>
+                                    <div style="margin-top: 0.75rem;">
+                                        ${!ghTool?.installed
+                            ? '<button class="btn" onclick="installGh()" style="margin-right: 0.5rem;">📦 Install gh CLI</button>'
+                            : '<button class="btn" onclick="alert(\'Run: gh auth login\\n\\nIn your terminal, then refresh this page.\')" style="margin-right: 0.5rem;">🔑 How to authenticate</button>'}
+                                        <button class="btn" onclick="loadStatus().then(() => renderWizard())">🔄 Refresh status</button>
+                                    </div>
+                                </div>
+                            `}
+
+                            <!-- Git sync option -->
+                            <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-hover);">
+                                <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                                    <input type="checkbox" id="wiz-git-sync" ${gitOk ? 'checked' : 'disabled'}
+                                           style="margin-top: 3px;">
+                                    <div>
+                                        <strong>🔄 Git sync after push</strong>
+                                        <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
+                                            Commit all changes and push to remote — keeps your repo up to date
+                                            with the latest config, state, and settings.
+                                        </div>
+                                        ${!gitOk ? '<div style="color: var(--warning); font-size: 0.8rem; margin-top: 0.25rem;">⚠️ git not detected</div>' : ''}
+                                    </div>
+                                </label>
                             </div>
-                        ` : `
-                            <div class="alert warning">
-                                ⚠️ <strong>gh CLI not available</strong><br>
-                                ${!ghTool?.installed
-                            ? '<button class="btn" onclick="installGh()" style="margin-top: 0.5rem;">Install gh CLI</button>'
-                            : 'Run <code>gh auth login</code> in terminal to authenticate'}
-                            </div>
-                        `}
+                        </div>
+
                         <div id="wizard-push-status"></div>
                     `;
                 },
@@ -1920,6 +2117,81 @@
             }
         }
 
+        // ========================================
+        // DEADLINE MANAGEMENT
+        // ========================================
+
+        async function renewDeadline(hours) {
+            hours = parseInt(hours);
+            if (!hours || hours < 1) {
+                alert('Please enter a valid number of hours (1+).');
+                return;
+            }
+            const statusDiv = document.getElementById('deadline-status');
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">⏳ Renewing...</span>';
+
+            try {
+                const response = await fetch('/api/renew', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hours }),
+                });
+                const data = await response.json();
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--success);">✅ Renewed for ${hours} hours</span>`;
+                    loadStatus();
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed'}</span>`;
+                }
+            } catch (error) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${error.message}</span>`;
+            }
+        }
+
+        async function setManualDeadline() {
+            const input = document.getElementById('manual-deadline');
+            if (!input || !input.value) {
+                alert('Please select a date and time.');
+                return;
+            }
+            const target = new Date(input.value);
+            const now = new Date();
+            const hoursFromNow = (target - now) / (1000 * 60 * 60);
+            if (hoursFromNow <= 0) {
+                alert('Deadline must be in the future.');
+                return;
+            }
+            await setDeadlineHours(hoursFromNow, target.toLocaleString());
+        }
+
+        async function setTestDeadline(minutes) {
+            const hours = minutes / 60;
+            await setDeadlineHours(hours, `${minutes} minutes from now`);
+        }
+
+        async function setDeadlineHours(hours, label) {
+            const statusDiv = document.getElementById('deadline-status');
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">⏳ Setting deadline...</span>';
+
+            try {
+                const response = await fetch('/api/state/set-deadline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hours }),
+                });
+                const data = await response.json();
+                if (data.success) {
+                    const desc = label || `${Math.round(hours * 10) / 10} hours from now`;
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--success);">✅ Deadline set: ${desc}</span>`;
+                    loadStatus();
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed'}</span>`;
+                }
+            } catch (error) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${error.message}</span>`;
+            }
+        }
+
         // Reset timer (keeps secrets, resets state to OK with new deadline)
         async function resetState() {
             if (!confirm('Reset timer?\n\nThis will:\n• Set stage back to OK\n• Create a new 48h deadline\n• Reset renewal count to 0\n\nYour secrets will NOT be deleted.')) {
@@ -1970,7 +2242,7 @@
         }
 
         // Required steps that must be completed before optional ones can be accessed
-        const REQUIRED_STEP_COUNT = 4; // welcome, deploy, project, security
+        const REQUIRED_STEP_COUNT = 5; // welcome, deploy, project, deadline (conditional), security
 
         // Check if required steps have been satisfied (have data)
         function areRequiredStepsSatisfied() {
@@ -1990,7 +2262,17 @@
         // Check if a step is optional (can be skipped)
         function isOptionalStep(stepIndex) {
             const step = wizardSteps[stepIndex];
-            return ['email', 'sms', 'twitter', 'reddit'].includes(step?.id);
+            if (!step) return false;
+            // Optional adapter steps
+            if (['email', 'sms', 'twitter', 'reddit'].includes(step.id)) return true;
+            // Deadline step is optional when not in countdown mode
+            if (step.id === 'deadline' && step.skip && step.skip()) return true;
+            return false;
+        }
+
+        // Get visible wizard steps (skip steps whose skip() returns true)
+        function getVisibleSteps() {
+            return wizardSteps.filter(s => !s.skip || !s.skip());
         }
 
         // Check if we can skip ahead (some configuration already exists)
@@ -2042,35 +2324,43 @@
         function renderWizard() {
             const requiredSatisfied = areRequiredStepsSatisfied();
             const skipAllowed = canSkipAhead();
+            const visibleSteps = getVisibleSteps();
 
-            // Render step indicators
-            const stepsHtml = wizardSteps.map((step, idx) => {
+            // Auto-skip past hidden steps
+            while (currentWizardStep < wizardSteps.length &&
+                wizardSteps[currentWizardStep].skip &&
+                wizardSteps[currentWizardStep].skip()) {
+                currentWizardStep++;
+            }
+
+            // Render step indicators (visible steps only)
+            const stepsHtml = visibleSteps.map((step, vIdx) => {
+                const realIdx = wizardSteps.indexOf(step);
                 let cls = '';
                 let clickable = false;
 
-                if (idx < currentWizardStep) {
+                if (realIdx < currentWizardStep) {
                     cls = 'completed';
                     clickable = true;
-                } else if (idx === currentWizardStep) {
+                } else if (realIdx === currentWizardStep) {
                     cls = 'active';
                 } else {
-                    // Future steps: clickable if skip is allowed OR if it's optional and required are satisfied
                     if (skipAllowed) {
                         clickable = true;
-                        cls = isOptionalStep(idx) ? 'optional' : 'skippable';
-                    } else if (idx >= REQUIRED_STEP_COUNT && requiredSatisfied) {
+                        cls = isOptionalStep(realIdx) ? 'optional' : 'skippable';
+                    } else if (realIdx >= REQUIRED_STEP_COUNT && requiredSatisfied) {
                         clickable = true;
                         cls = 'optional';
                     }
                 }
 
-                const optionalBadge = isOptionalStep(idx) ? '<small style="opacity: 0.6; font-size: 0.7rem;"> (opt)</small>' : '';
+                const optionalBadge = isOptionalStep(realIdx) ? '<small style="opacity: 0.6; font-size: 0.7rem;"> (opt)</small>' : '';
                 const cursor = clickable ? 'pointer' : 'default';
-                const onclick = clickable ? `onclick="goToStep(${idx})"` : '';
+                const onclick = clickable ? `onclick="goToStep(${realIdx})"` : '';
 
                 return `
                     <div class="wizard-step ${cls}" style="cursor: ${cursor};" ${onclick}>
-                        <span class="wizard-step-num">${idx < currentWizardStep ? '✓' : idx + 1}</span>
+                        <span class="wizard-step-num">${realIdx < currentWizardStep ? '✓' : vIdx + 1}</span>
                         <span>${step.title}${optionalBadge}</span>
                     </div>
                 `;
@@ -2146,9 +2436,15 @@
                 await pushWizardSecrets();
             }
 
-            // Move to next step
+            // Move to next visible step
             if (currentWizardStep < wizardSteps.length - 1) {
                 currentWizardStep++;
+                // Skip hidden steps
+                while (currentWizardStep < wizardSteps.length - 1 &&
+                    wizardSteps[currentWizardStep].skip &&
+                    wizardSteps[currentWizardStep].skip()) {
+                    currentWizardStep++;
+                }
                 renderWizard();
             }
         }
@@ -2160,73 +2456,140 @@
                 return;
             }
 
-            const secrets = wizardData;
+            // Capture options before the DOM gets replaced
+            const gitSyncChecked = document.getElementById('wiz-git-sync')?.checked ?? false;
+
+            // Separate non-secret wizard data from actual secrets
+            const deadlineHours = wizardData.DEADLINE_HOURS || 48;
+            const deployMode = wizardData.DEPLOY_MODE;
+            const operatingMode = wizardData.MODE;
+            const secrets = { ...wizardData };
+            delete secrets.DEADLINE_HOURS;
+            delete secrets.DEPLOY_MODE;
+            delete secrets.deployMode;
+            delete secrets.MODE;
             console.log('Wizard secrets to push:', Object.keys(secrets));
 
             if (Object.keys(secrets).length === 0) {
                 statusDiv.innerHTML = '<div class="alert info">No new secrets to push.</div>';
-                return;
-            }
+            } else {
+                statusDiv.innerHTML = `<div class="loading">Pushing ${Object.keys(secrets).length} secrets...</div>`;
 
-            statusDiv.innerHTML = `<div class="loading">Pushing ${Object.keys(secrets).length} secrets...</div>`;
+                try {
+                    console.log('Sending secrets to /api/secrets/push...');
+                    const response = await fetch('/api/secrets/push', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ secrets, save_to_env: true }),
+                    });
 
-            try {
-                console.log('Sending secrets to /api/secrets/push...');
-                const response = await fetch('/api/secrets/push', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secrets, save_to_env: true }),
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const data = await response.json();
-                console.log('Push response:', data);
-
-                if (data.error) {
-                    statusDiv.innerHTML = `<div class="alert error">❌ ${data.error}</div>`;
-                    console.error('Push error:', data.error);
-                    return;
-                }
-
-                let html = '<h4 style="margin-bottom: 0.5rem;">Results:</h4>';
-                let successCount = 0;
-                let failCount = 0;
-
-                // Show env save status
-                if (data.env_saved) {
-                    html += '<div style="color: var(--accent); margin: 0.25rem 0;">💾 Saved to .env</div>';
-                }
-
-                for (const result of (data.results || [])) {
-                    if (result.success) {
-                        html += `<div style="color: var(--accent); margin: 0.25rem 0;">✅ ${result.name}</div>`;
-                        successCount++;
-                    } else {
-                        html += `<div style="color: var(--danger); margin: 0.25rem 0;">❌ ${result.name}: ${result.error}</div>`;
-                        failCount++;
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
+
+                    const data = await response.json();
+                    console.log('Push response:', data);
+
+                    if (data.error) {
+                        statusDiv.innerHTML = `<div class="alert error">❌ ${data.error}</div>`;
+                        console.error('Push error:', data.error);
+                        return;
+                    }
+
+                    let html = '<h4 style="margin-bottom: 0.5rem;">Results:</h4>';
+                    let successCount = 0;
+                    let failCount = 0;
+
+                    // Show env save status
+                    if (data.env_saved) {
+                        html += '<div style="color: var(--accent); margin: 0.25rem 0;">💾 Saved to .env</div>';
+                    }
+
+                    for (const result of (data.results || [])) {
+                        if (result.success) {
+                            html += `<div style="color: var(--accent); margin: 0.25rem 0;">✅ ${result.name}</div>`;
+                            successCount++;
+                        } else {
+                            html += `<div style="color: var(--danger); margin: 0.25rem 0;">❌ ${result.name}: ${result.error}</div>`;
+                            failCount++;
+                        }
+                    }
+
+                    if (failCount === 0) {
+                        html = `<div class="alert success">✅ All ${successCount} secrets pushed successfully!</div>` + html;
+                    }
+
+                    statusDiv.innerHTML = html;
+                    console.log(`Push complete: ${successCount} success, ${failCount} failed`);
+                } catch (error) {
+                    console.error('Push exception:', error);
+                    statusDiv.innerHTML = `<div class="alert error">❌ Error: ${error.message}</div>`;
                 }
-
-                if (failCount === 0) {
-                    html = `<div class="alert success">✅ All ${successCount} secrets pushed successfully!</div>` + html;
-                }
-
-                statusDiv.innerHTML = html;
-                console.log(`Push complete: ${successCount} success, ${failCount} failed`);
-
-                // Refresh status
-                loadStatus();
-            } catch (error) {
-                console.error('Push exception:', error);
-                statusDiv.innerHTML = `<div class="alert error">❌ Error: ${error.message}</div>`;
             }
+
+            // Set deadline if in countdown mode
+            if (deadlineHours && (!operatingMode || operatingMode === 'renewable_countdown')) {
+                try {
+                    const dlResponse = await fetch('/api/state/set-deadline', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hours: deadlineHours }),
+                    });
+                    const dlData = await dlResponse.json();
+                    if (dlData.success) {
+                        statusDiv.innerHTML += `<div style="color: var(--accent); margin: 0.25rem 0;">⏰ Deadline set to ${deadlineHours}h from now</div>`;
+                    } else {
+                        statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Deadline: ${dlData.error || 'could not set (run a tick first)'}</div>`;
+                    }
+                } catch (e) {
+                    console.warn('Could not set deadline:', e);
+                    statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Could not set deadline — run a tick first</div>`;
+                }
+            }
+
+            // Git sync if requested
+            if (gitSyncChecked) {
+                statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.5rem 0;">🔄 Syncing to Git...</div>';
+                try {
+                    const syncResponse = await fetch('/api/git/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: 'chore: setup wizard configuration sync' }),
+                    });
+                    const syncData = await syncResponse.json();
+                    if (syncData.success) {
+                        statusDiv.innerHTML += `<div style="color: var(--accent); margin: 0.25rem 0;">🔄 ${syncData.message}</div>`;
+                    } else {
+                        statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Git sync: ${syncData.error || 'failed'}</div>`;
+                    }
+                } catch (e) {
+                    console.warn('Git sync failed:', e);
+                    statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Git sync failed — ${e.message}</div>`;
+                }
+            }
+
+            // Refresh status
+            loadStatus();
         }
 
-        // Initial load
-        loadStatus();
+        // Initial load — await so envData is ready before tab switch
+        (async () => {
+            await loadStatus();
+
+            // Restore tab from URL hash (after data is loaded)
+            const hashTab = window.location.hash.replace('#', '');
+            if (hashTab && document.getElementById(`tab-${hashTab}`)) {
+                switchTab(hashTab);
+            }
+        })();
+
+        // Handle back/forward
+        window.addEventListener('hashchange', () => {
+            const tab = window.location.hash.replace('#', '');
+            if (tab && document.getElementById(`tab-${tab}`)) {
+                switchTab(tab);
+            }
+        });
 
         // Auto-refresh every 30 seconds
         setInterval(loadStatus, 30000);

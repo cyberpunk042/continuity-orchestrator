@@ -158,6 +158,31 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     
+    @app.route("/api/state/set-deadline", methods=["POST"])
+    def api_set_deadline():
+        """Set the countdown deadline via CLI."""
+        data = request.json or {}
+        hours = data.get("hours")
+        
+        if hours is None:
+            return jsonify({"success": False, "error": "Provide 'hours'"}), 400
+        
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "set-deadline", "--hours", str(hours)],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else None,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    
     @app.route("/api/archive", methods=["POST"])
     def api_archive():
         """
@@ -756,6 +781,88 @@ read -p "Press Enter to close..."
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
     
+    @app.route("/api/git/sync", methods=["POST"])
+    def api_git_sync():
+        """Commit all changes and push to remote."""
+        data = request.json or {}
+        message = data.get("message", "chore: sync from admin panel")
+
+        steps = []
+        try:
+            # Stage all changes
+            result = subprocess.run(
+                ["git", "add", "-A"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            steps.append({"step": "git add", "ok": result.returncode == 0})
+
+            # Check if there's anything to commit
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                # Nothing staged
+                return jsonify({
+                    "success": True,
+                    "message": "Already up to date (nothing to commit)",
+                    "steps": steps,
+                })
+
+            # Commit
+            result = subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            steps.append({
+                "step": "git commit",
+                "ok": result.returncode == 0,
+                "output": result.stdout.strip(),
+            })
+            if result.returncode != 0:
+                return jsonify({
+                    "success": False,
+                    "error": result.stderr.strip() or "Commit failed",
+                    "steps": steps,
+                })
+
+            # Push
+            result = subprocess.run(
+                ["git", "push"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            steps.append({
+                "step": "git push",
+                "ok": result.returncode == 0,
+                "output": (result.stdout or result.stderr or "").strip(),
+            })
+            if result.returncode != 0:
+                return jsonify({
+                    "success": False,
+                    "error": result.stderr.strip() or "Push failed",
+                    "steps": steps,
+                })
+
+            return jsonify({
+                "success": True,
+                "message": "Committed and pushed successfully",
+                "steps": steps,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e), "steps": steps}), 500
+
     return app
 
 
