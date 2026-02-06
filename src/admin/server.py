@@ -148,6 +148,8 @@ def create_app() -> Flask:
         data = request.json or {}
         custom_url = data.get("url")
         
+        print(f"[ARCHIVE] Request received. Custom URL: {custom_url}")
+        
         try:
             from ..adapters.internet_archive import archive_url_now
             
@@ -190,12 +192,20 @@ def create_app() -> Flask:
                     parts = repo.split("/")
                     url = f"https://{parts[0]}.github.io/{parts[1]}/"
             
+            print(f"[ARCHIVE] Archiving URL: {url}")
+            print(f"[ARCHIVE] This may take up to 3 minutes...")
+            
             # Archive the URL
             result = archive_url_now(url)
+            
+            print(f"[ARCHIVE] Result: {result}")
             
             return jsonify(result)
             
         except Exception as e:
+            import traceback
+            print(f"[ARCHIVE] Exception: {e}")
+            traceback.print_exc()
             return jsonify({
                 "success": False,
                 "error": str(e),

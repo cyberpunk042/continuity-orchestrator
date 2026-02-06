@@ -180,10 +180,20 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
     # Build the save URL
     save_url = f"https://web.archive.org/save/{url}"
     
+    # Use headers that look like a real browser
+    # archive.org/Cloudflare may block requests that don't look like browsers
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; ContinuityOrchestrator/1.0; +https://github.com/cyberpunk042/continuity-orchestrator)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
     }
     
     # Add S3 credentials if available (higher rate limit)
@@ -197,19 +207,23 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
     last_error = None
     
     for attempt in range(max_retries + 1):
+        print(f"[ARCHIVE] Attempt {attempt + 1}/{max_retries + 1} for {url}")
         try:
             # Create request with headers
             request = urllib.request.Request(save_url, headers=headers)
             
             # archive.org Save Page Now can take up to 2+ minutes
             # Use a long timeout to allow the archive to complete
+            print(f"[ARCHIVE] Opening connection (timeout=180s)...")
             with urllib.request.urlopen(request, timeout=180) as response:
                 response_url = response.geturl()
                 response_code = response.status
+                print(f"[ARCHIVE] Got response: code={response_code}, url={response_url[:100]}...")
                 
                 # Check if we got a valid archive response
                 # The response URL should contain /web/ with a timestamp
                 if "/web/" in response_url and re.search(r'/web/\d{14}/', response_url):
+                    print(f"[ARCHIVE] Success! Archive URL found in response URL")
                     return {
                         "success": True,
                         "archive_url": response_url,
@@ -223,6 +237,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
                     archive_url = content_location
                     if not archive_url.startswith("http"):
                         archive_url = f"https://web.archive.org{archive_url}"
+                    print(f"[ARCHIVE] Success! Archive URL found in Content-Location header")
                     return {
                         "success": True,
                         "archive_url": archive_url,
@@ -236,6 +251,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
                     # Construct a "check" URL to verify the archive exists
                     timestamp = time.strftime("%Y%m%d%H%M%S")
                     constructed_url = f"https://web.archive.org/web/{timestamp}/{url}"
+                    print(f"[ARCHIVE] Success! Constructed archive URL from timestamp")
                     return {
                         "success": True,
                         "archive_url": constructed_url,
@@ -247,16 +263,24 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
         except urllib.error.HTTPError as e:
             error_code = e.code
             error_reason = e.reason if hasattr(e, 'reason') else 'Unknown'
+            print(f"[ARCHIVE] HTTPError: {error_code} {error_reason}")
             
             # Handle specific error codes
             if error_code == 429:
                 last_error = "Rate limited by archive.org (max 3/min anonymous, 6/min authenticated)"
                 break  # Don't retry rate limits
             elif error_code in (520, 521, 522, 523, 524):
-                # Cloudflare errors - transient, can retry
-                last_error = f"Cloudflare error {error_code} - archive.org may be busy"
+                # 520 errors can be transient OR indicate the URL can't be archived
+                # Some sites (GitHub profiles, dynamic JS apps) can't be archived
+                if "github.com/" in url and not ".github.io" in url:
+                    last_error = "GitHub profile/repo pages often can't be archived (use GitHub Pages URL instead)"
+                    break  # Don't retry - this is a permanent issue
+                else:
+                    last_error = f"Cloudflare error {error_code} - archive.org may be busy or this URL type cannot be archived"
                 if attempt < max_retries:
-                    time.sleep(2 * (attempt + 1))  # Exponential backoff
+                    wait_time = 2 * (attempt + 1)
+                    print(f"[ARCHIVE] Will retry in {wait_time}s...")
+                    time.sleep(wait_time)
                     continue
             elif error_code == 403:
                 last_error = "Access denied - URL may be blocked from archiving"
