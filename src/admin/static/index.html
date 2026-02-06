@@ -873,8 +873,16 @@
                 
                 <div class="card">
                     <h2><span class="icon">⚡</span> Quick Actions</h2>
-                    <div class="actions">
-                        <button class="btn primary" onclick="switchTab('commands')">Open Command Center →</button>
+                    <div class="actions" style="flex-direction: column; gap: 1rem;">
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="switchTab('commands')">Open Command Center →</button>
+                            <button class="btn primary" onclick="runCommand('tick-dry')">🧪 Dry Run</button>
+                        </div>
+                        <div class="divider" style="border-top: 1px solid var(--border); margin: 0.5rem 0;"></div>
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <button class="btn" onclick="resetState()">🔄 Reset Timer</button>
+                            <button class="btn danger" onclick="factoryReset()">🗑️ Factory Reset</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -893,8 +901,8 @@
             if (!ghTool?.installed) {
                 ghAlert.innerHTML = `
                     <div class="alert warning">
-                        ⚠️ <strong>gh CLI not installed</strong> — Install from 
-                        <a href="https://cli.github.com/" target="_blank">cli.github.com</a> to push secrets.
+                        ⚠️ <strong>gh CLI not installed</strong>
+                        <button class="btn" onclick="installGh()" style="margin-left: 1rem; padding: 0.25rem 0.75rem;">Install gh CLI</button>
                     </div>
                 `;
             } else if (!ghTool?.authenticated) {
@@ -1214,7 +1222,9 @@
                         ` : `
                             <div class="alert warning">
                                 ⚠️ <strong>gh CLI not available</strong><br>
-                                ${!ghTool?.installed ? 'Install from <a href="https://cli.github.com/" target="_blank" style="color: var(--info);">cli.github.com</a>' : 'Run <code>gh auth login</code> to authenticate'}
+                                ${!ghTool?.installed
+                            ? '<button class="btn" onclick="installGh()" style="margin-top: 0.5rem;">Install gh CLI</button>'
+                            : 'Run <code>gh auth login</code> in terminal to authenticate'}
                             </div>
                         `}
                         <div id="wizard-push-status"></div>
@@ -1284,6 +1294,55 @@
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
                 loadStatus();
+            }
+        }
+
+        // Reset timer (keeps secrets, resets state to OK with new deadline)
+        async function resetState() {
+            if (!confirm('Reset timer?\n\nThis will:\n• Set stage back to OK\n• Create a new 48h deadline\n• Reset renewal count to 0\n\nYour secrets will NOT be deleted.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/state/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ Timer reset! New 48h deadline active.');
+                    loadStatus();
+                } else {
+                    alert(`❌ Reset failed: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Factory reset (calls CLI: reset --full)
+        async function factoryReset() {
+            if (!confirm('⚠️ Factory Reset?\n\nThis will:\n• Create fresh state file\n• Clear audit log\n• Reset to OK with new 48h deadline\n\nExisting state will be backed up.\n\nAre you sure?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/state/factory-reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ backup: true, hours: 48 }),
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ Factory reset complete!\n\n' + (data.output || ''));
+                    loadStatus();
+                } else {
+                    alert(`❌ Factory reset failed: ${data.error || data.output}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
             }
         }
 

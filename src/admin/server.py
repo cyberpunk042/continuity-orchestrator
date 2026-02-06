@@ -330,6 +330,54 @@ def create_app() -> Flask:
             "needs_auth": not gh_status.authenticated if gh_status.installed else False,
         })
     
+    @app.route("/api/state/reset", methods=["POST"])
+    def api_state_reset():
+        """Reset state to OK (calls CLI: reset)."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "reset", "-y"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else None,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    
+    @app.route("/api/state/factory-reset", methods=["POST"])
+    def api_factory_reset():
+        """Full factory reset (calls CLI: reset --full)."""
+        data = request.json or {}
+        backup = data.get("backup", True)
+        hours = data.get("hours", 48)
+        
+        cmd = ["python", "-m", "src.main", "reset", "--full", "-y", "--hours", str(hours)]
+        if backup:
+            cmd.append("--backup")
+        else:
+            cmd.append("--no-backup")
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else None,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    
     return app
 
 

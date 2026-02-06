@@ -277,10 +277,16 @@ def get_system_status(
             with open(state_file) as f:
                 state_data = json.load(f)
             
-            status.stage = state_data.get("escalation_state", "UNKNOWN")
-            status.deadline = state_data.get("deadline_iso")
-            status.renewal_count = state_data.get("renewal_count", 0)
-            status.last_tick = state_data.get("last_tick_iso")
+            # Read from nested structure (updated state schema)
+            escalation = state_data.get("escalation", {})
+            timer = state_data.get("timer", {})
+            renewal = state_data.get("renewal", {})
+            meta = state_data.get("meta", {})
+            
+            status.stage = escalation.get("state", "UNKNOWN")
+            status.deadline = timer.get("deadline_iso")
+            status.renewal_count = renewal.get("renewal_count", 0)
+            status.last_tick = meta.get("updated_at_iso")
             
             # Calculate TTD
             if status.deadline:
