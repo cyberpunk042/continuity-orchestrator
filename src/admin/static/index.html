@@ -705,6 +705,7 @@
     <script>
         // Global state
         let appData = null;
+        let envData = {};  // Values from .env file
         let ghAuthenticated = false;
 
         // Tab switching
@@ -726,8 +727,14 @@
         // Load status
         async function loadStatus() {
             try {
-                const response = await fetch('/api/status');
-                appData = await response.json();
+                // Load both status and env values
+                const [statusRes, envRes] = await Promise.all([
+                    fetch('/api/status'),
+                    fetch('/api/env/read'),
+                ]);
+                appData = await statusRes.json();
+                const envResult = await envRes.json();
+                envData = envResult.values || {};
                 renderDashboard(appData);
             } catch (error) {
                 document.getElementById('dashboard').innerHTML = `
@@ -756,10 +763,34 @@
                 } else {
                     countdownHtml = `<div class="countdown danger">⚠️ PASSED</div>`;
                 }
+            } else if (data.state.stage === 'UNKNOWN') {
+                // No state file yet - show helpful message
+                countdownHtml = `<div class="alert info" style="margin-bottom: 1rem;">
+                    💡 <strong>Not initialized</strong> — Run a tick or renew to start the deadline.
+                </div>`;
             }
 
             const ghTool = data.tools.find(t => t.name === 'gh');
             ghAuthenticated = ghTool?.installed && ghTool?.authenticated;
+
+            // Build tools HTML with install button for gh
+            const toolsHtml = data.tools.map(t => {
+                let actionHtml = '';
+                if (t.name === 'gh' && !t.installed) {
+                    actionHtml = `<button class="btn" onclick="installGh()" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Install</button>`;
+                } else if (t.name === 'gh' && t.installed && !t.authenticated) {
+                    actionHtml = `<span style="color: var(--warning);">run: gh auth login</span>`;
+                }
+                return `
+                    <div class="tool-item">
+                        <span>${t.installed ? '✅' : '❌'}</span>
+                        <span class="tool-name">${t.name}</span>
+                        <span style="color: var(--text-dim);">
+                            ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : actionHtml) : 'ok') : actionHtml || '—'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
 
             dashboard.innerHTML = `
                 <div class="card">
@@ -783,6 +814,7 @@
                     </div>
                     <div class="actions">
                         <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
+                        ${data.state.stage === 'UNKNOWN' ? '<button class="btn primary" onclick="switchTab(\'wizard\')">🧙 Start Setup →</button>' : ''}
                     </div>
                 </div>
                 
@@ -801,15 +833,7 @@
                 
                 <div class="card">
                     <h2><span class="icon">🛠️</span> Tools</h2>
-                    ${data.tools.map(t => `
-                        <div class="tool-item">
-                            <span>${t.installed ? '✅' : '❌'}</span>
-                            <span class="tool-name">${t.name}</span>
-                            <span style="color: var(--text-dim);">
-                                ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : 'auth ✗') : 'ok') : '—'}
-                            </span>
-                        </div>
-                    `).join('')}
+                    ${toolsHtml}
                 </div>
                 
                 <div class="card">
@@ -1223,11 +1247,44 @@
         let wizardData = {};
 
         function getSecretValue(name) {
-            const secret = appData?.secrets?.find(s => s.name === name);
-            if (secret?.set && secret?.masked) {
-                return ''; // Don't pre-fill masked values
+            // First check envData (values from .env file)
+            if (envData && envData[name]) {
+                return envData[name];
             }
             return '';
+        }
+
+        // Install gh CLI
+        async function installGh() {
+            if (!confirm('Install GitHub CLI (gh)? This will run: sudo apt install -y gh')) {
+                return;
+            }
+
+            // Show loading in dashboard
+            const toolsCard = document.querySelector('.tool-item');
+            if (toolsCard) {
+                toolsCard.innerHTML = '<div class="loading">Installing gh CLI</div>';
+            }
+
+            try {
+                const response = await fetch('/api/gh/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`✅ gh CLI installed successfully!\n\nVersion: ${data.version}\n\n${data.needs_auth ? 'Next step: Run "gh auth login" in terminal to authenticate.' : ''}`);
+                } else {
+                    alert(`❌ Installation failed: ${data.error}`);
+                }
+
+                // Refresh status
+                loadStatus();
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+                loadStatus();
+            }
         }
 
         function renderWizard() {

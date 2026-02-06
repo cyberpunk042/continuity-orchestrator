@@ -123,54 +123,139 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     
-    @app.route("/api/secrets/push", methods=["POST"])
-    def api_push_secrets():
-        """Push secrets to GitHub using gh CLI."""
+    @app.route("/api/env/read")
+    def api_env_read():
+        """Read values from .env file."""
+        env_file = project_root / ".env"
+        values = {}
+        
+        if env_file.exists():
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        # Remove quotes if present
+                        value = value.strip().strip('"').strip("'")
+                        values[key.strip()] = value
+        
+        return jsonify({"values": values})
+    
+    @app.route("/api/env/write", methods=["POST"])
+    def api_env_write():
+        """Write values to .env file."""
         data = request.json or {}
         secrets = data.get("secrets", {})
         
-        # Check if gh is installed and authenticated
-        from ..config.system_status import check_tool
-        gh_status = check_tool("gh")
+        if not secrets:
+            return jsonify({"error": "No secrets provided"}), 400
         
-        if not gh_status.installed:
-            return jsonify({
-                "error": "gh CLI not installed",
-                "install_hint": gh_status.install_hint,
-            }), 400
+        env_file = project_root / ".env"
         
-        if not gh_status.authenticated:
-            return jsonify({
-                "error": "gh CLI not authenticated. Run: gh auth login",
-            }), 400
+        # Read existing .env
+        existing = {}
+        if env_file.exists():
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        existing[key.strip()] = value.strip()
         
-        results = []
+        # Update with new values
         for name, value in secrets.items():
-            if not value:
-                continue
-            try:
-                result = subprocess.run(
-                    ["gh", "secret", "set", name, "--body", value],
-                    cwd=str(project_root),
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                results.append({
-                    "name": name,
-                    "success": result.returncode == 0,
-                    "error": result.stderr if result.returncode != 0 else None,
-                })
-            except Exception as e:
-                results.append({
-                    "name": name,
-                    "success": False,
-                    "error": str(e),
-                })
+            if value:  # Only update if value is not empty
+                existing[name] = f'"{value}"' if " " in value or "=" in value else value
+        
+        # Write back
+        with open(env_file, "w") as f:
+            for key, value in sorted(existing.items()):
+                f.write(f"{key}={value}\n")
         
         return jsonify({
+            "success": True,
+            "updated": list(secrets.keys()),
+        })
+    
+    @app.route("/api/secrets/push", methods=["POST"])
+    def api_push_secrets():
+        """Push secrets to GitHub AND save to .env file."""
+        data = request.json or {}
+        secrets = data.get("secrets", {})
+        push_to_github = data.get("push_to_github", True)
+        save_to_env = data.get("save_to_env", True)
+        
+        results = []
+        
+        # First, save to .env file
+        if save_to_env and secrets:
+            env_file = project_root / ".env"
+            existing = {}
+            if env_file.exists():
+                with open(env_file, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, _, value = line.partition("=")
+                            existing[key.strip()] = value.strip()
+            
+            for name, value in secrets.items():
+                if value:
+                    existing[name] = f'"{value}"' if " " in value or "=" in value else value
+            
+            with open(env_file, "w") as f:
+                for key, value in sorted(existing.items()):
+                    f.write(f"{key}={value}\n")
+        
+        # Then push to GitHub if requested
+        if push_to_github:
+            from ..config.system_status import check_tool
+            gh_status = check_tool("gh")
+            
+            if not gh_status.installed:
+                return jsonify({
+                    "env_saved": save_to_env,
+                    "github_error": "gh CLI not installed",
+                    "install_hint": gh_status.install_hint,
+                    "results": [],
+                    "all_success": False,
+                })
+            
+            if not gh_status.authenticated:
+                return jsonify({
+                    "env_saved": save_to_env,
+                    "github_error": "gh CLI not authenticated. Run: gh auth login",
+                    "results": [],
+                    "all_success": False,
+                })
+            
+            for name, value in secrets.items():
+                if not value:
+                    continue
+                try:
+                    result = subprocess.run(
+                        ["gh", "secret", "set", name, "--body", value],
+                        cwd=str(project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    results.append({
+                        "name": name,
+                        "success": result.returncode == 0,
+                        "error": result.stderr if result.returncode != 0 else None,
+                    })
+                except Exception as e:
+                    results.append({
+                        "name": name,
+                        "success": False,
+                        "error": str(e),
+                    })
+        
+        return jsonify({
+            "env_saved": save_to_env,
             "results": results,
-            "all_success": all(r["success"] for r in results),
+            "all_success": all(r["success"] for r in results) if results else True,
         })
     
     @app.route("/api/gh/status")
@@ -179,6 +264,71 @@ def create_app() -> Flask:
         from ..config.system_status import check_tool
         status = check_tool("gh")
         return jsonify(status.to_dict())
+    
+    @app.route("/api/gh/install", methods=["POST"])
+    def api_gh_install():
+        """Install gh CLI using system package manager."""
+        import platform
+        
+        # Detect OS and use appropriate install command
+        system = platform.system().lower()
+        
+        if system == "linux":
+            # Try apt first (Debian/Ubuntu)
+            commands = [
+                ["sudo", "apt", "update"],
+                ["sudo", "apt", "install", "-y", "gh"],
+            ]
+        elif system == "darwin":
+            # macOS with Homebrew
+            commands = [
+                ["brew", "install", "gh"],
+            ]
+        else:
+            return jsonify({
+                "error": f"Unsupported OS: {system}",
+                "install_hint": "Visit https://cli.github.com/ for installation instructions",
+            }), 400
+        
+        output_lines = []
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                output_lines.append(f"$ {' '.join(cmd)}")
+                if result.stdout:
+                    output_lines.append(result.stdout)
+                if result.returncode != 0:
+                    return jsonify({
+                        "success": False,
+                        "error": result.stderr,
+                        "output": "\n".join(output_lines),
+                    }), 500
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    "success": False,
+                    "error": "Installation timed out",
+                }), 504
+            except Exception as e:
+                return jsonify({
+                    "success": False,
+                    "error": str(e),
+                }), 500
+        
+        # Verify installation
+        from ..config.system_status import check_tool
+        gh_status = check_tool("gh")
+        
+        return jsonify({
+            "success": gh_status.installed,
+            "version": gh_status.version,
+            "output": "\n".join(output_lines),
+            "needs_auth": not gh_status.authenticated if gh_status.installed else False,
+        })
     
     return app
 
