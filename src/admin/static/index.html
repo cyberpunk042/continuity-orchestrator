@@ -761,6 +761,7 @@
             <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
             <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
             <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
+            <button class="tab" onclick="switchTab('integrations')">🔌 Integrations</button>
             <button class="tab" onclick="switchTab('debugging')">🐛 Debugging</button>
         </div>
         <div class="nav-controls">
@@ -867,6 +868,9 @@
             <div class="card">
                 <h2><span class="icon">🏗️</span> Build</h2>
                 <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('check-config')" style="width: 100%;">
+                        🔍 Check Adapters Config
+                    </button>
                     <button class="btn" onclick="runCmdWithSync('build-site', 'build-git-sync')" style="width: 100%;">
                         🏗️ Build Static Site
                     </button>
@@ -875,9 +879,6 @@
                         <input type="checkbox" id="build-git-sync" checked style="accent-color: var(--accent);">
                         🔄 Git sync after build
                     </label>
-                    <button class="btn" onclick="runCmd('check-config')" style="width: 100%;">
-                        🔍 Check Adapters Config
-                    </button>
                 </div>
             </div>
 
@@ -904,6 +905,9 @@
                     </button>
                     <button class="btn" onclick="runCmd('circuit-breakers')" style="width: 100%;">
                         ⚡ Circuit Breakers
+                    </button>
+                    <button class="btn" onclick="runCmd('circuit-breakers --reset')" style="width: 100%;">
+                        🔄 Reset All Breakers
                     </button>
                 </div>
             </div>
@@ -1001,6 +1005,49 @@
                         🗑️ Factory Reset (fresh state + clear audit)
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Integrations Tab -->
+    <div id="tab-integrations" class="tab-content">
+        <header class="header">
+            <h1>🔌 Integrations</h1>
+            <p class="subtitle">Test and manage your configured adapters</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">📧</span> Email (Resend)</h2>
+                <div id="integration-email" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">📱</span> SMS (Twilio)</h2>
+                <div id="integration-sms" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🐦</span> X / Twitter</h2>
+                <div id="integration-x" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🤖</span> Reddit</h2>
+                <div id="integration-reddit" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2><span class="icon">📟</span> Test Output</h2>
+                <pre class="terminal" id="integration-terminal">Select an integration to test.</pre>
             </div>
         </div>
     </div>
@@ -1147,22 +1194,45 @@
         }
 
         // Tab switching
-        function switchTab(tabId) {
+        function switchTab(tabId, subStep) {
+            // Parse compound tab IDs like 'wizard/email'
+            if (tabId.includes('/')) {
+                const parts = tabId.split('/');
+                tabId = parts[0];
+                subStep = parts[1];
+            }
+
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-            document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
-            document.getElementById(`tab-${tabId}`).classList.add('active');
+            const tabBtn = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
+            if (tabBtn) tabBtn.classList.add('active');
+            const tabEl = document.getElementById(`tab-${tabId}`);
+            if (tabEl) tabEl.classList.add('active');
 
-            // Update URL hash without scrolling
-            history.replaceState(null, '', `#${tabId}`);
+            // Update URL hash
+            const hash = subStep ? `${tabId}/${subStep}` : tabId;
+            history.replaceState(null, '', `#${hash}`);
 
             // Load data for the tab
             if (tabId === 'secrets') {
                 loadSecretsForm();
             } else if (tabId === 'wizard') {
+                // Navigate to specific wizard step if provided
+                if (subStep) {
+                    const stepIdx = wizardSteps.findIndex(s => s.id === subStep);
+                    if (stepIdx !== -1) currentWizardStep = stepIdx;
+                }
                 renderWizard();
+            } else if (tabId === 'integrations') {
+                loadIntegrations();
+            } else if (tabId === 'dashboard') {
+                loadStatus();
             }
+        }
+
+        function goToWizardStep(stepId) {
+            switchTab('wizard', stepId);
         }
 
         // Load status
@@ -1287,6 +1357,10 @@
                 <div class="card">
                     <h2><span class="icon">🛠️</span> Tools</h2>
                     ${toolsHtml}
+                    <div style="border-top: 1px solid var(--border); margin-top: 0.75rem; padding-top: 0.75rem;">
+                        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">📦 Git</div>
+                        <div id="git-status-content" style="color: var(--text-dim); font-size: 0.85rem;">Loading...</div>
+                    </div>
                 </div>
                 
                 <div class="card">
@@ -1338,6 +1412,9 @@
                     </div>
                 </div>
             `;
+
+            // Load git status into the Tools card
+            loadGitStatus();
         }
         // Secrets form
         let ghSecrets = [];  // List of secrets set in GitHub
@@ -1667,6 +1744,227 @@
                 }
             } catch (e) {
                 if (terminal) terminal.textContent += `⚠️ Git sync failed: ${e.message}\n`;
+            }
+        }
+
+        // ========================================
+        // GIT STATUS (dashboard card)
+        // ========================================
+        async function loadGitStatus() {
+            const el = document.getElementById('git-status-content');
+            if (!el) return;
+            try {
+                const resp = await fetch('/api/git/status');
+                const g = await resp.json();
+                if (!g.available) {
+                    el.innerHTML = `<span style="color: var(--text-dim);">⚠️ ${g.error || 'Git not available'}</span>`;
+                    return;
+                }
+
+                const syncIcon = g.clean ? '✅' : g.total_changes > 0 ? '🟡' : '🟢';
+                const abHtml = (g.ahead || g.behind)
+                    ? `<span style="color: var(--warning);">${g.ahead ? `↑${g.ahead}` : ''} ${g.behind ? `↓${g.behind}` : ''}</span>`
+                    : '<span style="color: var(--accent);">In sync</span>';
+
+                el.innerHTML = `
+                    <div class="status-row">
+                        <span class="status-label">Branch</span>
+                        <span class="status-value" style="font-family: monospace;">${g.branch}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Last commit</span>
+                        <span class="status-value" style="font-size: 0.82rem;">${g.last_commit} <span style="color: var(--text-dim);">(${g.last_commit_time})</span></span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Changes</span>
+                        <span class="status-value">${syncIcon} ${g.total_changes} pending ${g.staged ? `(${g.staged} staged)` : ''}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Remote</span>
+                        <span class="status-value">${abHtml}</span>
+                    </div>
+                    <div class="actions" style="margin-top: 0.75rem;">
+                        <button class="btn" onclick="loadGitStatus()">🔄 Refresh</button>
+                        <button class="btn primary" onclick="dashboardGitSync()" id="dash-sync-btn">📤 Sync Now</button>
+                    </div>
+                    <div id="dash-git-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>
+                `;
+            } catch (e) {
+                el.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function dashboardGitSync() {
+            const statusDiv = document.getElementById('dash-git-status');
+            const btn = document.getElementById('dash-sync-btn');
+            if (btn) btn.disabled = true;
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">🔄 Syncing...</span>';
+            try {
+                const resp = await fetch('/api/git/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'chore: sync from admin panel' }),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ ${data.message}</span>`;
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ ${data.error || 'Failed'}</span>`;
+                }
+                // Refresh git status
+                setTimeout(loadGitStatus, 1500);
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+            if (btn) btn.disabled = false;
+        }
+
+        // ========================================
+        // INTEGRATIONS TAB
+        // ========================================
+        const INTEGRATIONS = [
+            {
+                id: 'email', label: 'Email', adapter: 'email',
+                secrets: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'OPERATOR_EMAIL'],
+                testCmd: 'test email',
+                wizardStep: 'email',
+            },
+            {
+                id: 'sms', label: 'SMS', adapter: 'sms',
+                secrets: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS'],
+                testCmd: 'test sms',
+                wizardStep: 'sms',
+            },
+            {
+                id: 'x', label: 'X / Twitter', adapter: 'x_twitter',
+                secrets: ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
+                testCmd: null,
+                wizardStep: 'twitter',
+            },
+            {
+                id: 'reddit', label: 'Reddit', adapter: 'reddit',
+                secrets: ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
+                testCmd: null,
+                wizardStep: 'reddit',
+            },
+        ];
+
+        async function loadIntegrations() {
+            if (!appData) {
+                const resp = await fetch('/api/status');
+                appData = await resp.json();
+            }
+            if (!envData || Object.keys(envData).length === 0) {
+                const envResp = await fetch('/api/env/read');
+                const envResult = await envResp.json();
+                envData = envResult.values || {};
+            }
+
+            for (const integ of INTEGRATIONS) {
+                const el = document.getElementById(`integration-${integ.id}`);
+                if (!el) continue;
+
+                // Check which secrets are set
+                const secretStatus = integ.secrets.map(s => ({
+                    name: s,
+                    set: !!(envData[s] && envData[s].length > 0),
+                }));
+                const allSet = secretStatus.every(s => s.set);
+                const noneSet = secretStatus.every(s => !s.set);
+
+                // Find adapter status
+                const adapter = appData.adapters?.find(a => a.name === integ.adapter);
+                const mode = adapter?.configured ? adapter.mode : null;
+
+                let html = '';
+
+                // Secret status
+                html += `<div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">`;
+                for (const s of secretStatus) {
+                    html += `<span style="font-size: 0.78rem; padding: 0.15rem 0.45rem; border-radius: 4px;
+                        background: ${s.set ? 'rgba(74,222,128,0.1)' : 'rgba(239,68,68,0.1)'};
+                        color: ${s.set ? 'var(--accent)' : 'var(--danger)'};">
+                        ${s.set ? '✓' : '✗'} ${s.name.split('_').slice(-1)[0].toLowerCase()}
+                    </span>`;
+                }
+                html += `</div>`;
+
+                // Mode badge
+                if (mode) {
+                    html += `<div style="font-size: 0.82rem;">
+                        Mode: <span class="badge ${mode === 'real' ? 'ok' : 'warning'}">${mode}</span>
+                    </div>`;
+                }
+
+                // Actions
+                if (allSet && integ.testCmd) {
+                    const defaultTo = integ.id === 'email'
+                        ? (envData['OPERATOR_EMAIL'] || '')
+                        : (envData['OPERATOR_SMS'] || '');
+                    const placeholder = defaultTo
+                        ? `Default: ${defaultTo}`
+                        : (integ.id === 'email' ? 'email@example.com' : '+1234567890');
+                    html += `
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <input type="${integ.id === 'email' ? 'email' : 'tel'}"
+                                id="test-to-${integ.id}"
+                                placeholder="${placeholder}"
+                                style="flex: 1; min-width: 140px; padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;" />
+                            <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="white-space: nowrap;">
+                                🧪 Send Test
+                            </button>
+                        </div>`;
+                } else if (allSet && !integ.testCmd) {
+                    html += `<div style="color: var(--accent); font-size: 0.85rem;">✅ Configured — no test available yet</div>`;
+                } else {
+                    const missingKeys = secretStatus.filter(s => !s.set).map(s => s.name);
+                    html += `
+                        <div style="color: var(--warning); font-size: 0.82rem;">
+                            Missing: ${missingKeys.join(', ')}
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="goToWizardStep('${integ.wizardStep}')" style="flex: 1;">
+                                🧙 Setup in Wizard →
+                            </button>
+                            <button class="btn" onclick="switchTab('secrets')" style="flex: 1;">
+                                🔐 Secrets →
+                            </button>
+                        </div>`;
+                }
+
+                el.innerHTML = html;
+            }
+        }
+
+        async function runIntegrationTest(integId) {
+            const terminal = document.getElementById('integration-terminal');
+            const toInput = document.getElementById(`test-to-${integId}`);
+            const to = toInput?.value?.trim() || '';
+            const label = integId === 'email' ? 'Email' : 'SMS';
+
+            terminal.className = 'terminal';
+            terminal.textContent = `🧪 Testing ${label}${to ? ` → ${to}` : ' (using default)'}...\n`;
+
+            try {
+                const body = {};
+                if (to) body.to = to;
+
+                const response = await fetch(`/api/test/${integId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    terminal.textContent = `✅ ${label} test result:\n\n${data.output || 'Completed successfully'}`;
+                } else {
+                    terminal.textContent = `❌ ${label} test failed:\n\n${data.error || data.output || 'Unknown error'}`;
+                    terminal.className = 'terminal error';
+                }
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent = `❌ Error: ${error.message}`;
             }
         }
 
@@ -2771,6 +3069,9 @@
                 nextBtn.style.display = '';
                 nextBtn.textContent = 'Next →';
             }
+
+            // Update URL hash with current wizard step ID
+            history.replaceState(null, '', `#wizard/${step.id}`);
         }
 
         // Skip to Push step (called from Finish button)
@@ -2954,18 +3255,24 @@
         (async () => {
             await loadStatus();
 
-            // Restore tab from URL hash (after data is loaded)
-            const hashTab = window.location.hash.replace('#', '');
-            if (hashTab && document.getElementById(`tab-${hashTab}`)) {
-                switchTab(hashTab);
+            // Restore tab from URL hash (supports wizard/stepId)
+            const hash = window.location.hash.replace('#', '');
+            if (hash) {
+                const tabId = hash.split('/')[0];
+                if (document.getElementById(`tab-${tabId}`)) {
+                    switchTab(hash);
+                }
             }
         })();
 
         // Handle back/forward
         window.addEventListener('hashchange', () => {
-            const tab = window.location.hash.replace('#', '');
-            if (tab && document.getElementById(`tab-${tab}`)) {
-                switchTab(tab);
+            const hash = window.location.hash.replace('#', '');
+            if (hash) {
+                const tabId = hash.split('/')[0];
+                if (document.getElementById(`tab-${tabId}`)) {
+                    switchTab(hash);
+                }
             }
         });
 

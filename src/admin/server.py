@@ -109,6 +109,7 @@ def create_app() -> Flask:
             "simulate": ["python", "-m", "src.main", "simulate"],
             "retry-queue": ["python", "-m", "src.main", "retry-queue"],
             "circuit-breakers": ["python", "-m", "src.main", "circuit-breakers"],
+            "circuit-breakers --reset": ["python", "-m", "src.main", "circuit-breakers", "--reset"],
             "test email": ["python", "-m", "src.main", "test", "email"],
             "test sms": ["python", "-m", "src.main", "test", "sms"],
         }
@@ -130,6 +131,64 @@ def create_app() -> Flask:
                 "output": result.stdout,
                 "error": result.stderr,
                 "returncode": result.returncode,
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "Command timed out"}), 504
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/test/email", methods=["POST"])
+    def api_test_email():
+        """Send a test email with optional custom recipient/subject/body."""
+        data = request.json or {}
+        cmd = ["python", "-m", "src.main", "test", "email"]
+        if data.get("to"):
+            cmd += ["--to", data["to"]]
+        if data.get("subject"):
+            cmd += ["--subject", data["subject"]]
+        if data.get("body"):
+            cmd += ["--body", data["body"]]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "TERM": "dumb"},
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr,
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "Command timed out"}), 504
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/test/sms", methods=["POST"])
+    def api_test_sms():
+        """Send a test SMS with optional custom recipient/message."""
+        data = request.json or {}
+        cmd = ["python", "-m", "src.main", "test", "sms"]
+        if data.get("to"):
+            cmd += ["--to", data["to"]]
+        if data.get("message"):
+            cmd += ["--message", data["message"]]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "TERM": "dumb"},
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr,
             })
         except subprocess.TimeoutExpired:
             return jsonify({"error": "Command timed out"}), 504
@@ -780,7 +839,67 @@ read -p "Press Enter to close..."
             })
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
-    
+
+    @app.route("/api/git/status", methods=["GET"])
+    def api_git_status():
+        """Return git repo status for the dashboard."""
+        import shutil as _shutil
+
+        if not _shutil.which("git"):
+            return jsonify({"available": False, "error": "git not installed"})
+
+        def _git(*args, timeout=10):
+            result = subprocess.run(
+                ["git"] + list(args),
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            return result.stdout.strip() if result.returncode == 0 else None
+
+        try:
+            # Check if git repo
+            if _git("rev-parse", "--is-inside-work-tree") is None:
+                return jsonify({"available": False, "error": "Not a git repo"})
+
+            branch = _git("branch", "--show-current") or "unknown"
+            last_commit = _git("log", "-1", "--format=%h %s", "--no-walk") or "—"
+            last_commit_time = _git("log", "-1", "--format=%ar", "--no-walk") or ""
+
+            # Count changes
+            status_output = _git("status", "--porcelain") or ""
+            lines = [l for l in status_output.splitlines() if l.strip()]
+            staged = sum(1 for l in lines if l[0] != ' ' and l[0] != '?')
+            unstaged = sum(1 for l in lines if len(l) > 1 and l[1] != ' ' and l[0] != '?')
+            untracked = sum(1 for l in lines if l.startswith('??'))
+
+            # Check ahead/behind
+            ahead, behind = 0, 0
+            tracking = _git("rev-parse", "--abbrev-ref", "@{upstream}")
+            if tracking:
+                ab = _git("rev-list", "--left-right", "--count", f"HEAD...@{{upstream}}")
+                if ab:
+                    parts = ab.split()
+                    if len(parts) == 2:
+                        ahead, behind = int(parts[0]), int(parts[1])
+
+            return jsonify({
+                "available": True,
+                "branch": branch,
+                "last_commit": last_commit,
+                "last_commit_time": last_commit_time,
+                "staged": staged,
+                "unstaged": unstaged,
+                "untracked": untracked,
+                "total_changes": len(lines),
+                "ahead": ahead,
+                "behind": behind,
+                "clean": len(lines) == 0 and ahead == 0,
+            })
+        except Exception as e:
+            return jsonify({"available": False, "error": str(e)})
+
     @app.route("/api/git/sync", methods=["POST"])
     def api_git_sync():
         """Commit all changes and push to remote."""
