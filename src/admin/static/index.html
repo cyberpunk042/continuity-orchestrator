@@ -822,12 +822,18 @@
             <div class="card">
                 <h2><span class="icon">▶️</span> Engine</h2>
                 <div class="actions" style="flex-direction: column;">
-                    <button class="btn primary" onclick="runCmd('tick')" style="width: 100%;">
-                        ▶️ Run Tick
-                    </button>
                     <button class="btn" onclick="runCmd('tick-dry')" style="width: 100%;">
                         🧪 Dry Run (preview only)
                     </button>
+                    <button class="btn primary" onclick="runCmdWithSync('tick', 'engine-git-sync')"
+                        style="width: 100%;">
+                        ▶️ Run Tick
+                    </button>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; margin-top: 0.25rem;">
+                        <input type="checkbox" id="engine-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after tick
+                    </label>
                 </div>
             </div>
 
@@ -861,9 +867,14 @@
             <div class="card">
                 <h2><span class="icon">🏗️</span> Build</h2>
                 <div class="actions" style="flex-direction: column;">
-                    <button class="btn" onclick="runCmd('build-site')" style="width: 100%;">
+                    <button class="btn" onclick="runCmdWithSync('build-site', 'build-git-sync')" style="width: 100%;">
                         🏗️ Build Static Site
                     </button>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; margin-top: 0.25rem;">
+                        <input type="checkbox" id="build-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after build
+                    </label>
                     <button class="btn" onclick="runCmd('check-config')" style="width: 100%;">
                         🔍 Check Adapters Config
                     </button>
@@ -950,6 +961,12 @@
                         </div>
                     </div>
                     <div id="deadline-status" style="font-size: 0.85rem;"></div>
+                    <div class="divider" style="border-top: 1px solid var(--border);"></div>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
+                        <input type="checkbox" id="deadline-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after deadline change
+                    </label>
                 </div>
             </div>
 
@@ -1617,6 +1634,39 @@
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Run a command, then optionally git sync
+        async function runCmdWithSync(command, checkboxId) {
+            await runCmd(command);
+            const cb = document.getElementById(checkboxId);
+            if (cb && cb.checked) {
+                await doGitSync('cmd-terminal');
+            }
+        }
+
+        // Shared git sync helper — appends result to a terminal element
+        async function doGitSync(terminalId) {
+            const terminal = document.getElementById(terminalId);
+            if (terminal) terminal.textContent += '\n\n🔄 Syncing to Git...\n';
+            try {
+                const resp = await fetch('/api/git/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'chore: sync from admin panel' }),
+                });
+                const data = await resp.json();
+                if (terminal) {
+                    if (data.success) {
+                        terminal.textContent += `✅ ${data.message}\n`;
+                    } else {
+                        terminal.textContent += `⚠️ Git sync: ${data.error || 'failed'}\n`;
+                        if (data.hint) terminal.textContent += `   💡 ${data.hint}\n`;
+                    }
+                }
+            } catch (e) {
+                if (terminal) terminal.textContent += `⚠️ Git sync failed: ${e.message}\n`;
             }
         }
 
@@ -2428,6 +2478,26 @@
                 if (data.success) {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--success);">✅ Renewed for ${hours} hours</span>`;
                     loadStatus();
+                    // Git sync if checkbox is checked
+                    const syncCb = document.getElementById('deadline-git-sync');
+                    if (syncCb && syncCb.checked) {
+                        if (statusDiv) statusDiv.innerHTML += '<br><span style="color: var(--info);">🔄 Syncing to Git...</span>';
+                        try {
+                            const syncResp = await fetch('/api/git/sync', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ message: `chore: renew deadline +${hours}h` }),
+                            });
+                            const syncData = await syncResp.json();
+                            if (syncData.success) {
+                                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ ${syncData.message}</span>`;
+                            } else {
+                                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--warning);">⚠️ ${syncData.error || 'Git sync failed'}</span>`;
+                            }
+                        } catch (syncErr) {
+                            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--warning);">⚠️ Git sync: ${syncErr.message}</span>`;
+                        }
+                    }
                 } else {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed'}</span>`;
                 }
@@ -2472,6 +2542,26 @@
                     const desc = label || `${Math.round(hours * 10) / 10} hours from now`;
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--success);">✅ Deadline set: ${desc}</span>`;
                     loadStatus();
+                    // Git sync if checkbox is checked
+                    const syncCb = document.getElementById('deadline-git-sync');
+                    if (syncCb && syncCb.checked) {
+                        if (statusDiv) statusDiv.innerHTML += '<br><span style="color: var(--info);">🔄 Syncing to Git...</span>';
+                        try {
+                            const syncResp = await fetch('/api/git/sync', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ message: `chore: set deadline ${desc}` }),
+                            });
+                            const syncData = await syncResp.json();
+                            if (syncData.success) {
+                                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ ${syncData.message}</span>`;
+                            } else {
+                                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--warning);">⚠️ ${syncData.error || 'Git sync failed'}</span>`;
+                            }
+                        } catch (syncErr) {
+                            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--warning);">⚠️ Git sync: ${syncErr.message}</span>`;
+                        }
+                    }
                 } else {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed'}</span>`;
                 }
