@@ -146,24 +146,18 @@ cp .env.example .env
 nano .env
 ```
 
-### Test Your Adapters
+### Daily Operations
 
 ```bash
-# See what's configured
-python -m src.main test all
-
-# Send a real test email
-python -m src.main test email
-
-# Send a real test SMS
-python -m src.main test sms
-
-# Verify GitHub token
-python -m src.main test github
-
-# Test a webhook
-python -m src.main test webhook --url https://example.com/hook
+./manage.sh
 ```
+
+Menu-driven interface for:
+- Check status
+- Run tick / dry-run
+- Renew deadline
+- Test adapters
+- Build site
 
 ### Configure Rules
 
@@ -179,7 +173,7 @@ rules:
       transition_to: WARNING
 ```
 
-📖 **[Configuration Guide →](docs/CONFIGURATION.md)**
+📖 **[Project Reference →](docs/PROJECT_REFERENCE.md)** — See where everything configures
 
 ---
 
@@ -211,30 +205,23 @@ State commits back to your Git repo.
 
 ---
 
-## CLI Commands
+## Operations
+
+All operations are available through the management interface:
 
 ```bash
-# Check current status
-python -m src.main status
-
-# Set deadline (24 hours from now)
-python -m src.main set-deadline --hours 24
-
-# Run a tick (evaluate rules, execute actions)
-python -m src.main tick
-
-# Dry run (preview without changes)
-python -m src.main tick --dry-run
-
-# Reset to OK state
-python -m src.main reset
-
-# Build static site
-python -m src.main build-site
-
-# Check system health
-python -m src.main health
+./manage.sh
 ```
+
+Or use direct CLI for automation:
+
+| Command | What it does |
+|---------|--------------|
+| `./manage.sh` | Interactive menu |
+| `python -m src.main status` | Current state |
+| `python -m src.main tick` | Run engine |
+| `python -m src.main renew` | Extend deadline |
+| `python -m src.main export-secrets` | Show GitHub secrets needed |
 
 ---
 
@@ -291,11 +278,10 @@ ruff check src
 |----------|-------------|
 | [DISCLAIMER.md](DISCLAIMER.md) | ⚠️ **Read first** — Legal disclaimer and warnings |
 | [SECURITY.md](SECURITY.md) | Security best practices |
+| [PROJECT_REFERENCE.md](docs/PROJECT_REFERENCE.md) | **Where everything is** — .env, policy, content, templates |
 | [QUICKSTART.md](docs/QUICKSTART.md) | 5-minute setup guide |
-| [CONFIGURATION.md](docs/CONFIGURATION.md) | All configuration options |
+| [FORKING_GUIDE.md](docs/FORKING_GUIDE.md) | Fork and deploy your own |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, GitHub Actions, production |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the engine works |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Contributing guide |
 
 ---
 
