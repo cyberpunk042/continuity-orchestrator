@@ -265,6 +265,47 @@ def create_app() -> Flask:
         status = check_tool("gh")
         return jsonify(status.to_dict())
     
+    @app.route("/api/gh/auto")
+    def api_gh_auto():
+        """Get GitHub token from gh CLI and detect repo from git remote."""
+        result = {"token": None, "repo": None}
+        
+        # Try to get token from gh auth token
+        try:
+            token_result = subprocess.run(
+                ["gh", "auth", "token"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if token_result.returncode == 0 and token_result.stdout.strip():
+                result["token"] = token_result.stdout.strip()
+        except Exception:
+            pass
+        
+        # Try to detect repo from git remote
+        try:
+            remote_result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if remote_result.returncode == 0 and remote_result.stdout.strip():
+                url = remote_result.stdout.strip()
+                # Parse owner/repo from URL
+                # Formats: git@github.com:owner/repo.git or https://github.com/owner/repo.git
+                import re
+                match = re.search(r'github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?$', url)
+                if match:
+                    result["repo"] = match.group(1)
+        except Exception:
+            pass
+        
+        return jsonify(result)
+    
     @app.route("/api/gh/secrets")
     def api_gh_secrets():
         """Get list of secrets set in GitHub repo."""

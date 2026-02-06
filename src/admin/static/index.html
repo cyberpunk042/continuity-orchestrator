@@ -961,18 +961,33 @@
                     const localSet = envData[secret.name] && envData[secret.name].length > 0;
                     const ghSet = ghSecrets.includes(secret.name);
 
+                    // Non-sensitive secrets can show as plain text
+                    const nonSensitive = ['GITHUB_REPOSITORY', 'OPERATOR_EMAIL', 'RESEND_FROM_EMAIL',
+                        'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'PROJECT_NAME',
+                        'REDDIT_USERNAME', 'TWILIO_ACCOUNT_SID', 'REDDIT_CLIENT_ID'];
+                    const inputType = nonSensitive.includes(secret.name) ? 'text' : 'password';
+                    const existingValue = nonSensitive.includes(secret.name) && localSet ? envData[secret.name] : '';
+
+                    // Add action buttons for certain secrets
+                    let actionBtn = '';
+                    if (secret.name === 'GITHUB_TOKEN' || secret.name === 'GITHUB_REPOSITORY') {
+                        actionBtn = `<button type="button" class="btn" onclick="fillSecretFromGh('${secret.name}')" style="padding:0.25rem 0.5rem;font-size:0.75rem;" title="Get from gh CLI">🔍</button>`;
+                    }
+
                     html += `
-                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr 120px 120px; gap: 0.5rem; align-items: center;">
+                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr auto 100px 100px; gap: 0.5rem; align-items: center;">
                             <div class="secret-config-name">
                                 ${secret.name}
                                 ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
                             </div>
                             <div class="secret-config-value">
-                                <input type="password" 
+                                <input type="${inputType}" 
                                        id="secret-${secret.name}" 
-                                       placeholder="${localSet ? '••••••••' : 'Enter value...'}"
+                                       placeholder="${localSet && inputType === 'password' ? '••••••••' : 'Enter value...'}"
+                                       value="${existingValue}"
                                        data-secret-name="${secret.name}">
                             </div>
+                            <div>${actionBtn}</div>
                             <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
                                 <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
                             </div>
@@ -1429,10 +1444,12 @@
                 id: 'security',
                 title: 'Security',
                 content: () => `
-                    <h2 style="margin-bottom: 1rem;">🔐 Security Secrets</h2>
+                    <h2 style="margin-bottom: 1rem;">🔐 Security & GitHub</h2>
                     <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
-                        These secrets control access to critical operations.
+                        Security secrets and GitHub configuration.
                     </p>
+                    
+                    <h3 style="margin: 1.5rem 0 1rem; color: var(--text-dim); font-size: 0.9rem;">🔑 SECURITY SECRETS</h3>
                     <div class="form-group">
                         <label class="form-label">Renewal Secret *</label>
                         <input type="password" class="form-input" id="wiz-renewal-secret" 
@@ -1451,12 +1468,26 @@
                             ${appData?.secrets?.find(s => s.name === 'RELEASE_SECRET')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                         </div>
                     </div>
+                    
+                    <h3 style="margin: 1.5rem 0 1rem; color: var(--text-dim); font-size: 0.9rem;">🐙 GITHUB CONFIGURATION</h3>
+                    <div class="form-group">
+                        <label class="form-label">GitHub Repository</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="text" class="form-input" id="wiz-github-repo" 
+                                   placeholder="owner/repo" value="${getSecretValue('GITHUB_REPOSITORY')}" style="flex: 1;">
+                            <button type="button" class="btn" onclick="autoDetectGitHub()" title="Detect from git remote">🔍 Detect</button>
+                        </div>
+                        <div class="form-hint">Auto-detected from git remote if available</div>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">GitHub Token</label>
-                        <input type="password" class="form-input" id="wiz-github-token" 
-                               placeholder="ghp_xxxxxxxxxx">
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="password" class="form-input" id="wiz-github-token" 
+                                   placeholder="ghp_xxxxxxxxxx or auto-detect" style="flex: 1;">
+                            <button type="button" class="btn" onclick="autoDetectGitHub()" title="Get from gh CLI">🔑 Get from gh</button>
+                        </div>
                         <div class="form-hint">
-                            <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--info);">Generate token</a> with repo scope
+                            Auto-detect from <code>gh auth token</code> or <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--info);">generate manually</a>
                             ${appData?.secrets?.find(s => s.name === 'GITHUB_TOKEN')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                         </div>
                     </div>
@@ -1470,6 +1501,8 @@
                     if (release) result.RELEASE_SECRET = release;
                     const github = document.getElementById('wiz-github-token').value;
                     if (github) result.GITHUB_TOKEN = github;
+                    const repo = document.getElementById('wiz-github-repo').value;
+                    if (repo) result.GITHUB_REPOSITORY = repo;
                     return result;
                 }
             },
@@ -1532,6 +1565,65 @@
                 return envData[name];
             }
             return '';
+        }
+
+        // Auto-detect GitHub token and repo from gh CLI / git remote
+        async function autoDetectGitHub() {
+            try {
+                const response = await fetch('/api/gh/auto');
+                const data = await response.json();
+
+                let updated = [];
+
+                if (data.token) {
+                    const tokenInput = document.getElementById('wiz-github-token');
+                    if (tokenInput && !tokenInput.value) {
+                        tokenInput.value = data.token;
+                        updated.push('token');
+                    }
+                }
+
+                if (data.repo) {
+                    const repoInput = document.getElementById('wiz-github-repo');
+                    if (repoInput && !repoInput.value) {
+                        repoInput.value = data.repo;
+                        updated.push('repository');
+                    }
+                }
+
+                if (updated.length > 0) {
+                    alert(`✅ Auto-detected: ${updated.join(' and ')}`);
+                } else if (!data.token && !data.repo) {
+                    alert('⚠️ Could not auto-detect. Make sure gh CLI is authenticated (gh auth login) and you have a git remote set.');
+                } else {
+                    alert('ℹ️ Fields already filled - no changes made.');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Fill a specific secret from gh CLI (for Secrets tab)
+        async function fillSecretFromGh(secretName) {
+            try {
+                const response = await fetch('/api/gh/auto');
+                const data = await response.json();
+
+                const input = document.getElementById(`secret-${secretName}`);
+                if (!input) return;
+
+                if (secretName === 'GITHUB_TOKEN' && data.token) {
+                    input.value = data.token;
+                    alert('✅ Token retrieved from gh CLI');
+                } else if (secretName === 'GITHUB_REPOSITORY' && data.repo) {
+                    input.value = data.repo;
+                    alert('✅ Repository detected from git remote');
+                } else {
+                    alert('⚠️ Could not auto-detect. Make sure gh CLI is authenticated (gh auth login) and you have a git remote set.');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
         }
 
         // Install gh CLI - opens terminal for user to enter sudo password
@@ -1686,43 +1778,73 @@
 
         async function pushWizardSecrets() {
             const statusDiv = document.getElementById('wizard-push-status');
-            if (!statusDiv) return;
+            if (!statusDiv) {
+                console.error('wizard-push-status element not found');
+                return;
+            }
 
             const secrets = wizardData;
+            console.log('Wizard secrets to push:', Object.keys(secrets));
+
             if (Object.keys(secrets).length === 0) {
                 statusDiv.innerHTML = '<div class="alert info">No new secrets to push.</div>';
                 return;
             }
 
-            statusDiv.innerHTML = '<div class="loading">Pushing secrets</div>';
+            statusDiv.innerHTML = `<div class="loading">Pushing ${Object.keys(secrets).length} secrets...</div>`;
 
             try {
+                console.log('Sending secrets to /api/secrets/push...');
                 const response = await fetch('/api/secrets/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secrets }),
+                    body: JSON.stringify({ secrets, save_to_env: true }),
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
+                console.log('Push response:', data);
 
                 if (data.error) {
-                    statusDiv.innerHTML = `<div class="alert error">${data.error}</div>`;
+                    statusDiv.innerHTML = `<div class="alert error">❌ ${data.error}</div>`;
+                    console.error('Push error:', data.error);
                     return;
                 }
 
-                let html = '';
-                for (const result of data.results) {
+                let html = '<h4 style="margin-bottom: 0.5rem;">Results:</h4>';
+                let successCount = 0;
+                let failCount = 0;
+
+                // Show env save status
+                if (data.env_saved) {
+                    html += '<div style="color: var(--accent); margin: 0.25rem 0;">💾 Saved to .env</div>';
+                }
+
+                for (const result of (data.results || [])) {
                     if (result.success) {
                         html += `<div style="color: var(--accent); margin: 0.25rem 0;">✅ ${result.name}</div>`;
+                        successCount++;
                     } else {
                         html += `<div style="color: var(--danger); margin: 0.25rem 0;">❌ ${result.name}: ${result.error}</div>`;
+                        failCount++;
                     }
                 }
+
+                if (failCount === 0) {
+                    html = `<div class="alert success">✅ All ${successCount} secrets pushed successfully!</div>` + html;
+                }
+
                 statusDiv.innerHTML = html;
+                console.log(`Push complete: ${successCount} success, ${failCount} failed`);
 
                 // Refresh status
                 loadStatus();
             } catch (error) {
-                statusDiv.innerHTML = `<div class="alert error">${error.message}</div>`;
+                console.error('Push exception:', error);
+                statusDiv.innerHTML = `<div class="alert error">❌ Error: ${error.message}</div>`;
             }
         }
 
