@@ -653,13 +653,67 @@
             </div>
 
             <div class="card">
+                <h2><span class="icon">📊</span> Status</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('status')" style="width: 100%;">
+                        📊 Current Status
+                    </button>
+                    <button class="btn" onclick="runCmd('health')" style="width: 100%;">
+                        💓 Health Check
+                    </button>
+                    <button class="btn" onclick="runCmd('config-status')" style="width: 100%;">
+                        ⚙️ Config Status
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🔮</span> Preview</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('explain')" style="width: 100%;">
+                        📖 Explain Stages
+                    </button>
+                    <button class="btn" onclick="runCmd('simulate')" style="width: 100%;">
+                        🔮 Simulate Timeline
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2><span class="icon">🏗️</span> Build</h2>
                 <div class="actions" style="flex-direction: column;">
                     <button class="btn" onclick="runCmd('build-site')" style="width: 100%;">
                         🏗️ Build Static Site
                     </button>
+                    <button class="btn" onclick="runCmd('check-config')" style="width: 100%;">
+                        🔍 Check Adapters Config
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🧪</span> Test</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('test email')" style="width: 100%;">
+                        📧 Test Email
+                    </button>
+                    <button class="btn" onclick="runCmd('test sms')" style="width: 100%;">
+                        📱 Test SMS
+                    </button>
                     <button class="btn" onclick="runCmd('test-all')" style="width: 100%;">
                         🧪 Test All Adapters
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🔄</span> Recovery</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('retry-queue')" style="width: 100%;">
+                        📋 View Retry Queue
+                    </button>
+                    <button class="btn" onclick="runCmd('circuit-breakers')" style="width: 100%;">
+                        ⚡ Circuit Breakers
                     </button>
                 </div>
             </div>
@@ -960,18 +1014,40 @@
                     const isRequired = secret.required_for.length > 0;
                     const localSet = envData[secret.name] && envData[secret.name].length > 0;
                     const ghSet = ghSecrets.includes(secret.name);
+                    const currentValue = envData[secret.name] || '';
+
+                    // Boolean secrets use select dropdown
+                    const booleanSecrets = ['ADAPTER_MOCK_MODE'];
 
                     // Non-sensitive secrets can show as plain text
                     const nonSensitive = ['GITHUB_REPOSITORY', 'OPERATOR_EMAIL', 'RESEND_FROM_EMAIL',
                         'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'PROJECT_NAME',
                         'REDDIT_USERNAME', 'TWILIO_ACCOUNT_SID', 'REDDIT_CLIENT_ID'];
-                    const inputType = nonSensitive.includes(secret.name) ? 'text' : 'password';
-                    const existingValue = nonSensitive.includes(secret.name) && localSet ? envData[secret.name] : '';
 
                     // Add action buttons for certain secrets
                     let actionBtn = '';
                     if (secret.name === 'GITHUB_TOKEN' || secret.name === 'GITHUB_REPOSITORY') {
                         actionBtn = `<button type="button" class="btn" onclick="fillSecretFromGh('${secret.name}')" style="padding:0.25rem 0.5rem;font-size:0.75rem;" title="Get from gh CLI">🔍</button>`;
+                    }
+
+                    // Determine input type
+                    let inputHtml = '';
+                    if (booleanSecrets.includes(secret.name)) {
+                        const isTrue = currentValue === 'true' || currentValue === '1' || (!localSet);
+                        inputHtml = `
+                            <select id="secret-${secret.name}" data-secret-name="${secret.name}" class="form-input" style="padding: 0.5rem;">
+                                <option value="true" ${isTrue ? 'selected' : ''}>✅ On (safe testing)</option>
+                                <option value="false" ${!isTrue ? 'selected' : ''}>⚠️ Off (live operations)</option>
+                            </select>`;
+                    } else {
+                        const inputType = nonSensitive.includes(secret.name) ? 'text' : 'password';
+                        const existingValue = nonSensitive.includes(secret.name) && localSet ? currentValue : '';
+                        inputHtml = `
+                            <input type="${inputType}" 
+                                   id="secret-${secret.name}" 
+                                   placeholder="${localSet && inputType === 'password' ? '••••••••' : 'Enter value...'}"
+                                   value="${existingValue}"
+                                   data-secret-name="${secret.name}">`;
                     }
 
                     html += `
@@ -981,11 +1057,7 @@
                                 ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
                             </div>
                             <div class="secret-config-value">
-                                <input type="${inputType}" 
-                                       id="secret-${secret.name}" 
-                                       placeholder="${localSet && inputType === 'password' ? '••••••••' : 'Enter value...'}"
-                                       value="${existingValue}"
-                                       data-secret-name="${secret.name}">
+                                ${inputHtml}
                             </div>
                             <div>${actionBtn}</div>
                             <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
