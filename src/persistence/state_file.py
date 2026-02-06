@@ -5,9 +5,12 @@ State File Persistence — JSON state backend.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from ..models.state import State
+
+logger = logging.getLogger(__name__)
 
 
 def load_state(path: Path) -> State:
@@ -24,9 +27,12 @@ def load_state(path: Path) -> State:
         FileNotFoundError: If the state file doesn't exist
         ValidationError: If the state file is invalid
     """
+    logger.debug(f"Loading state from {path}")
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    return State(**data)
+    state = State(**data)
+    logger.debug(f"State loaded: stage={state.escalation.state}, project={state.meta.project}")
+    return state
 
 
 def save_state(state: State, path: Path) -> None:
@@ -50,3 +56,4 @@ def save_state(state: State, path: Path) -> None:
     
     # Atomic rename
     temp_path.rename(path)
+    logger.info(f"State saved: stage={state.escalation.state} → {path.name}")

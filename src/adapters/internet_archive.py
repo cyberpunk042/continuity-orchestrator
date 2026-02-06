@@ -26,7 +26,10 @@ from typing import Optional, Tuple
 import urllib.request
 import urllib.parse
 import json
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
@@ -207,23 +210,23 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
     last_error = None
     
     for attempt in range(max_retries + 1):
-        print(f"[ARCHIVE] Attempt {attempt + 1}/{max_retries + 1} for {url}")
+        logger.info(f"Archive attempt {attempt + 1}/{max_retries + 1} for {url}")
         try:
             # Create request with headers
             request = urllib.request.Request(save_url, headers=headers)
             
             # archive.org Save Page Now can take up to 2+ minutes
             # Use a long timeout to allow the archive to complete
-            print(f"[ARCHIVE] Opening connection (timeout=180s)...")
+            logger.debug("Opening connection to archive.org (timeout=180s)")
             with urllib.request.urlopen(request, timeout=180) as response:
                 response_url = response.geturl()
                 response_code = response.status
-                print(f"[ARCHIVE] Got response: code={response_code}, url={response_url[:100]}...")
+                logger.info(f"Archive response: code={response_code}, url={response_url[:100]}")
                 
                 # Check if we got a valid archive response
                 # The response URL should contain /web/ with a timestamp
                 if "/web/" in response_url and re.search(r'/web/\d{14}/', response_url):
-                    print(f"[ARCHIVE] Success! Archive URL found in response URL")
+                    logger.info("Archive success: URL found in response")
                     return {
                         "success": True,
                         "archive_url": response_url,
@@ -237,7 +240,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
                     archive_url = content_location
                     if not archive_url.startswith("http"):
                         archive_url = f"https://web.archive.org{archive_url}"
-                    print(f"[ARCHIVE] Success! Archive URL found in Content-Location header")
+                    logger.info("Archive success: URL found in Content-Location header")
                     return {
                         "success": True,
                         "archive_url": archive_url,
@@ -251,7 +254,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
                     # Construct a "check" URL to verify the archive exists
                     timestamp = time.strftime("%Y%m%d%H%M%S")
                     constructed_url = f"https://web.archive.org/web/{timestamp}/{url}"
-                    print(f"[ARCHIVE] Success! Constructed archive URL from timestamp")
+                    logger.info("Archive success: URL constructed from timestamp")
                     return {
                         "success": True,
                         "archive_url": constructed_url,
@@ -263,7 +266,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
         except urllib.error.HTTPError as e:
             error_code = e.code
             error_reason = e.reason if hasattr(e, 'reason') else 'Unknown'
-            print(f"[ARCHIVE] HTTPError: {error_code} {error_reason}")
+            logger.warning(f"Archive HTTPError: {error_code} {error_reason}")
             
             # Handle specific error codes
             if error_code == 429:
@@ -279,7 +282,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
                     last_error = f"Cloudflare error {error_code} - archive.org may be busy or this URL type cannot be archived"
                 if attempt < max_retries:
                     wait_time = 2 * (attempt + 1)
-                    print(f"[ARCHIVE] Will retry in {wait_time}s...")
+                    logger.info(f"Archive retry in {wait_time}s...")
                     time.sleep(wait_time)
                     continue
             elif error_code == 403:

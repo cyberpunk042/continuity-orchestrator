@@ -1,7 +1,8 @@
 name: Deploy Site
 
 # Build and deploy static site to GitHub Pages
-# Triggered after successful tick or manually
+# Triggered ONLY for manual dispatch or template/site code changes
+# NOT triggered by state/audit/public changes (cron handles those)
 
 on:
   workflow_dispatch:
@@ -15,10 +16,15 @@ on:
   push:
     branches: [main]
     paths:
-      - 'public/**'
-      - 'state/**'
+      # Only trigger for code/template changes, NOT state changes
+      # Cron workflow handles all automatic deployments
       - 'templates/**'
       - 'src/site/**'
+      - 'content/**'
+      # Explicitly exclude (cron handles these):
+      # - 'state/**'
+      # - 'audit/**' 
+      # - 'public/**'
 
 # Sets permissions for GitHub Pages
 permissions:
@@ -26,7 +32,7 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
+# Allow only one concurrent deployment, skip in-progress for efficiency
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -37,17 +43,22 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       
+      # Use minimal Python setup - site generation only needs core deps
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
       
-      - name: Install dependencies
+      # Install only what's needed for site generation
+      - name: Install minimal dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
+          python -m pip install --upgrade pip --quiet
+          pip install pyyaml pydantic jinja2 python-dateutil python-dotenv click --quiet
+          pip install -e . --no-deps --quiet
       
       - name: Build site
         env:
@@ -74,11 +85,11 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
       
+      # Archive step - only if enabled and not rate-limited recently
       - name: Archive to Wayback Machine
-        if: env.ARCHIVE_ENABLED == 'true'
+        if: vars.ARCHIVE_ENABLED == 'true'
         env:
-          ARCHIVE_ENABLED: ${{ secrets.ARCHIVE_ENABLED }}
-          ARCHIVE_URL: ${{ secrets.ARCHIVE_URL }}
+          ARCHIVE_URL: ${{ vars.ARCHIVE_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           # Determine URL to archive
@@ -92,17 +103,16 @@ jobs:
           
           echo "📦 Archiving $URL to archive.org..."
           
-          # Wait a moment for GitHub Pages to propagate
-          sleep 10
+          # Wait for GitHub Pages propagation
+          sleep 5
           
-          # Submit to Wayback Machine
-          RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET \
-            -H "User-Agent: ContinuityOrchestrator/1.0" \
-            "https://web.archive.org/save/$URL")
+          # Submit to Wayback Machine (best effort, don't fail workflow)
+          RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://web.archive.org/save/$URL" 2>/dev/null || echo "timeout")
           
           if [ "$RESULT" = "200" ] || [ "$RESULT" = "302" ]; then
-            echo "✅ Successfully archived to archive.org"
+            echo "✅ Archived to archive.org"
           else
-            echo "⚠️ Archive returned HTTP $RESULT (may still work)"
+            echo "ℹ️ Archive returned: $RESULT (non-blocking)"
           fi

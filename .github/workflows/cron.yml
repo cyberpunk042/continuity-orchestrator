@@ -3,6 +3,13 @@
 # Runs on a fixed schedule to evaluate countdown, apply policy rules,
 # execute integrations, and persist results. All behavior is driven
 # by repository configuration and persistent state.
+#
+# Cost optimization notes:
+# - Uses fetch-depth: 1 for minimal checkout
+# - Uses pip cache to speed up installs
+# - Conditional site build only when state actually changes
+# - Conditional deploy only when site was rebuilt
+# - Bot commits exclude state/audit from deploy-site triggers
 
 name: continuity-tick
 
@@ -19,6 +26,11 @@ on:
         default: "manual_run"
       dry_run:
         description: "Run without persisting changes"
+        required: false
+        default: "false"
+        type: boolean
+      force_deploy:
+        description: "Force site rebuild and deploy even if no state change"
         required: false
         default: "false"
         type: boolean
@@ -54,7 +66,6 @@ jobs:
       
       - name: Pull latest state
         run: |
-          # Ensure we have the latest state (may have been updated by renew workflow)
           git pull --rebase origin main || true
       
       - name: Set up Python
@@ -65,15 +76,13 @@ jobs:
       
       - name: Install package
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
+          python -m pip install --upgrade pip --quiet
+          pip install -e . --quiet
       
       - name: Run continuity tick
         id: tick
         env:
-          # Master config (one secret with all credentials - preferred)
           CONTINUITY_CONFIG: ${{ secrets.CONTINUITY_CONFIG }}
-          # Individual adapter secrets (fallback if not using master config)
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
@@ -88,6 +97,7 @@ jobs:
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
+          LOG_FORMAT: json
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
             echo "Running in dry-run mode"
@@ -97,6 +107,7 @@ jobs:
           fi
       
       - name: Commit state and audit changes
+        id: commit
         if: inputs.dry_run != 'true'
         run: |
           if git status --porcelain state/ audit/ | grep -q .; then
@@ -114,26 +125,34 @@ jobs:
               sleep 5
               git pull --rebase
             done
+            
+            echo "state_changed=true" >> $GITHUB_OUTPUT
           else
             echo "No state changes to commit"
+            echo "state_changed=false" >> $GITHUB_OUTPUT
           fi
       
+      # Only rebuild site if state changed OR if force_deploy is requested
       - name: Build static site
-        if: inputs.dry_run != 'true'
+        id: build
+        if: |
+          inputs.dry_run != 'true' && (
+            steps.commit.outputs.state_changed == 'true' ||
+            inputs.force_deploy == 'true'
+          )
         env:
           RENEWAL_TRIGGER_TOKEN: ${{ secrets.RENEWAL_TRIGGER_TOKEN }}
         run: |
           python -m src.main build-site --output public
-          echo "Site built to public/"
-          ls -la public/
+          echo "site_built=true" >> $GITHUB_OUTPUT
       
       - name: Upload artifact
-        if: inputs.dry_run != 'true'
+        if: steps.build.outputs.site_built == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./public
       
       - name: Deploy to GitHub Pages
-        if: inputs.dry_run != 'true'
+        if: steps.build.outputs.site_built == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

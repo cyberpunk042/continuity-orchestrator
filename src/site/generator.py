@@ -7,6 +7,7 @@ Uses templates from templates/html/*.html and templates/css/*.css
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ from typing import Any, Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader
 
 from ..models.state import State
+
+logger = logging.getLogger(__name__)
 
 
 class SiteGenerator:
@@ -51,6 +54,10 @@ class SiteGenerator:
         clean: bool = True,
     ) -> Dict[str, Any]:
         """Build the complete static site."""
+        import time
+        build_start = time.time()
+        logger.info(f"Building site to {self.output_dir} (state={state.escalation.state})")
+        
         if clean and self.output_dir.exists():
             # Clean contents, not the directory itself (for Docker volume compatibility)
             for item in self.output_dir.iterdir():
@@ -83,6 +90,7 @@ class SiteGenerator:
         # Generate articles
         article_files = self._generate_articles(context)
         files_generated.extend(article_files)
+        logger.debug(f"Generated {len(article_files)} article(s)")
         
         # Generate archive entries
         if audit_entries:
@@ -91,6 +99,10 @@ class SiteGenerator:
             for entry in audit_entries[-10:]:
                 archive_path = self._generate_archive_entry(entry, context)
                 files_generated.append(archive_path)
+            logger.debug(f"Generated {min(len(audit_entries), 10)} archive entries")
+        
+        build_ms = int((time.time() - build_start) * 1000)
+        logger.info(f"Site built: {len(files_generated)} files in {build_ms}ms")
         
         return {
             "success": True,

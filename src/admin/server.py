@@ -40,6 +40,33 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     
+    # ---------------------------------------------------------------------------
+    # REQUEST LOGGING — log all API requests with timing
+    # ---------------------------------------------------------------------------
+    
+    @app.before_request
+    def log_request_start():
+        """Record request start time."""
+        import time
+        request._start_time = time.time()
+    
+    @app.after_request
+    def log_request_end(response):
+        """Log request with duration for API endpoints."""
+        import time
+        duration_ms = 0
+        if hasattr(request, '_start_time'):
+            duration_ms = int((time.time() - request._start_time) * 1000)
+        
+        # Only log API calls (not static files)
+        if request.path.startswith('/api/'):
+            logger.info(
+                f"{request.method} {request.path} → {response.status_code} ({duration_ms}ms)"
+            )
+        return response
+    
+    logger.info(f"Admin server initialized (project_root={project_root})")
+    
     # ===========================================================================
     # ROUTES
     # ===========================================================================
@@ -148,7 +175,7 @@ def create_app() -> Flask:
         data = request.json or {}
         custom_url = data.get("url")
         
-        print(f"[ARCHIVE] Request received. Custom URL: {custom_url}")
+        logger.info(f"Archive request received. Custom URL: {custom_url}")
         
         try:
             from ..adapters.internet_archive import archive_url_now
@@ -192,20 +219,19 @@ def create_app() -> Flask:
                     parts = repo.split("/")
                     url = f"https://{parts[0]}.github.io/{parts[1]}/"
             
-            print(f"[ARCHIVE] Archiving URL: {url}")
-            print(f"[ARCHIVE] This may take up to 3 minutes...")
+            logger.info(f"Archiving URL: {url}")
+            logger.debug("Archive may take up to 3 minutes")
             
             # Archive the URL
             result = archive_url_now(url)
             
-            print(f"[ARCHIVE] Result: {result}")
+            logger.info(f"Archive result: success={result.get('success')}, url={result.get('archive_url', 'N/A')}")
             
             return jsonify(result)
             
         except Exception as e:
             import traceback
-            print(f"[ARCHIVE] Exception: {e}")
-            traceback.print_exc()
+            logger.error(f"Archive exception: {e}", exc_info=True)
             return jsonify({
                 "success": False,
                 "error": str(e),
