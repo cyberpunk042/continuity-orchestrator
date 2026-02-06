@@ -29,6 +29,9 @@ adapters = [
     "httpx>=0.25",
     "resend>=1.0",
 ]
+admin = [
+    "flask>=3.0",
+]
 
 [project.scripts]
 continuity = "src.main:cli"
