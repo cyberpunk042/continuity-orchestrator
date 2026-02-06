@@ -1132,13 +1132,62 @@
                         You'll configure:
                     </p>
                     <ul style="color: var(--text-dim); line-height: 1.8; margin-left: 1.5rem;">
-                        <li>✅ Basic project settings</li>
-                        <li>✅ Email notifications (Resend)</li>
-                        <li>✅ Security secrets</li>
-                        <li>✅ Push to GitHub</li>
+                        <li>🚀 <strong>Deployment mode</strong> (GitHub Pages, Docker, etc.)</li>
+                        <li>📋 Basic project settings</li>
+                        <li>📧 Email notifications (Resend)</li>
+                        <li>📱 SMS notifications (Twilio) <em style="opacity:0.6;">— optional</em></li>
+                        <li>🐦 X/Twitter posting <em style="opacity:0.6;">— optional</em></li>
+                        <li>🤖 Reddit posting <em style="opacity:0.6;">— optional</em></li>
+                        <li>🔐 Security secrets</li>
+                        <li>🚀 Push to GitHub</li>
                     </ul>
+                    <p style="color: var(--text-dim); margin-top: 1rem; font-size: 0.9rem;">
+                        💡 Skip any optional step by leaving fields blank.
+                    </p>
                 `,
                 validate: () => true
+            },
+            {
+                id: 'deployment',
+                title: 'Deploy',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">🚀 Deployment Mode</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                        How do you want to deploy the Continuity Orchestrator?
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Select your deployment method:</label>
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.deployMode === 'github-pages' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deploy-mode" value="github-pages" ${wizardData.deployMode !== 'docker' ? 'checked' : ''} onchange="wizardData.deployMode='github-pages'">
+                                <div>
+                                    <strong>🌐 GitHub Pages</strong> <span style="color: var(--accent);">Recommended</span>
+                                    <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
+                                        Free hosting via GitHub. Site auto-updates via Actions.<br>
+                                        <em>⚠️ Requires GitHub Pro/Team for private repos with public Pages.</em>
+                                    </div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.deployMode === 'docker' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deploy-mode" value="docker" ${wizardData.deployMode === 'docker' ? 'checked' : ''} onchange="wizardData.deployMode='docker'">
+                                <div>
+                                    <strong>🐳 Docker (Self-Hosted)</strong>
+                                    <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
+                                        Run locally with Docker. No GitHub Pro needed.<br>
+                                        <em>Options: docker-compose, git-sync to public repo, or standalone.</em>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="alert info" style="margin-top: 1rem;">
+                        💡 <strong>Not sure?</strong> Start with GitHub Pages — you can switch to Docker later.
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => ({
+                    DEPLOY_MODE: document.querySelector('input[name="deploy-mode"]:checked')?.value || 'github-pages'
+                })
             },
             {
                 id: 'project',
@@ -1213,6 +1262,166 @@
                     if (key) result.RESEND_API_KEY = key;
                     const from = document.getElementById('wiz-resend-from').value;
                     if (from) result.RESEND_FROM_EMAIL = from;
+                    return result;
+                }
+            },
+            {
+                id: 'sms',
+                title: 'SMS',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">📱 SMS Notifications (Twilio)</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
+                        <em>Optional</em> — Send SMS alerts using <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: var(--info);">Twilio</a>.
+                    </p>
+                    <div class="alert info" style="margin-bottom: 1rem; padding: 0.75rem;">
+                        💡 Twilio offers a free trial with credits. <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: var(--info);">Sign up here</a>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Account SID</label>
+                        <input type="text" class="form-input" id="wiz-twilio-sid" 
+                               placeholder="ACxxxxxxxxxx" value="${getSecretValue('TWILIO_ACCOUNT_SID')}">
+                        <div class="form-hint">From Twilio Console dashboard</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Auth Token</label>
+                        <input type="password" class="form-input" id="wiz-twilio-token" 
+                               placeholder="xxxxxxxxxx">
+                        <div class="form-hint">
+                            From Twilio Console
+                            ${appData?.secrets?.find(s => s.name === 'TWILIO_AUTH_TOKEN')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Twilio Phone Number</label>
+                        <input type="text" class="form-input" id="wiz-twilio-from" 
+                               placeholder="+1234567890" value="${getSecretValue('TWILIO_FROM_NUMBER')}">
+                        <div class="form-hint">Your Twilio number (get free one in trial)</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Your Phone Number</label>
+                        <input type="text" class="form-input" id="wiz-operator-sms" 
+                               placeholder="+1234567890" value="${getSecretValue('OPERATOR_SMS')}">
+                        <div class="form-hint">Where to send SMS alerts</div>
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const sid = document.getElementById('wiz-twilio-sid').value;
+                    if (sid) result.TWILIO_ACCOUNT_SID = sid;
+                    const token = document.getElementById('wiz-twilio-token').value;
+                    if (token) result.TWILIO_AUTH_TOKEN = token;
+                    const from = document.getElementById('wiz-twilio-from').value;
+                    if (from) result.TWILIO_FROM_NUMBER = from;
+                    const sms = document.getElementById('wiz-operator-sms').value;
+                    if (sms) result.OPERATOR_SMS = sms;
+                    return result;
+                }
+            },
+            {
+                id: 'twitter',
+                title: 'X',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">🐦 X/Twitter Integration</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
+                        <em>Optional</em> — Post automated updates to X (Twitter).
+                    </p>
+                    <div class="alert info" style="margin-bottom: 1rem; padding: 0.75rem;">
+                        💡 Requires X Developer account. <a href="https://developer.twitter.com/en/portal/dashboard" target="_blank" style="color: var(--info);">Apply here</a> (free tier: 1,500 tweets/month)
+                    </div>
+                    <details style="margin-bottom: 1rem;">
+                        <summary style="cursor: pointer; color: var(--info);">📖 Setup Guide</summary>
+                        <ol style="color: var(--text-dim); line-height: 1.8; margin: 1rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Go to <a href="https://developer.twitter.com/en/portal/dashboard" target="_blank" style="color: var(--info);">developer.twitter.com</a></li>
+                            <li>Create a Project and App</li>
+                            <li>Set App permissions to <strong>Read and Write</strong></li>
+                            <li>Generate Access Token and Secret</li>
+                            <li>Copy all 4 keys below</li>
+                        </ol>
+                    </details>
+                    <div class="form-group">
+                        <label class="form-label">API Key</label>
+                        <input type="password" class="form-input" id="wiz-x-api-key" placeholder="xxxxxxxxxx">
+                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'X_API_KEY')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Secret</label>
+                        <input type="password" class="form-input" id="wiz-x-api-secret" placeholder="xxxxxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Access Token</label>
+                        <input type="password" class="form-input" id="wiz-x-access-token" placeholder="xxxxxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Access Secret</label>
+                        <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx">
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const apiKey = document.getElementById('wiz-x-api-key').value;
+                    if (apiKey) result.X_API_KEY = apiKey;
+                    const apiSecret = document.getElementById('wiz-x-api-secret').value;
+                    if (apiSecret) result.X_API_SECRET = apiSecret;
+                    const accessToken = document.getElementById('wiz-x-access-token').value;
+                    if (accessToken) result.X_ACCESS_TOKEN = accessToken;
+                    const accessSecret = document.getElementById('wiz-x-access-secret').value;
+                    if (accessSecret) result.X_ACCESS_SECRET = accessSecret;
+                    return result;
+                }
+            },
+            {
+                id: 'reddit',
+                title: 'Reddit',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">🤖 Reddit Integration</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
+                        <em>Optional</em> — Post automated updates to Reddit.
+                    </p>
+                    <details style="margin-bottom: 1rem;" open>
+                        <summary style="cursor: pointer; color: var(--info);">📖 Setup Guide</summary>
+                        <ol style="color: var(--text-dim); line-height: 1.8; margin: 1rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Go to <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color: var(--info);">reddit.com/prefs/apps</a></li>
+                            <li>Click "Create App" or "Create Another App"</li>
+                            <li>Select <strong>"script"</strong> as the app type</li>
+                            <li>Set redirect URI to <code>http://localhost:8080</code></li>
+                            <li>After creation, note the Client ID (under app name) and Secret</li>
+                        </ol>
+                    </details>
+                    <div class="form-group">
+                        <label class="form-label">Client ID</label>
+                        <input type="text" class="form-input" id="wiz-reddit-client-id" 
+                               placeholder="xxxxxxxxxx" value="${getSecretValue('REDDIT_CLIENT_ID')}">
+                        <div class="form-hint">The ID under your app name</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Client Secret</label>
+                        <input type="password" class="form-input" id="wiz-reddit-client-secret" placeholder="xxxxxxxxxx">
+                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'REDDIT_CLIENT_SECRET')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Reddit Username</label>
+                        <input type="text" class="form-input" id="wiz-reddit-username" 
+                               placeholder="your_username" value="${getSecretValue('REDDIT_USERNAME')}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Reddit Password</label>
+                        <input type="password" class="form-input" id="wiz-reddit-password" placeholder="xxxxxxxxxx">
+                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'REDDIT_PASSWORD')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const clientId = document.getElementById('wiz-reddit-client-id').value;
+                    if (clientId) result.REDDIT_CLIENT_ID = clientId;
+                    const clientSecret = document.getElementById('wiz-reddit-client-secret').value;
+                    if (clientSecret) result.REDDIT_CLIENT_SECRET = clientSecret;
+                    const username = document.getElementById('wiz-reddit-username').value;
+                    if (username) result.REDDIT_USERNAME = username;
+                    const password = document.getElementById('wiz-reddit-password').value;
+                    if (password) result.REDDIT_PASSWORD = password;
                     return result;
                 }
             },
