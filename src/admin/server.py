@@ -397,7 +397,7 @@ read -p "Press Enter to close..."
                 timeout=30,
             )
             return jsonify({
-                "success": result.returncode == 0,
+                        "success": result.returncode == 0,
                 "output": result.stdout,
                 "error": result.stderr if result.returncode != 0 else None,
             })
@@ -405,6 +405,62 @@ read -p "Press Enter to close..."
             return jsonify({"success": False, "error": str(e)}), 500
     
     return app
+
+
+def kill_port(port: int) -> bool:
+    """
+    Kill any process running on the specified port.
+    
+    Returns True if a process was killed, False otherwise.
+    """
+    import signal
+    
+    try:
+        # Use lsof to find PID on port
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True,
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    pid_int = int(pid.strip())
+                    os.kill(pid_int, signal.SIGTERM)
+                    logger.info(f"Killed process {pid_int} on port {port}")
+                except (ValueError, ProcessLookupError):
+                    pass
+            return True
+    except FileNotFoundError:
+        # lsof not available, try ss
+        try:
+            result = subprocess.run(
+                ["ss", "-tlnp", f"sport = :{port}"],
+                capture_output=True,
+                text=True,
+            )
+            # Parse PID from ss output
+            for line in result.stdout.split("\n"):
+                if f":{port}" in line and "pid=" in line:
+                    # Extract pid from something like "users:(("python3",pid=12345,fd=5))"
+                    import re
+                    match = re.search(r"pid=(\d+)", line)
+                    if match:
+                        try:
+                            pid = int(match.group(1))
+                            os.kill(pid, signal.SIGTERM)
+                            logger.info(f"Killed process {pid} on port {port}")
+                            return True
+                        except (ValueError, ProcessLookupError):
+                            pass
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"Could not check/kill port {port}: {e}")
+    
+    return False
 
 
 def run_server(
@@ -422,6 +478,12 @@ def run_server(
         open_browser: Whether to open browser automatically
         debug: Enable Flask debug mode
     """
+    # Kill any existing process on the port
+    if kill_port(port):
+        print(f"Killed existing process on port {port}")
+        import time
+        time.sleep(0.5)  # Give it time to release the port
+    
     app = create_app()
     
     url = f"http://{host}:{port}"
