@@ -1240,6 +1240,7 @@
             const targetTab = tabId.includes('/') ? tabId.split('/')[0] : tabId;
             if (activeTab === 'wizard' && targetTab !== 'wizard' && wizardDirty) {
                 if (!confirm('You have unsaved wizard progress. Leave anyway?')) return;
+                wizardDirty = false;  // user confirmed — reset
             }
             activeTab = targetTab;
             _origSwitchTab(tabId, subStep);
@@ -3004,11 +3005,7 @@
             // Collect current step data first
             const currentStep = wizardSteps[currentWizardStep];
             if (currentStep?.collect) {
-                const collected = currentStep.collect();
-                Object.assign(wizardData, collected);
-                if (Object.values(collected).some(v => v !== '' && v !== undefined && v !== null)) {
-                    wizardDirty = true;
-                }
+                Object.assign(wizardData, currentStep.collect());
             }
 
             // Can always go back
@@ -3087,7 +3084,28 @@
 
             // Render current step content
             const step = wizardSteps[currentWizardStep];
-            document.getElementById('wizard-body').innerHTML = step.content();
+            const wizardBody = document.getElementById('wizard-body');
+            wizardBody.innerHTML = step.content();
+
+            // Snapshot initial field values so we can detect real changes
+            const initialValues = {};
+            wizardBody.querySelectorAll('input, textarea, select').forEach(el => {
+                if (el.id || el.name) initialValues[el.id || el.name] = el.value;
+            });
+            wizardBody.addEventListener('input', () => {
+                const fields = wizardBody.querySelectorAll('input, textarea, select');
+                wizardDirty = Array.from(fields).some(el => {
+                    const key = el.id || el.name;
+                    return key && el.value !== (initialValues[key] ?? '');
+                });
+            });
+            wizardBody.addEventListener('change', () => {
+                const fields = wizardBody.querySelectorAll('input, textarea, select');
+                wizardDirty = Array.from(fields).some(el => {
+                    const key = el.id || el.name;
+                    return key && el.value !== (initialValues[key] ?? '');
+                });
+            });
 
             // Update nav buttons
             document.getElementById('wizard-prev').style.visibility = currentWizardStep === 0 ? 'hidden' : 'visible';
@@ -3149,11 +3167,7 @@
 
             // Collect data from current step
             if (step.collect) {
-                const collected = step.collect();
-                Object.assign(wizardData, collected);
-                if (Object.values(collected).some(v => v !== '' && v !== undefined && v !== null)) {
-                    wizardDirty = true;
-                }
+                Object.assign(wizardData, step.collect());
             }
 
             // If this is the push step, actually push
