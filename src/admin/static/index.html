@@ -16,12 +16,34 @@
             --text: #e8e8e8;
             --text-dim: #777;
             --accent: #4ade80;
+            --accent-dim: rgba(74, 222, 128, 0.15);
             --accent-glow: rgba(74, 222, 128, 0.15);
             --warning: #facc15;
             --danger: #ef4444;
             --info: #3b82f6;
             --gradient-1: linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%);
             --gradient-accent: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            color-scheme: dark;
+        }
+
+        [data-theme="light"] {
+            --bg: #f5f5f5;
+            --bg-card: #ffffff;
+            --bg-hover: #eaeaea;
+            --bg-input: #f0f0f0;
+            --border: #d4d4d4;
+            --border-focus: #16a34a;
+            --text: #1a1a1a;
+            --text-dim: #666;
+            --accent: #16a34a;
+            --accent-dim: rgba(22, 163, 74, 0.12);
+            --accent-glow: rgba(22, 163, 74, 0.1);
+            --warning: #ca8a04;
+            --danger: #dc2626;
+            --info: #2563eb;
+            --gradient-1: linear-gradient(135deg, #e8f5e9 0%, #f5f5f5 100%);
+            --gradient-accent: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            color-scheme: light;
         }
 
         * {
@@ -78,14 +100,127 @@
         /* Tabs */
         .tabs {
             display: flex;
-            justify-content: center;
+            align-items: center;
             gap: 0.5rem;
-            padding: 1rem 2rem;
+            padding: 0.75rem 1rem;
             background: var(--bg-card);
             border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
             z-index: 100;
+        }
+
+        .tabs-group {
+            display: flex;
+            gap: 0.5rem;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        /* Theme toggle */
+        .theme-toggle {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 0.3rem 0.6rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        /* Google Translate widget styling */
+        /* ── Hide ALL Google Translate UI ── */
+        #google_translate_element,
+        .goog-te-banner-frame,
+        .skiptranslate,
+        .goog-te-gadget-icon {
+            display: none !important;
+        }
+
+        body {
+            top: 0 !important;
+            position: static !important;
+        }
+
+        /* ── Custom language selector ── */
+        .lang-btn {
+            position: relative;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 0.3rem 0.65rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            user-select: none;
+        }
+
+        .lang-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .lang-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.35rem;
+            min-width: 160px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            z-index: 200;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .lang-dropdown.open {
+            display: block;
+        }
+
+        .lang-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.65rem;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            transition: all 0.15s;
+        }
+
+        .lang-option:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+
+        .lang-option.active {
+            background: var(--accent-dim, rgba(74, 222, 128, 0.12));
+            color: var(--accent);
+            font-weight: 600;
         }
 
         .tab {
@@ -620,11 +755,26 @@
 <body>
     <!-- Tab Navigation -->
     <nav class="tabs">
-        <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
-        <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
-        <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
-        <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
-        <button class="tab" onclick="switchTab('debugging')">🐛 Debugging</button>
+        <div style="width: 120px; flex-shrink: 0;"></div>
+        <div class="tabs-group">
+            <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
+            <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
+            <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
+            <button class="tab" onclick="switchTab('debugging')">🐛 Debugging</button>
+        </div>
+        <div class="nav-controls">
+            <div id="google_translate_element"></div>
+            <div class="lang-btn" id="lang-btn" onclick="toggleLangDropdown()">
+                <span id="lang-flag">🌐</span>
+                <span id="lang-label">EN</span>
+                <span style="font-size:0.6rem;">▾</span>
+                <div class="lang-dropdown" id="lang-dropdown"></div>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                🌙
+            </button>
+        </div>
     </nav>
 
     <!-- Dashboard Tab -->
@@ -758,7 +908,8 @@
     <div id="tab-debugging" class="tab-content">
         <header class="header">
             <h1>🐛 Debugging</h1>
-            <p class="subtitle">Deadline overrides, archival tools, and testing utilities</p>
+            <p class="subtitle">Deadline overrides, archival tools, and testing utilities
+            </p>
         </header>
 
         <div class="grid">
@@ -870,6 +1021,113 @@
         let appData = null;
         let envData = {};  // Values from .env file
         let ghAuthenticated = false;
+        // ========================================
+        // THEME TOGGLE
+        // ========================================
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = !html.hasAttribute('data-theme') || html.getAttribute('data-theme') === 'dark';
+            const newTheme = isDark ? 'light' : 'dark';
+            if (newTheme === 'dark') {
+                html.removeAttribute('data-theme');
+            } else {
+                html.setAttribute('data-theme', newTheme);
+            }
+            localStorage.setItem('co-theme', newTheme);
+            document.getElementById('theme-toggle').textContent = newTheme === 'light' ? '☀️' : '🌙';
+        }
+
+        // Restore theme on load
+        (function initTheme() {
+            const saved = localStorage.getItem('co-theme');
+            if (saved === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+                const btn = document.getElementById('theme-toggle');
+                if (btn) btn.textContent = '☀️';
+            }
+        })();
+
+        // ========================================
+        // LANGUAGE SELECTOR (drives Google Translate)
+        // ========================================
+        const LANGUAGES = [
+            { code: '', flag: '🇬🇧', label: 'English' },
+            { code: 'fr', flag: '🇫🇷', label: 'Français' },
+            { code: 'es', flag: '🇪🇸', label: 'Español' },
+            { code: 'de', flag: '🇩🇪', label: 'Deutsch' },
+            { code: 'pt', flag: '🇧🇷', label: 'Português' },
+            { code: 'it', flag: '🇮🇹', label: 'Italiano' },
+            { code: 'ru', flag: '🇷🇺', label: 'Русский' },
+            { code: 'ja', flag: '🇯🇵', label: '日本語' },
+            { code: 'ko', flag: '🇰🇷', label: '한국어' },
+            { code: 'zh-CN', flag: '🇨🇳', label: '中文' },
+            { code: 'ar', flag: '🇸🇦', label: 'العربية' },
+            { code: 'hi', flag: '🇮🇳', label: 'हिन्दी' },
+        ];
+
+        // Build dropdown
+        (function initLangDropdown() {
+            const dd = document.getElementById('lang-dropdown');
+            if (!dd) return;
+            dd.innerHTML = LANGUAGES.map(l =>
+                `<div class="lang-option${l.code === '' ? ' active' : ''}" data-lang="${l.code}" onclick="selectLang('${l.code}', '${l.flag}', '${l.label}')">
+                    <span>${l.flag}</span> ${l.label}
+                </div>`
+            ).join('');
+        })();
+
+        function toggleLangDropdown() {
+            document.getElementById('lang-dropdown').classList.toggle('open');
+        }
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            const btn = document.getElementById('lang-btn');
+            if (btn && !btn.contains(e.target)) {
+                document.getElementById('lang-dropdown').classList.remove('open');
+            }
+        });
+
+        function selectLang(code, flag, label) {
+            // Update UI
+            document.getElementById('lang-flag').textContent = flag;
+            document.getElementById('lang-label').textContent = label.split(' ')[0].slice(0, 3).toUpperCase() || 'EN';
+            document.querySelectorAll('.lang-option').forEach(el => el.classList.remove('active'));
+            document.querySelector(`.lang-option[data-lang="${code}"]`)?.classList.add('active');
+            document.getElementById('lang-dropdown').classList.remove('open');
+
+            // Drive Google Translate
+            triggerGoogleTranslate(code);
+        }
+
+        function triggerGoogleTranslate(langCode) {
+            // Find Google Translate's hidden <select> and change it
+            const gtSelect = document.querySelector('.goog-te-combo');
+            if (gtSelect) {
+                gtSelect.value = langCode;
+                gtSelect.dispatchEvent(new Event('change'));
+                return;
+            }
+            // Fallback: set cookie and reload
+            if (langCode === '') {
+                // Reset to English
+                document.cookie = 'googtrans=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+                document.cookie = 'googtrans=; path=/; domain=' + window.location.hostname + '; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+            } else {
+                document.cookie = `googtrans=/en/${langCode}; path=/`;
+            }
+            window.location.reload();
+        }
+
+        // Google Translate init (hidden widget, we just need its engine)
+        function googleTranslateElementInit() {
+            new google.translate.TranslateElement({
+                pageLanguage: 'en',
+                includedLanguages: 'fr,es,de,pt,zh-CN,ja,ko,ar,hi,ru,it',
+                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false,
+            }, 'google_translate_element');
+        }
 
         // Tab switching
         function switchTab(tabId) {
@@ -2624,6 +2882,9 @@
         // Auto-refresh every 30 seconds
         setInterval(loadStatus, 30000);
     </script>
+
+    <!-- Google Translate -->
+    <script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </body>
 
 </html>
