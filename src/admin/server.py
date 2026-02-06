@@ -267,31 +267,93 @@ def create_app() -> Flask:
     
     @app.route("/api/gh/install", methods=["POST"])
     def api_gh_install():
-        """Return the gh CLI install command for the user to run in terminal."""
+        """Spawn terminal to install gh CLI (user can enter sudo password)."""
         import platform
         
         system = platform.system().lower()
         
         if system == "linux":
-            # Full install command with keyrings
-            install_cmd = '''(type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \\
-&& sudo mkdir -p -m 755 /etc/apt/keyrings \\
-&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
-&& cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \\
-&& sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
-&& sudo mkdir -p -m 755 /etc/apt/sources.list.d \\
-&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \\
-&& sudo apt update \\
-&& sudo apt install gh -y'''
+            # Full install command
+            install_script = '''#!/bin/bash
+echo "Installing GitHub CLI..."
+(type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && sudo apt update \
+    && sudo apt install gh -y
+
+if command -v gh &>/dev/null; then
+    echo ""
+    echo "✓ GitHub CLI installed successfully!"
+    gh --version
+    echo ""
+    echo "Next step: Run 'gh auth login' to authenticate"
+else
+    echo ""
+    echo "✗ Installation failed"
+fi
+echo ""
+read -p "Press Enter to close..."
+'''
+            # Write script to temp file
+            script_path = project_root / "state" / ".install_gh.sh"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(script_path, "w") as f:
+                f.write(install_script)
+            script_path.chmod(0o755)
+            
+            # Try to open in a terminal
+            terminal_cmds = [
+                ["gnome-terminal", "--", "bash", str(script_path)],
+                ["xterm", "-e", f"bash {script_path}"],
+                ["konsole", "-e", f"bash {script_path}"],
+                ["x-terminal-emulator", "-e", f"bash {script_path}"],
+            ]
+            
+            for cmd in terminal_cmds:
+                try:
+                    subprocess.Popen(cmd, start_new_session=True)
+                    return jsonify({
+                        "success": True,
+                        "message": "Terminal opened. Enter your sudo password to install.",
+                    })
+                except FileNotFoundError:
+                    continue
+            
+            # Fallback: return the command
+            return jsonify({
+                "success": False,
+                "fallback": True,
+                "command": install_script,
+                "message": "Could not open terminal. Run this in your terminal:",
+            })
+        
         elif system == "darwin":
-            install_cmd = "brew install gh"
-        else:
-            install_cmd = "# Visit https://cli.github.com/ for installation"
+            # macOS - try Terminal.app
+            try:
+                subprocess.Popen([
+                    "osascript", "-e",
+                    'tell application "Terminal" to do script "brew install gh && gh auth login"'
+                ])
+                return jsonify({
+                    "success": True,
+                    "message": "Terminal opened with install command.",
+                })
+            except Exception as e:
+                return jsonify({
+                    "success": False,
+                    "command": "brew install gh && gh auth login",
+                    "message": str(e),
+                })
         
         return jsonify({
-            "command": install_cmd,
-            "instructions": "Run this command in your terminal (requires sudo password):",
-            "after": "Then run: gh auth login",
+            "success": False,
+            "message": "Unsupported OS",
+            "command": "# Visit https://cli.github.com/",
         })
     
     @app.route("/api/state/reset", methods=["POST"])

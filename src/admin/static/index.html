@@ -1264,7 +1264,7 @@
             return '';
         }
 
-        // Install gh CLI - show command to copy and run
+        // Install gh CLI - opens terminal for user to enter sudo password
         async function installGh() {
             try {
                 const response = await fetch('/api/gh/install', {
@@ -1273,27 +1273,28 @@
                 });
                 const data = await response.json();
 
-                // Show command in a prompt so user can copy it
-                const cmd = data.command;
-                const after = data.after;
-
-                // Create a simple modal to show the command
-                const modal = document.createElement('div');
-                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
-                modal.innerHTML = `
-                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:700px;width:90%;max-height:80vh;overflow:auto;">
-                        <h2 style="margin-bottom:1rem;">📦 Install GitHub CLI</h2>
-                        <p style="color:var(--text-dim);margin-bottom:1rem;">${data.instructions}</p>
-                        <pre style="background:var(--bg-input);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;">${cmd}</pre>
-                        <p style="color:var(--text-dim);margin-top:1rem;">${after}</p>
-                        <div style="display:flex;gap:1rem;margin-top:1.5rem;">
-                            <button class="btn primary" onclick="navigator.clipboard.writeText(\`${cmd.replace(/`/g, '\\`')}\`);this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Command',2000);">📋 Copy Command</button>
-                            <button class="btn" onclick="this.closest('div').parentElement.remove()">Close</button>
+                if (data.success) {
+                    alert(`✅ ${data.message}\n\nAfter installation completes, refresh this page.`);
+                } else if (data.fallback || data.command) {
+                    // Show command in modal for manual copy
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                    modal.innerHTML = `
+                        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:700px;width:90%;max-height:80vh;overflow:auto;">
+                            <h2 style="margin-bottom:1rem;">📦 Install GitHub CLI</h2>
+                            <p style="color:var(--text-dim);margin-bottom:1rem;">${data.message}</p>
+                            <pre style="background:var(--bg-input);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.8rem;line-height:1.4;white-space:pre-wrap;">${data.command}</pre>
+                            <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                                <button class="btn primary" onclick="navigator.clipboard.writeText(this.dataset.cmd);this.textContent='✓ Copied!'" data-cmd="${data.command.replace(/"/g, '&quot;')}">📋 Copy</button>
+                                <button class="btn" onclick="this.closest('div').parentElement.remove()">Close</button>
+                            </div>
                         </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                    `;
+                    document.body.appendChild(modal);
+                    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
             }
