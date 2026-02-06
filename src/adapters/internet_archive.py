@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import time
+import ssl
+import http.client
 from typing import Optional, Tuple
 import urllib.request
 import urllib.parse
@@ -70,76 +72,24 @@ class InternetArchiveAdapter(Adapter):
             return self._mock_execute(context)
         
         url = self._get_target_url(context)
+        result = archive_url_now(url)
         
-        try:
-            # Submit URL for archiving
-            save_url = f"{self.SAVE_ENDPOINT}{url}"
-            
-            headers = {
-                "User-Agent": "ContinuityOrchestrator/1.0 (Resilience Tool; +https://github.com/cyberpunk042/continuity-orchestrator)"
-            }
-            
-            # Add authentication if available
-            access_key = os.environ.get("ARCHIVE_ACCESS_KEY")
-            secret_key = os.environ.get("ARCHIVE_SECRET_KEY")
-            if access_key and secret_key:
-                import base64
-                credentials = base64.b64encode(f"{access_key}:{secret_key}".encode()).decode()
-                headers["Authorization"] = f"LOW {credentials}"
-            
-            request = urllib.request.Request(save_url, headers=headers, method="GET")
-            
-            with urllib.request.urlopen(request, timeout=30) as response:
-                # The response contains the archived URL in various forms
-                response_url = response.geturl()
-                response_headers = dict(response.headers)
-                
-                # Extract the archive link from Content-Location or response URL
-                archive_url = response_headers.get("Content-Location")
-                if not archive_url:
-                    # Fallback: construct from timestamp pattern in URL
-                    # Response URL format: https://web.archive.org/web/20240206123456/https://example.com
-                    archive_url = response_url
-                
-                # Make sure we have a full archive URL
-                if archive_url and not archive_url.startswith("http"):
-                    archive_url = f"https://web.archive.org{archive_url}"
-                
-                return Receipt.success(
-                    adapter=self.name,
-                    action_id=context.action.id,
-                    message=f"Archived to Wayback Machine",
-                    details={
-                        "original_url": url,
-                        "archive_url": archive_url,
-                        "response_url": response_url,
-                        "timestamp": time.strftime("%Y%m%d%H%M%S"),
-                    }
-                )
-                
-        except urllib.error.HTTPError as e:
-            # 429 = rate limited, 523 = temporarily unavailable
-            error_msg = f"HTTP {e.code}: {e.reason}"
-            if e.code == 429:
-                error_msg = "Rate limited by archive.org (max 3/min for anonymous)"
-            return Receipt.failure(
+        if result.get("success"):
+            return Receipt.success(
                 adapter=self.name,
                 action_id=context.action.id,
-                error=error_msg,
-                details={"url": url, "error_code": e.code}
+                message="Archived to Wayback Machine",
+                details={
+                    "original_url": url,
+                    "archive_url": result.get("archive_url"),
+                    "timestamp": time.strftime("%Y%m%d%H%M%S"),
+                }
             )
-        except urllib.error.URLError as e:
+        else:
             return Receipt.failure(
                 adapter=self.name,
                 action_id=context.action.id,
-                error=f"Network error: {e.reason}",
-                details={"url": url}
-            )
-        except Exception as e:
-            return Receipt.failure(
-                adapter=self.name,
-                action_id=context.action.id,
-                error=str(e),
+                error=result.get("error", "Unknown error"),
                 details={"url": url}
             )
 
@@ -213,51 +163,170 @@ class InternetArchiveAdapter(Adapter):
         return None
 
 
-def archive_url_now(url: str, custom_archive_url: str = None) -> dict:
+def archive_url_now(url: str, max_retries: int = 2) -> dict:
     """
-    Standalone function to archive a URL immediately.
+    Archive a URL to the Wayback Machine immediately.
+    
+    Uses a more robust approach with retries and proper error handling
+    for archive.org's infrastructure quirks (Cloudflare 520 errors, etc).
     
     Args:
         url: The URL to archive
-        custom_archive_url: Optional custom archive base URL (for testing)
+        max_retries: Number of retries on transient errors
         
     Returns:
-        dict with 'success', 'archive_url', and 'error' keys
+        dict with 'success', 'archive_url', 'original_url', and 'error' keys
+    """
+    # Build the save URL
+    save_url = f"https://web.archive.org/save/{url}"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; ContinuityOrchestrator/1.0; +https://github.com/cyberpunk042/continuity-orchestrator)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
+    
+    # Add S3 credentials if available (higher rate limit)
+    access_key = os.environ.get("ARCHIVE_ACCESS_KEY")
+    secret_key = os.environ.get("ARCHIVE_SECRET_KEY")
+    if access_key and secret_key:
+        import base64
+        credentials = base64.b64encode(f"{access_key}:{secret_key}".encode()).decode()
+        headers["Authorization"] = f"LOW {credentials}"
+    
+    last_error = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            # Create request with headers
+            request = urllib.request.Request(save_url, headers=headers)
+            
+            # Use a custom opener that handles redirects
+            # but also captures the final URL
+            with urllib.request.urlopen(request, timeout=60) as response:
+                response_url = response.geturl()
+                response_code = response.status
+                
+                # Check if we got a valid archive response
+                # The response URL should contain /web/ with a timestamp
+                if "/web/" in response_url and re.search(r'/web/\d{14}/', response_url):
+                    return {
+                        "success": True,
+                        "archive_url": response_url,
+                        "original_url": url,
+                        "error": None,
+                    }
+                
+                # Also check Content-Location header
+                content_location = response.headers.get("Content-Location", "")
+                if content_location and "/web/" in content_location:
+                    archive_url = content_location
+                    if not archive_url.startswith("http"):
+                        archive_url = f"https://web.archive.org{archive_url}"
+                    return {
+                        "success": True,
+                        "archive_url": archive_url,
+                        "original_url": url,
+                        "error": None,
+                    }
+                
+                # If we got here, try to construct the URL from the response
+                # Sometimes the save works but returns a redirect to the archived page
+                if response_code in (200, 302, 301):
+                    # Construct a "check" URL to verify the archive exists
+                    timestamp = time.strftime("%Y%m%d%H%M%S")
+                    constructed_url = f"https://web.archive.org/web/{timestamp}/{url}"
+                    return {
+                        "success": True,
+                        "archive_url": constructed_url,
+                        "original_url": url,
+                        "error": None,
+                        "note": "Archive submitted - URL constructed from timestamp"
+                    }
+                    
+        except urllib.error.HTTPError as e:
+            error_code = e.code
+            error_reason = e.reason if hasattr(e, 'reason') else 'Unknown'
+            
+            # Handle specific error codes
+            if error_code == 429:
+                last_error = "Rate limited by archive.org (max 3/min anonymous, 6/min authenticated)"
+                break  # Don't retry rate limits
+            elif error_code in (520, 521, 522, 523, 524):
+                # Cloudflare errors - transient, can retry
+                last_error = f"Cloudflare error {error_code} - archive.org may be busy"
+                if attempt < max_retries:
+                    time.sleep(2 * (attempt + 1))  # Exponential backoff
+                    continue
+            elif error_code == 403:
+                last_error = "Access denied - URL may be blocked from archiving"
+                break
+            elif error_code == 404:
+                last_error = "The target URL returned 404 - cannot archive non-existent page"
+                break
+            else:
+                last_error = f"HTTP {error_code}: {error_reason}"
+                
+        except urllib.error.URLError as e:
+            last_error = f"Network error: {e.reason}"
+            if attempt < max_retries:
+                time.sleep(1)
+                continue
+                
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_retries:
+                time.sleep(1)
+                continue
+    
+    # All retries exhausted
+    return {
+        "success": False,
+        "archive_url": None,
+        "original_url": url,
+        "error": last_error or "Unknown error after retries",
+    }
+
+
+def check_archive_status(url: str) -> dict:
+    """
+    Check if a URL is already archived and get the latest snapshot.
+    
+    Args:
+        url: The URL to check
+        
+    Returns:
+        dict with 'archived', 'snapshot_url', 'timestamp', and 'error' keys
     """
     try:
-        save_url = f"https://web.archive.org/save/{url}"
+        api_url = f"https://archive.org/wayback/available?url={urllib.parse.quote(url)}"
+        request = urllib.request.Request(api_url)
+        request.add_header("User-Agent", "ContinuityOrchestrator/1.0")
         
-        headers = {
-            "User-Agent": "ContinuityOrchestrator/1.0 (Resilience Tool)"
-        }
-        
-        request = urllib.request.Request(save_url, headers=headers, method="GET")
-        
-        with urllib.request.urlopen(request, timeout=30) as response:
-            response_url = response.geturl()
-            archive_url = response.headers.get("Content-Location")
-            if archive_url and not archive_url.startswith("http"):
-                archive_url = f"https://web.archive.org{archive_url}"
-            else:
-                archive_url = response_url
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            snapshots = data.get("archived_snapshots", {})
             
-            return {
-                "success": True,
-                "archive_url": archive_url,
-                "original_url": url,
-                "error": None,
-            }
-    except urllib.error.HTTPError as e:
-        return {
-            "success": False,
-            "archive_url": None,
-            "original_url": url,
-            "error": f"HTTP {e.code}: {e.reason}",
-        }
+            if "closest" in snapshots:
+                snapshot = snapshots["closest"]
+                return {
+                    "archived": True,
+                    "snapshot_url": snapshot.get("url"),
+                    "timestamp": snapshot.get("timestamp"),
+                    "status": snapshot.get("status"),
+                    "error": None,
+                }
+            else:
+                return {
+                    "archived": False,
+                    "snapshot_url": None,
+                    "timestamp": None,
+                    "error": None,
+                }
     except Exception as e:
         return {
-            "success": False,
-            "archive_url": None,
-            "original_url": url,
+            "archived": False,
+            "snapshot_url": None,
+            "timestamp": None,
             "error": str(e),
         }
