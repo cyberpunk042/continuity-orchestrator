@@ -10,7 +10,9 @@
             --bg: #0f0f0f;
             --bg-card: #1a1a1a;
             --bg-hover: #252525;
+            --bg-input: #252525;
             --border: #333;
+            --border-focus: #4ade80;
             --text: #e0e0e0;
             --text-dim: #888;
             --accent: #4ade80;
@@ -30,7 +32,52 @@
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .tab {
+            padding: 0.6rem 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+
+        .tab.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
             padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .header {
@@ -49,11 +96,6 @@
             font-size: 0.9rem;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -65,6 +107,10 @@
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 1.5rem;
+        }
+
+        .card.full-width {
+            grid-column: 1 / -1;
         }
 
         .card h2 {
@@ -131,8 +177,9 @@
             color: var(--text-dim);
         }
 
-        /* Adapter list */
-        .adapter-item {
+        /* Lists */
+        .adapter-item,
+        .tool-item {
             display: flex;
             align-items: center;
             gap: 0.75rem;
@@ -140,15 +187,13 @@
             border-bottom: 1px solid var(--border);
         }
 
-        .adapter-item:last-child {
+        .adapter-item:last-child,
+        .tool-item:last-child {
             border-bottom: none;
         }
 
-        .adapter-icon {
-            font-size: 1.1rem;
-        }
-
-        .adapter-name {
+        .adapter-name,
+        .tool-name {
             flex: 1;
         }
 
@@ -169,15 +214,7 @@
             color: var(--warning);
         }
 
-        /* Tool status */
-        .tool-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.5rem 0;
-        }
-
-        /* Action buttons */
+        /* Buttons */
         .actions {
             display: flex;
             flex-wrap: wrap;
@@ -214,9 +251,110 @@
             background: #22c55e;
         }
 
+        .btn.danger {
+            background: var(--danger);
+            color: #fff;
+            border-color: var(--danger);
+        }
+
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--border-focus);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .form-hint {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 0.25rem;
+        }
+
+        .form-hint a {
+            color: var(--info);
+        }
+
+        /* Secret rows */
+        .secret-config-row {
+            display: grid;
+            grid-template-columns: 200px 1fr auto;
+            gap: 1rem;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .secret-config-row:last-child {
+            border-bottom: none;
+        }
+
+        .secret-config-name {
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .secret-config-value {
+            position: relative;
+        }
+
+        .secret-config-value input {
+            width: 100%;
+            padding: 0.5rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .secret-config-value input:focus {
+            outline: none;
+            border-color: var(--border-focus);
+        }
+
+        .secret-config-status {
+            width: 80px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+
+        .secret-config-status.set {
+            color: var(--accent);
+        }
+
+        .secret-config-status.unset {
+            color: var(--danger);
         }
 
         /* Terminal output */
@@ -237,31 +375,56 @@
             color: var(--danger);
         }
 
-        /* Secrets form */
-        .secret-row {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.6rem 0;
-            border-bottom: 1px solid var(--border);
+        /* Countdown */
+        .countdown {
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            padding: 1rem;
+            font-variant-numeric: tabular-nums;
         }
 
-        .secret-name {
-            flex: 1;
-            font-family: monospace;
-            font-size: 0.85rem;
+        .countdown.warning {
+            color: var(--warning);
         }
 
-        .secret-value {
-            color: var(--text-dim);
-            font-size: 0.85rem;
+        .countdown.danger {
+            color: var(--danger);
         }
 
-        .secret-icon {
-            font-size: 1.1rem;
+        /* Alert box */
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
         }
 
-        /* Loading state */
+        .alert.info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--info);
+        }
+
+        .alert.warning {
+            background: rgba(250, 204, 21, 0.1);
+            border: 1px solid rgba(250, 204, 21, 0.3);
+            color: var(--warning);
+        }
+
+        .alert.success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: var(--accent);
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger);
+        }
+
+        /* Loading */
         .loading {
             text-align: center;
             padding: 2rem;
@@ -287,29 +450,21 @@
             }
         }
 
-        /* Countdown */
-        .countdown {
-            font-size: 2rem;
-            font-weight: 700;
-            text-align: center;
-            padding: 1rem;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .countdown.warning {
-            color: var(--warning);
-        }
-
-        .countdown.danger {
-            color: var(--danger);
+        /* Section divider */
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin: 1.5rem 0 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
         }
 
         /* Footer */
         .footer {
             text-align: center;
-            margin-top: 2rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
+            padding: 1.5rem;
             color: var(--text-dim);
             font-size: 0.85rem;
         }
@@ -317,7 +472,15 @@
 </head>
 
 <body>
-    <div class="container">
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+        <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+        <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
+        <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
+    </nav>
+
+    <!-- Dashboard Tab -->
+    <div id="tab-dashboard" class="tab-content active">
         <header class="header">
             <h1>⚡ Continuity Orchestrator</h1>
             <p class="subtitle">Local Admin Console</p>
@@ -326,19 +489,105 @@
         <div class="grid" id="dashboard">
             <div class="loading">Loading status</div>
         </div>
-
-        <footer class="footer">
-            <p>🔒 Local server only — never expose to internet</p>
-        </footer>
     </div>
 
+    <!-- Secrets Tab -->
+    <div id="tab-secrets" class="tab-content">
+        <header class="header">
+            <h1>🔐 Secrets Manager</h1>
+            <p class="subtitle">Configure and push secrets to GitHub</p>
+        </header>
+
+        <div class="grid">
+            <div class="card full-width">
+                <div id="gh-status-alert"></div>
+
+                <div id="secrets-form">
+                    <div class="loading">Loading secrets</div>
+                </div>
+
+                <div class="actions" style="margin-top: 1.5rem;">
+                    <button class="btn primary" id="push-secrets-btn" onclick="pushSecrets()">
+                        🚀 Push to GitHub
+                    </button>
+                    <button class="btn" onclick="loadSecretsForm()">🔄 Refresh</button>
+                </div>
+
+                <div id="secrets-output" style="margin-top: 1rem; display: none;">
+                    <pre class="terminal" id="secrets-terminal"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Commands Tab -->
+    <div id="tab-commands" class="tab-content">
+        <header class="header">
+            <h1>⚡ Command Center</h1>
+            <p class="subtitle">Run orchestrator commands</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">▶️</span> Engine</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn primary" onclick="runCmd('tick')" style="width: 100%;">
+                        ▶️ Run Tick
+                    </button>
+                    <button class="btn" onclick="runCmd('tick-dry')" style="width: 100%;">
+                        🧪 Dry Run (preview only)
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🏗️</span> Build</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('build-site')" style="width: 100%;">
+                        🏗️ Build Static Site
+                    </button>
+                    <button class="btn" onclick="runCmd('test-all')" style="width: 100%;">
+                        🧪 Test All Adapters
+                    </button>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2><span class="icon">📟</span> Terminal Output</h2>
+                <pre class="terminal" id="cmd-terminal">Ready. Click a command above to run.</pre>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>🔒 Local server only — never expose to internet</p>
+    </footer>
+
     <script>
-        // Fetch and render status
+        // Global state
+        let appData = null;
+        let ghAuthenticated = false;
+
+        // Tab switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+            document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            // Load data for the tab
+            if (tabId === 'secrets') {
+                loadSecretsForm();
+            }
+        }
+
+        // Load status
         async function loadStatus() {
             try {
                 const response = await fetch('/api/status');
-                const data = await response.json();
-                renderDashboard(data);
+                appData = await response.json();
+                renderDashboard(appData);
             } catch (error) {
                 document.getElementById('dashboard').innerHTML = `
                     <div class="card">
@@ -351,15 +600,10 @@
         function renderDashboard(data) {
             const dashboard = document.getElementById('dashboard');
 
-            // Determine stage badge class
             const stageClass = {
-                'OK': 'ok',
-                'WARNING': 'warning',
-                'CRITICAL': 'critical',
-                'FINAL': 'critical',
+                'OK': 'ok', 'WARNING': 'warning', 'CRITICAL': 'critical', 'FINAL': 'critical'
             }[data.state.stage] || 'unknown';
 
-            // Format countdown
             let countdownHtml = '';
             if (data.state.time_to_deadline_minutes !== null) {
                 const ttd = data.state.time_to_deadline_minutes;
@@ -373,8 +617,10 @@
                 }
             }
 
+            const ghTool = data.tools.find(t => t.name === 'gh');
+            ghAuthenticated = ghTool?.installed && ghTool?.authenticated;
+
             dashboard.innerHTML = `
-                <!-- System State -->
                 <div class="card">
                     <h2><span class="icon">📊</span> System State</h2>
                     ${countdownHtml}
@@ -394,14 +640,16 @@
                         <span class="status-label">Renewals</span>
                         <span class="status-value">${data.state.renewal_count}</span>
                     </div>
+                    <div class="actions">
+                        <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
+                    </div>
                 </div>
                 
-                <!-- Adapters -->
                 <div class="card">
                     <h2><span class="icon">🔌</span> Adapters</h2>
                     ${data.adapters.map(a => `
                         <div class="adapter-item">
-                            <span class="adapter-icon">${a.configured ? '✅' : '❌'}</span>
+                            <span>${a.configured ? '✅' : '❌'}</span>
                             <span class="adapter-name">${a.name}</span>
                             <span class="adapter-status ${a.configured ? (a.mode === 'real' ? 'ready' : 'mock') : 'missing'}">
                                 ${a.configured ? a.mode : a.missing.slice(0, 2).join(', ')}
@@ -410,71 +658,45 @@
                     `).join('')}
                 </div>
                 
-                <!-- Tools -->
                 <div class="card">
                     <h2><span class="icon">🛠️</span> Tools</h2>
                     ${data.tools.map(t => `
                         <div class="tool-item">
                             <span>${t.installed ? '✅' : '❌'}</span>
-                            <span>${t.name}</span>
-                            <span style="color: var(--text-dim); margin-left: auto;">
-                                ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : 'auth ✗') : 'installed') : 'not installed'}
+                            <span class="tool-name">${t.name}</span>
+                            <span style="color: var(--text-dim);">
+                                ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : 'auth ✗') : 'ok') : '—'}
                             </span>
                         </div>
                     `).join('')}
-                    ${!data.tools.find(t => t.name === 'gh')?.installed ? `
-                        <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border-radius: 8px; font-size: 0.85rem;">
-                            ⚠️ <code>gh</code> CLI not installed. Required for pushing secrets.
-                            <br><a href="https://cli.github.com/" target="_blank" style="color: var(--info);">Install →</a>
-                        </div>
-                    ` : ''}
                 </div>
                 
-                <!-- Secrets -->
                 <div class="card">
                     <h2><span class="icon">🔐</span> Secrets</h2>
                     <div class="status-row">
                         <span class="status-label">Set</span>
                         <span class="status-value">${data.secrets.filter(s => s.set).length} / ${data.secrets.length}</span>
                     </div>
-                    ${data.secrets.filter(s => s.required_for.length > 0 && !s.set).slice(0, 5).map(s => `
-                        <div class="secret-row">
-                            <span class="secret-icon">❌</span>
-                            <span class="secret-name">${s.name}</span>
-                            <span class="secret-value">not set</span>
-                        </div>
-                    `).join('')}
-                    ${data.secrets.filter(s => s.required_for.length > 0 && !s.set).length > 5 ? `
-                        <div style="color: var(--text-dim); font-size: 0.85rem; padding-top: 0.5rem;">
-                            ... and ${data.secrets.filter(s => s.required_for.length > 0 && !s.set).length - 5} more
-                        </div>
-                    ` : ''}
-                </div>
-                
-                <!-- Actions -->
-                <div class="card">
-                    <h2><span class="icon">⚡</span> Quick Actions</h2>
+                    <div class="status-row">
+                        <span class="status-label">Required Missing</span>
+                        <span class="status-value" style="color: var(--danger);">
+                            ${data.secrets.filter(s => s.required_for.length > 0 && !s.set).length}
+                        </span>
+                    </div>
                     <div class="actions">
-                        <button class="btn primary" onclick="runCommand('tick')">▶️ Run Tick</button>
-                        <button class="btn" onclick="runCommand('tick-dry')">🧪 Dry Run</button>
-                        <button class="btn" onclick="runCommand('build-site')">🏗️ Build Site</button>
-                        <button class="btn" onclick="runCommand('test-all')">🧪 Test Adapters</button>
-                    </div>
-                    <div id="terminal-output" style="margin-top: 1rem; display: none;">
-                        <pre class="terminal" id="terminal-content"></pre>
+                        <button class="btn" onclick="switchTab('secrets')">Configure Secrets →</button>
                     </div>
                 </div>
                 
-                <!-- Health -->
                 <div class="card">
                     <h2><span class="icon">💚</span> Health</h2>
                     <div class="status-row">
                         <span class="status-label">State file</span>
-                        <span>${data.health.state_file_exists ? '✅ exists' : '❌ missing'}</span>
+                        <span>${data.health.state_file_exists ? '✅' : '❌'}</span>
                     </div>
                     <div class="status-row">
                         <span class="status-label">Policy</span>
-                        <span>${data.health.policy_valid ? '✅ valid' : '❌ invalid'}</span>
+                        <span>${data.health.policy_valid ? '✅' : '❌'}</span>
                     </div>
                     <div class="status-row">
                         <span class="status-label">Updated</span>
@@ -482,20 +704,159 @@
                             ${new Date(data.timestamp).toLocaleTimeString()}
                         </span>
                     </div>
+                </div>
+                
+                <div class="card">
+                    <h2><span class="icon">⚡</span> Quick Actions</h2>
                     <div class="actions">
-                        <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
+                        <button class="btn primary" onclick="switchTab('commands')">Open Command Center →</button>
                     </div>
                 </div>
             `;
         }
 
-        async function runCommand(command) {
-            const output = document.getElementById('terminal-output');
-            const content = document.getElementById('terminal-content');
+        // Secrets form
+        async function loadSecretsForm() {
+            if (!appData) {
+                const response = await fetch('/api/status');
+                appData = await response.json();
+            }
+
+            const ghTool = appData.tools.find(t => t.name === 'gh');
+            const ghAlert = document.getElementById('gh-status-alert');
+
+            if (!ghTool?.installed) {
+                ghAlert.innerHTML = `
+                    <div class="alert warning">
+                        ⚠️ <strong>gh CLI not installed</strong> — Install from 
+                        <a href="https://cli.github.com/" target="_blank">cli.github.com</a> to push secrets.
+                    </div>
+                `;
+            } else if (!ghTool?.authenticated) {
+                ghAlert.innerHTML = `
+                    <div class="alert warning">
+                        ⚠️ <strong>gh CLI not authenticated</strong> — Run <code>gh auth login</code> in terminal.
+                    </div>
+                `;
+            } else {
+                ghAlert.innerHTML = `
+                    <div class="alert success">
+                        ✅ <strong>gh CLI ready</strong> — Secrets will be pushed to your repository.
+                    </div>
+                `;
+            }
+
+            // Group secrets by category
+            const categories = {
+                'Core': ['PROJECT_NAME', 'OPERATOR_EMAIL', 'ADAPTER_MOCK_MODE'],
+                'Security': ['RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN'],
+                'Email (Resend)': ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
+                'SMS (Twilio)': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS'],
+                'GitHub': ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'],
+                'X (Twitter)': ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
+                'Reddit': ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
+            };
+
+            let html = '';
+            for (const [category, names] of Object.entries(categories)) {
+                const secrets = names.map(name => appData.secrets.find(s => s.name === name)).filter(Boolean);
+                if (secrets.length === 0) continue;
+
+                html += `<div class="section-title">${category}</div>`;
+                for (const secret of secrets) {
+                    const isRequired = secret.required_for.length > 0;
+                    html += `
+                        <div class="secret-config-row">
+                            <div class="secret-config-name">
+                                ${secret.name}
+                                ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
+                            </div>
+                            <div class="secret-config-value">
+                                <input type="password" 
+                                       id="secret-${secret.name}" 
+                                       placeholder="${secret.set ? secret.masked || '••••••••' : 'Enter value...'}"
+                                       data-secret-name="${secret.name}">
+                            </div>
+                            <div class="secret-config-status ${secret.set ? 'set' : 'unset'}">
+                                ${secret.set ? '✅ Set' : '❌ Not set'}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            document.getElementById('secrets-form').innerHTML = html;
+        }
+
+        // Push secrets
+        async function pushSecrets() {
+            const inputs = document.querySelectorAll('[data-secret-name]');
+            const secrets = {};
+
+            inputs.forEach(input => {
+                if (input.value) {
+                    secrets[input.dataset.secretName] = input.value;
+                }
+            });
+
+            if (Object.keys(secrets).length === 0) {
+                alert('No secrets entered. Fill in at least one field.');
+                return;
+            }
+
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
 
             output.style.display = 'block';
-            content.textContent = `Running ${command}...`;
-            content.className = 'terminal';
+            terminal.className = 'terminal';
+            terminal.textContent = `Pushing ${Object.keys(secrets).length} secret(s) to GitHub...\n`;
+
+            try {
+                const response = await fetch('/api/secrets/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secrets }),
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    terminal.className = 'terminal error';
+                    terminal.textContent = `Error: ${data.error}\n`;
+                    if (data.install_hint) {
+                        terminal.textContent += `\n${data.install_hint}`;
+                    }
+                    return;
+                }
+
+                let output_text = '';
+                for (const result of data.results) {
+                    if (result.success) {
+                        output_text += `✅ ${result.name}: pushed successfully\n`;
+                    } else {
+                        output_text += `❌ ${result.name}: ${result.error}\n`;
+                    }
+                }
+
+                terminal.textContent = output_text;
+                terminal.className = data.all_success ? 'terminal' : 'terminal error';
+
+                // Clear inputs on success
+                if (data.all_success) {
+                    inputs.forEach(input => input.value = '');
+                    // Refresh status
+                    setTimeout(loadStatus, 1000);
+                }
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Run command
+        async function runCmd(command) {
+            const terminal = document.getElementById('cmd-terminal');
+            terminal.className = 'terminal';
+            terminal.textContent = `Running ${command}...\n`;
 
             try {
                 const response = await fetch('/api/run', {
@@ -506,18 +867,17 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    content.textContent = data.output || 'Command completed successfully';
-                    content.className = 'terminal';
+                    terminal.textContent = data.output || 'Command completed successfully';
                 } else {
-                    content.textContent = data.error || data.output || 'Command failed';
-                    content.className = 'terminal error';
+                    terminal.textContent = data.error || data.output || 'Command failed';
+                    terminal.className = 'terminal error';
                 }
 
-                // Refresh status after command
+                // Refresh status
                 setTimeout(loadStatus, 1000);
             } catch (error) {
-                content.textContent = `Error: ${error.message}`;
-                content.className = 'terminal error';
+                terminal.className = 'terminal error';
+                terminal.textContent = `Error: ${error.message}`;
             }
         }
 
