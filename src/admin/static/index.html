@@ -889,6 +889,21 @@
         }
         // Secrets form
         let ghSecrets = [];  // List of secrets set in GitHub
+        let currentTarget = 'both';  // Current save target
+
+        function selectTarget(target) {
+            currentTarget = target;
+            // Update button states
+            document.querySelectorAll('.target-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.target === target);
+            });
+            // Update save button label
+            const btn = document.getElementById('save-secrets-btn');
+            if (btn) {
+                const labels = { both: '💾 Save & Push', local: '📁 Save', github: '☁️ Push' };
+                btn.textContent = labels[target];
+            }
+        }
 
         async function loadSecretsForm() {
             if (!appData) {
@@ -978,13 +993,22 @@
 
             html += `
                 <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="btn primary" onclick="pushSecrets('both')">💾 Save to Both</button>
-                        <button class="btn" onclick="pushSecrets('local')">📁 Local Only</button>
-                        <button class="btn" onclick="pushSecrets('github')">☁️ GitHub Only</button>
-                        <button class="btn" onclick="loadSecretsForm()">🔄 Refresh</button>
+                    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                        <label style="color: var(--text-dim);">Save to:</label>
+                        <div style="display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+                            <button type="button" class="target-btn active" data-target="both" onclick="selectTarget('both')">Both</button>
+                            <button type="button" class="target-btn" data-target="local" onclick="selectTarget('local')">Local Only</button>
+                            <button type="button" class="target-btn" data-target="github" onclick="selectTarget('github')">GitHub Only</button>
+                        </div>
+                        <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
+                        <button class="btn" onclick="loadSecretsForm()">🔄</button>
                     </div>
                 </div>
+                <style>
+                    .target-btn { padding: 0.5rem 1rem; border: none; background: var(--bg-input); color: var(--text-dim); cursor: pointer; transition: all 0.2s; }
+                    .target-btn:hover { background: var(--bg-card); }
+                    .target-btn.active { background: var(--accent); color: white; }
+                </style>
             `;
 
             document.getElementById('secrets-form').innerHTML = html;
