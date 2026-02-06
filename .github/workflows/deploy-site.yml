@@ -73,3 +73,36 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      
+      - name: Archive to Wayback Machine
+        if: env.ARCHIVE_ENABLED == 'true'
+        env:
+          ARCHIVE_ENABLED: ${{ secrets.ARCHIVE_ENABLED }}
+          ARCHIVE_URL: ${{ secrets.ARCHIVE_URL }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # Determine URL to archive
+          if [ -n "$ARCHIVE_URL" ]; then
+            URL="$ARCHIVE_URL"
+          else
+            OWNER="${GITHUB_REPOSITORY%/*}"
+            REPO="${GITHUB_REPOSITORY#*/}"
+            URL="https://${OWNER}.github.io/${REPO}/"
+          fi
+          
+          echo "📦 Archiving $URL to archive.org..."
+          
+          # Wait a moment for GitHub Pages to propagate
+          sleep 10
+          
+          # Submit to Wayback Machine
+          RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET \
+            -H "User-Agent: ContinuityOrchestrator/1.0" \
+            "https://web.archive.org/save/$URL")
+          
+          if [ "$RESULT" = "200" ] || [ "$RESULT" = "302" ]; then
+            echo "✅ Successfully archived to archive.org"
+          else
+            echo "⚠️ Archive returned HTTP $RESULT (may still work)"
+          fi

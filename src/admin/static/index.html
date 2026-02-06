@@ -1708,6 +1708,63 @@
                 }
             },
             {
+                id: 'archive',
+                title: 'Archive',
+                content: () => {
+                    const archiveEnabled = getSecretValue('ARCHIVE_ENABLED') === 'true';
+                    const archiveUrl = getSecretValue('ARCHIVE_URL');
+
+                    return `
+                        <h2 style="margin-bottom: 1rem;">📦 Internet Archive</h2>
+                        <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
+                            <em>Optional</em> — Automatically save snapshots to <a href="https://archive.org" target="_blank" style="color: var(--info);">archive.org</a>
+                        </p>
+                        <p style="color: var(--text-dim); margin-bottom: 1.5rem; font-size: 0.9rem;">
+                            Creates an immutable, third-party record of your published site, 
+                            providing resilience even if GitHub Pages goes down.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Enable Auto-Archive</label>
+                            <select class="form-input" id="wiz-archive-enabled" style="width: auto; min-width: 200px;">
+                                <option value="false" ${!archiveEnabled ? 'selected' : ''}>❌ Disabled</option>
+                                <option value="true" ${archiveEnabled ? 'selected' : ''}>✅ Enabled</option>
+                            </select>
+                            <div class="form-hint">Archive to Wayback Machine after each site publish</div>
+                        </div>
+                        
+                        <div class="form-group" id="archive-url-group" style="${archiveEnabled ? '' : 'opacity: 0.5;'}">
+                            <label class="form-label">Custom Archive URL</label>
+                            <input type="text" class="form-input" id="wiz-archive-url" 
+                                   placeholder="Leave empty for GitHub Pages auto-detect"
+                                   value="${archiveUrl || ''}">
+                            <div class="form-hint">
+                                For Docker + Cloudflare deployments. Leave empty to use GitHub Pages URL.
+                            </div>
+                        </div>
+                        
+                        <details style="margin-top: 1.5rem;">
+                            <summary style="cursor: pointer; color: var(--info);">ℹ️ Why archive?</summary>
+                            <ul style="color: var(--text-dim); line-height: 1.8; margin: 1rem 0 0 1.5rem; font-size: 0.9rem;">
+                                <li><strong>Resilience:</strong> Independent backup of your public site</li>
+                                <li><strong>Proof:</strong> Timestamped snapshots prove content existed at a point in time</li>
+                                <li><strong>Free:</strong> No API key needed (3 archives/minute)</li>
+                                <li><strong>Optional:</strong> Can be triggered manually from Command Center</li>
+                            </ul>
+                        </details>
+                    `;
+                },
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const enabled = document.getElementById('wiz-archive-enabled').value;
+                    result.ARCHIVE_ENABLED = enabled;
+                    const url = document.getElementById('wiz-archive-url').value;
+                    if (url) result.ARCHIVE_URL = url;
+                    return result;
+                }
+            },
+            {
                 id: 'push',
                 title: 'Push',
                 content: () => {

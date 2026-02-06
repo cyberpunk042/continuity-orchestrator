@@ -177,6 +177,10 @@ SECRET_DEFINITIONS = {
     "REDDIT_CLIENT_SECRET": {"required_for": ["reddit"], "guidance": "Get from https://www.reddit.com/prefs/apps"},
     "REDDIT_USERNAME": {"required_for": ["reddit"], "guidance": "Your Reddit username"},
     "REDDIT_PASSWORD": {"required_for": ["reddit"], "guidance": "Your Reddit password"},
+    
+    # Archive (Internet Archive / Wayback Machine)
+    "ARCHIVE_ENABLED": {"required_for": [], "guidance": "Enable auto-archiving to archive.org after publish"},
+    "ARCHIVE_URL": {"required_for": [], "guidance": "Custom URL for Docker/Cloudflare (optional, defaults to GitHub Pages)"},
 }
 
 

@@ -502,20 +502,27 @@ def trigger_release(
 @click.option(
     "--output",
     "-o",
+    type=str,
     default="public",
-    help="Output directory for generated site",
+    help="Output directory for the static site",
 )
 @click.option(
     "--clean/--no-clean",
     default=True,
     help="Clean output directory before building",
 )
+@click.option(
+    "--archive/--no-archive",
+    default=None,
+    help="Archive to Internet Archive after build (default: uses ARCHIVE_ENABLED env)",
+)
 @click.pass_context
-def build_site(ctx: click.Context, output: str, clean: bool) -> None:
+def build_site(ctx: click.Context, output: str, clean: bool, archive: bool) -> None:
     """Build static site from current state."""
     from pathlib import Path
     from .site.generator import SiteGenerator
     import json
+    import os
     
     root = ctx.obj["root"]
     state_path = root / "state" / "current.json"
@@ -551,6 +558,38 @@ def build_site(ctx: click.Context, output: str, clean: bool) -> None:
     
     if len(result['files']) > 5:
         click.echo(f"  ... and {len(result['files']) - 5} more")
+    
+    # Archive to Internet Archive if enabled
+    should_archive = archive
+    if should_archive is None:
+        # Check env var
+        should_archive = os.environ.get("ARCHIVE_ENABLED", "false").lower() in ("true", "1", "yes")
+    
+    if should_archive:
+        click.echo()
+        click.echo("📦 Archiving to Internet Archive...")
+        try:
+            from .adapters.internet_archive import archive_url_now
+            
+            # Determine URL
+            archive_url = os.environ.get("ARCHIVE_URL")
+            if not archive_url:
+                repo = os.environ.get("GITHUB_REPOSITORY")
+                if repo:
+                    parts = repo.split("/")
+                    archive_url = f"https://{parts[0]}.github.io/{parts[1]}/"
+                else:
+                    click.secho("  ⚠ No ARCHIVE_URL or GITHUB_REPOSITORY set, skipping archive", fg="yellow")
+                    return
+            
+            archive_result = archive_url_now(archive_url)
+            
+            if archive_result.get("success"):
+                click.secho(f"  ✓ Archived: {archive_result.get('archive_url')}", fg="green")
+            else:
+                click.secho(f"  ✗ Archive failed: {archive_result.get('error')}", fg="red")
+        except Exception as e:
+            click.secho(f"  ✗ Archive error: {e}", fg="red")
 
 
 @cli.command("check-config")
