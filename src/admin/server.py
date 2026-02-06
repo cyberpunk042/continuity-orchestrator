@@ -977,12 +977,7 @@ read -p "Press Enter to close..."
             has_local_changes = result.returncode != 0
 
             if not has_local_changes:
-                logger.info("[git-sync] Nothing to commit — already up to date")
-                return jsonify({
-                    "success": True,
-                    "message": "Already up to date (nothing to commit)",
-                    "steps": steps,
-                })
+                logger.info("[git-sync] Nothing new to commit — will still pull/push")
 
             # Step 2: Stash our changes (so working tree is clean for pull)
             result = _run(

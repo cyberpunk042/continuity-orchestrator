@@ -1231,6 +1231,28 @@
             }
         }
 
+        // Track which tab is active so we can warn about wizard
+        let activeTab = 'dashboard';
+
+        // Wrap switchTab to warn when leaving wizard with unsaved data
+        const _origSwitchTab = switchTab;
+        switchTab = function (tabId, subStep) {
+            const targetTab = tabId.includes('/') ? tabId.split('/')[0] : tabId;
+            if (activeTab === 'wizard' && targetTab !== 'wizard' && wizardDirty) {
+                if (!confirm('You have unsaved wizard progress. Leave anyway?')) return;
+            }
+            activeTab = targetTab;
+            _origSwitchTab(tabId, subStep);
+        };
+
+        // Warn before page unload if wizard has unsaved data
+        window.addEventListener('beforeunload', (e) => {
+            if (wizardDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
         function goToWizardStep(stepId) {
             switchTab('wizard', stepId);
         }
@@ -1357,7 +1379,7 @@
                 <div class="card">
                     <h2><span class="icon">🛠️</span> Tools</h2>
                     ${toolsHtml}
-                    <div style="border-top: 1px solid var(--border); margin-top: 0.75rem; padding-top: 0.75rem;">
+                    <div style="padding-top: 0.75rem;">
                         <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">📦 Git</div>
                         <div id="git-status-content" style="color: var(--text-dim); font-size: 0.85rem;">Loading...</div>
                     </div>
@@ -1905,13 +1927,16 @@
                         ? `Default: ${defaultTo}`
                         : (integ.id === 'email' ? 'email@example.com' : '+1234567890');
                     html += `
-                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <div style="margin-top: 0.4rem;">
+                            <label style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.25rem; display: block;">
+                                Send to ${integ.id === 'email' ? '(email)' : '(phone)'}:
+                            </label>
                             <input type="${integ.id === 'email' ? 'email' : 'tel'}"
                                 id="test-to-${integ.id}"
                                 placeholder="${placeholder}"
-                                style="flex: 1; min-width: 140px; padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;" />
-                            <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="white-space: nowrap;">
-                                🧪 Send Test
+                                style="width: 100%; box-sizing: border-box; padding: 0.45rem 0.7rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; margin-bottom: 0.5rem;" />
+                            <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="width: 100%;">
+                                🧪 Send Test ${integ.label}
                             </button>
                         </div>`;
                 } else if (allSet && !integ.testCmd) {
@@ -2274,6 +2299,9 @@
                                placeholder="noreply@yourdomain.com" value="${getSecretValue('RESEND_FROM_EMAIL')}">
                         <div class="form-hint">Sender email (must be verified in Resend)</div>
                     </div>
+                    <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
+                        💡 After setup, test this from the <strong>Integrations</strong> tab.
+                    </div>
                 `,
                 validate: () => true,
                 collect: () => {
@@ -2322,6 +2350,9 @@
                         <input type="text" class="form-input" id="wiz-operator-sms" 
                                placeholder="+1234567890" value="${getSecretValue('OPERATOR_SMS')}">
                         <div class="form-hint">Where to send SMS alerts</div>
+                    </div>
+                    <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
+                        💡 After setup, test this from the <strong>Integrations</strong> tab.
                     </div>
                 `,
                 validate: () => true,
@@ -2376,6 +2407,9 @@
                         <label class="form-label">Access Secret</label>
                         <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx">
                     </div>
+                    <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
+                        💡 After setup, check status from the <strong>Integrations</strong> tab.
+                    </div>
                 `,
                 validate: () => true,
                 collect: () => {
@@ -2429,6 +2463,9 @@
                         <label class="form-label">Reddit Password</label>
                         <input type="password" class="form-input" id="wiz-reddit-password" placeholder="xxxxxxxxxx">
                         <div class="form-hint">${appData?.secrets?.find(s => s.name === 'REDDIT_PASSWORD')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                    </div>
+                    <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
+                        💡 After setup, check status from the <strong>Integrations</strong> tab.
                     </div>
                 `,
                 validate: () => true,
@@ -2649,6 +2686,7 @@
 
         let currentWizardStep = 0;
         let wizardData = {};
+        let wizardDirty = false;
 
         function getSecretValue(name) {
             // First check envData (values from .env file)
@@ -2966,7 +3004,11 @@
             // Collect current step data first
             const currentStep = wizardSteps[currentWizardStep];
             if (currentStep?.collect) {
-                Object.assign(wizardData, currentStep.collect());
+                const collected = currentStep.collect();
+                Object.assign(wizardData, collected);
+                if (Object.values(collected).some(v => v !== '' && v !== undefined && v !== null)) {
+                    wizardDirty = true;
+                }
             }
 
             // Can always go back
@@ -3107,7 +3149,11 @@
 
             // Collect data from current step
             if (step.collect) {
-                Object.assign(wizardData, step.collect());
+                const collected = step.collect();
+                Object.assign(wizardData, collected);
+                if (Object.values(collected).some(v => v !== '' && v !== undefined && v !== null)) {
+                    wizardDirty = true;
+                }
             }
 
             // If this is the push step, actually push
@@ -3249,6 +3295,9 @@
 
             // Refresh status
             loadStatus();
+
+            // Wizard data has been saved — no longer dirty
+            wizardDirty = false;
         }
 
         // Initial load — await so envData is ready before tab switch
