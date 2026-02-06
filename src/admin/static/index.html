@@ -887,13 +887,19 @@
                 </div>
             `;
         }
-
         // Secrets form
+        let ghSecrets = [];  // List of secrets set in GitHub
+
         async function loadSecretsForm() {
             if (!appData) {
                 const response = await fetch('/api/status');
                 appData = await response.json();
             }
+
+            // Fetch GitHub secrets list
+            const ghSecretsRes = await fetch('/api/gh/secrets');
+            const ghSecretsData = await ghSecretsRes.json();
+            ghSecrets = ghSecretsData.secrets || [];
 
             const ghTool = appData.tools.find(t => t.name === 'gh');
             const ghAlert = document.getElementById('gh-status-alert');
@@ -914,7 +920,7 @@
             } else {
                 ghAlert.innerHTML = `
                     <div class="alert success">
-                        ✅ <strong>gh CLI ready</strong> — Secrets will be pushed to your repository.
+                        ✅ <strong>gh CLI ready</strong> — ${ghSecrets.length} secrets in repo.
                     </div>
                 `;
             }
@@ -930,7 +936,13 @@
                 'Reddit': ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
             };
 
-            let html = '';
+            let html = `
+                <div style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-dim);">
+                    <strong>Local (.env)</strong> = For local development &nbsp;|&nbsp; 
+                    <strong>GitHub</strong> = For CI/CD (Actions)
+                </div>
+            `;
+
             for (const [category, names] of Object.entries(categories)) {
                 const secrets = names.map(name => appData.secrets.find(s => s.name === name)).filter(Boolean);
                 if (secrets.length === 0) continue;
@@ -938,8 +950,11 @@
                 html += `<div class="section-title">${category}</div>`;
                 for (const secret of secrets) {
                     const isRequired = secret.required_for.length > 0;
+                    const localSet = envData[secret.name] && envData[secret.name].length > 0;
+                    const ghSet = ghSecrets.includes(secret.name);
+
                     html += `
-                        <div class="secret-config-row">
+                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr 120px 120px; gap: 0.5rem; align-items: center;">
                             <div class="secret-config-name">
                                 ${secret.name}
                                 ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
@@ -947,22 +962,36 @@
                             <div class="secret-config-value">
                                 <input type="password" 
                                        id="secret-${secret.name}" 
-                                       placeholder="${secret.set ? secret.masked || '••••••••' : 'Enter value...'}"
+                                       placeholder="${localSet ? '••••••••' : 'Enter value...'}"
                                        data-secret-name="${secret.name}">
                             </div>
-                            <div class="secret-config-status ${secret.set ? 'set' : 'unset'}">
-                                ${secret.set ? '✅ Set' : '❌ Not set'}
+                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
+                                <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
+                            </div>
+                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
+                                <div title="GitHub Secrets">${ghSet ? '✅' : '❌'} GitHub</div>
                             </div>
                         </div>
                     `;
                 }
             }
 
+            html += `
+                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn primary" onclick="pushSecrets('both')">💾 Save to Both</button>
+                        <button class="btn" onclick="pushSecrets('local')">📁 Local Only</button>
+                        <button class="btn" onclick="pushSecrets('github')">☁️ GitHub Only</button>
+                        <button class="btn" onclick="loadSecretsForm()">🔄 Refresh</button>
+                    </div>
+                </div>
+            `;
+
             document.getElementById('secrets-form').innerHTML = html;
         }
 
         // Push secrets
-        async function pushSecrets() {
+        async function pushSecrets(target = 'both') {
             const inputs = document.querySelectorAll('[data-secret-name]');
             const secrets = {};
 
@@ -980,15 +1009,20 @@
             const output = document.getElementById('secrets-output');
             const terminal = document.getElementById('secrets-terminal');
 
+            const targetLabel = target === 'both' ? 'local & GitHub' : target;
             output.style.display = 'block';
             terminal.className = 'terminal';
-            terminal.textContent = `Pushing ${Object.keys(secrets).length} secret(s) to GitHub...\n`;
+            terminal.textContent = `Saving ${Object.keys(secrets).length} secret(s) to ${targetLabel}...\n`;
 
             try {
                 const response = await fetch('/api/secrets/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secrets }),
+                    body: JSON.stringify({
+                        secrets,
+                        push_to_github: target === 'both' || target === 'github',
+                        save_to_env: target === 'both' || target === 'local',
+                    }),
                 });
                 const data = await response.json();
 
@@ -1002,22 +1036,32 @@
                 }
 
                 let output_text = '';
-                for (const result of data.results) {
+
+                // Show env save status
+                if (data.env_saved) {
+                    output_text += `📁 Saved to .env: ${Object.keys(secrets).join(', ')}\n`;
+                }
+
+                // Show GitHub push results
+                for (const result of (data.results || [])) {
                     if (result.success) {
-                        output_text += `✅ ${result.name}: pushed successfully\n`;
+                        output_text += `☁️ ${result.name}: pushed to GitHub\n`;
                     } else {
                         output_text += `❌ ${result.name}: ${result.error}\n`;
                     }
                 }
 
-                terminal.textContent = output_text;
-                terminal.className = data.all_success ? 'terminal' : 'terminal error';
+                terminal.textContent = output_text || 'Done!';
+                terminal.className = data.all_success !== false ? 'terminal' : 'terminal error';
 
                 // Clear inputs on success
-                if (data.all_success) {
+                if (data.all_success !== false) {
                     inputs.forEach(input => input.value = '');
-                    // Refresh status
-                    setTimeout(loadStatus, 1000);
+                    // Refresh status and secrets list
+                    setTimeout(async () => {
+                        await loadStatus();
+                        await loadSecretsForm();
+                    }, 500);
                 }
             } catch (error) {
                 terminal.className = 'terminal error';

@@ -265,6 +265,169 @@ def create_app() -> Flask:
         status = check_tool("gh")
         return jsonify(status.to_dict())
     
+    @app.route("/api/gh/secrets")
+    def api_gh_secrets():
+        """Get list of secrets set in GitHub repo."""
+        try:
+            # Check if gh is installed and authenticated
+            from ..config.system_status import check_tool
+            gh_status = check_tool("gh")
+            
+            if not gh_status.installed:
+                return jsonify({
+                    "available": False,
+                    "reason": "gh CLI not installed",
+                    "secrets": [],
+                })
+            
+            if not gh_status.authenticated:
+                return jsonify({
+                    "available": False,
+                    "reason": "gh CLI not authenticated",
+                    "secrets": [],
+                })
+            
+            # Get list of secrets from GitHub
+            result = subprocess.run(
+                ["gh", "secret", "list"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            
+            if result.returncode != 0:
+                return jsonify({
+                    "available": False,
+                    "reason": result.stderr or "Failed to list secrets",
+                    "secrets": [],
+                })
+            
+            # Parse secret names from output (format: "NAME\tUpdated YYYY-MM-DD")
+            secret_names = []
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t")
+                    if parts:
+                        secret_names.append(parts[0])
+            
+            return jsonify({
+                "available": True,
+                "secrets": secret_names,
+            })
+        
+        except Exception as e:
+            return jsonify({
+                "available": False,
+                "reason": str(e),
+                "secrets": [],
+            })
+    
+    @app.route("/api/secret/set", methods=["POST"])
+    def api_secret_set():
+        """Set a single secret to .env and/or GitHub."""
+        data = request.json or {}
+        name = data.get("name")
+        value = data.get("value")
+        target = data.get("target", "both")  # "local", "github", or "both"
+        
+        if not name:
+            return jsonify({"error": "Secret name required"}), 400
+        
+        results = {"name": name, "local": None, "github": None}
+        
+        # Save to .env
+        if target in ("local", "both") and value:
+            try:
+                env_file = project_root / ".env"
+                existing = {}
+                if env_file.exists():
+                    with open(env_file, "r") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                key, _, val = line.partition("=")
+                                existing[key.strip()] = val.strip()
+                
+                existing[name] = f'"{value}"' if " " in value or "=" in value else value
+                
+                with open(env_file, "w") as f:
+                    for key, val in sorted(existing.items()):
+                        f.write(f"{key}={val}\n")
+                
+                results["local"] = {"success": True}
+            except Exception as e:
+                results["local"] = {"success": False, "error": str(e)}
+        
+        # Push to GitHub
+        if target in ("github", "both") and value:
+            try:
+                result = subprocess.run(
+                    ["gh", "secret", "set", name],
+                    input=value,
+                    cwd=str(project_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                results["github"] = {
+                    "success": result.returncode == 0,
+                    "error": result.stderr if result.returncode != 0 else None,
+                }
+            except Exception as e:
+                results["github"] = {"success": False, "error": str(e)}
+        
+        return jsonify(results)
+    
+    @app.route("/api/secret/remove", methods=["POST"])
+    def api_secret_remove():
+        """Remove a secret from .env and/or GitHub."""
+        data = request.json or {}
+        name = data.get("name")
+        target = data.get("target", "both")  # "local", "github", or "both"
+        
+        if not name:
+            return jsonify({"error": "Secret name required"}), 400
+        
+        results = {"name": name, "local": None, "github": None}
+        
+        # Remove from .env
+        if target in ("local", "both"):
+            try:
+                env_file = project_root / ".env"
+                if env_file.exists():
+                    lines = []
+                    with open(env_file, "r") as f:
+                        for line in f:
+                            if not line.strip().startswith(f"{name}="):
+                                lines.append(line)
+                    with open(env_file, "w") as f:
+                        f.writelines(lines)
+                    results["local"] = {"success": True}
+                else:
+                    results["local"] = {"success": True, "note": "File not found"}
+            except Exception as e:
+                results["local"] = {"success": False, "error": str(e)}
+        
+        # Remove from GitHub
+        if target in ("github", "both"):
+            try:
+                result = subprocess.run(
+                    ["gh", "secret", "remove", name],
+                    cwd=str(project_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                results["github"] = {
+                    "success": result.returncode == 0,
+                    "error": result.stderr if result.returncode != 0 else None,
+                }
+            except Exception as e:
+                results["github"] = {"success": False, "error": str(e)}
+        
+        return jsonify(results)
+    
     @app.route("/api/gh/install", methods=["POST"])
     def api_gh_install():
         """Spawn terminal to install gh CLI (user can enter sudo password)."""
