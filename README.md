@@ -8,6 +8,11 @@
 
 ---
 
+> ⚠️ **IMPORTANT:** This is automated disclosure software. Actions triggered by this system may be **irreversible**.
+> Please read the [DISCLAIMER](DISCLAIMER.md) and [SECURITY](SECURITY.md) documents before use.
+
+---
+
 ## What is this?
 
 A scheduled engine that watches a countdown. If you don't renew it in time, it executes preconfigured actions — emails, SMS, social posts, webhooks, or document publishing.
@@ -284,6 +289,8 @@ ruff check src
 
 | Document | Description |
 |----------|-------------|
+| [DISCLAIMER.md](DISCLAIMER.md) | ⚠️ **Read first** — Legal disclaimer and warnings |
+| [SECURITY.md](SECURITY.md) | Security best practices |
 | [QUICKSTART.md](docs/QUICKSTART.md) | 5-minute setup guide |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | All configuration options |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, GitHub Actions, production |
