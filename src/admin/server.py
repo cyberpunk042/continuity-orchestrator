@@ -47,7 +47,10 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         """Serve the admin dashboard."""
-        return send_from_directory(str(static_folder), "index.html")
+        index_path = static_folder / "index.html"
+        if index_path.exists():
+            return send_from_directory(str(static_folder), "index.html")
+        return "Admin panel not found. Please ensure static/index.html exists.", 404
     
     @app.route("/api/status")
     def api_status():
@@ -182,7 +185,7 @@ def create_app() -> Flask:
 
 def run_server(
     host: str = "127.0.0.1",
-    port: int = 5000,
+    port: int = 5050,
     open_browser: bool = True,
     debug: bool = False,
 ) -> None:
