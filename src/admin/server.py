@@ -784,20 +784,68 @@ read -p "Press Enter to close..."
     @app.route("/api/git/sync", methods=["POST"])
     def api_git_sync():
         """Commit all changes and push to remote."""
+        import shutil as _shutil
+
         data = request.json or {}
         message = data.get("message", "chore: sync from admin panel")
 
         steps = []
-        try:
-            # Stage all changes
+
+        def _run(cmd, label, timeout=15):
+            """Run a git command, log it, and append to steps."""
+            logger.info("[git-sync] %s: %s", label, " ".join(cmd))
             result = subprocess.run(
-                ["git", "add", "-A"],
+                cmd,
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
-                timeout=15,
+                timeout=timeout,
             )
-            steps.append({"step": "git add", "ok": result.returncode == 0})
+            out = (result.stdout or "").strip()
+            err = (result.stderr or "").strip()
+            ok = result.returncode == 0
+            steps.append({
+                "step": label,
+                "ok": ok,
+                "output": out or err or None,
+            })
+            if ok:
+                logger.info("[git-sync] %s: OK%s", label, f" — {out}" if out else "")
+            else:
+                logger.warning("[git-sync] %s: FAILED (rc=%d) — %s", label, result.returncode, err)
+            return result
+
+        try:
+            # Pre-flight: is git installed?
+            if not _shutil.which("git"):
+                logger.error("[git-sync] git not found on PATH")
+                return jsonify({
+                    "success": False,
+                    "error": "git is not installed",
+                    "hint": "Install git: https://git-scm.com/downloads",
+                    "steps": steps,
+                })
+
+            # Pre-flight: is this a git repo?
+            result = _run(["git", "rev-parse", "--is-inside-work-tree"], "check repo")
+            if result.returncode != 0:
+                return jsonify({
+                    "success": False,
+                    "error": "Not a git repository",
+                    "steps": steps,
+                })
+
+            # Pre-flight: is a remote configured?
+            result = _run(["git", "remote", "-v"], "check remote")
+            if not result.stdout.strip():
+                return jsonify({
+                    "success": False,
+                    "error": "No git remote configured — run: git remote add origin <url>",
+                    "steps": steps,
+                })
+
+            # Stage all changes
+            _run(["git", "add", "-A"], "git add")
 
             # Check if there's anything to commit
             result = subprocess.run(
@@ -808,7 +856,7 @@ read -p "Press Enter to close..."
                 timeout=10,
             )
             if result.returncode == 0:
-                # Nothing staged
+                logger.info("[git-sync] Nothing to commit — already up to date")
                 return jsonify({
                     "success": True,
                     "message": "Already up to date (nothing to commit)",
@@ -816,18 +864,7 @@ read -p "Press Enter to close..."
                 })
 
             # Commit
-            result = subprocess.run(
-                ["git", "commit", "-m", message],
-                cwd=str(project_root),
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            steps.append({
-                "step": "git commit",
-                "ok": result.returncode == 0,
-                "output": result.stdout.strip(),
-            })
+            result = _run(["git", "commit", "-m", message], "git commit")
             if result.returncode != 0:
                 return jsonify({
                     "success": False,
@@ -835,32 +872,48 @@ read -p "Press Enter to close..."
                     "steps": steps,
                 })
 
-            # Push
-            result = subprocess.run(
-                ["git", "push"],
-                cwd=str(project_root),
-                capture_output=True,
-                text=True,
+            # Pull with rebase (avoids merge conflicts from parallel changes)
+            result = _run(
+                ["git", "pull", "--rebase", "--autostash"],
+                "git pull --rebase",
                 timeout=30,
             )
-            steps.append({
-                "step": "git push",
-                "ok": result.returncode == 0,
-                "output": (result.stdout or result.stderr or "").strip(),
-            })
+            if result.returncode != 0:
+                # Rebase conflict — abort and report
+                logger.error("[git-sync] Rebase conflict, aborting")
+                _run(["git", "rebase", "--abort"], "rebase abort")
+                return jsonify({
+                    "success": False,
+                    "error": "Pull failed (rebase conflict). Your commit was made but not pushed. "
+                             "Resolve conflicts manually: git pull --rebase && git push",
+                    "steps": steps,
+                })
+
+            # Push
+            result = _run(["git", "push"], "git push", timeout=30)
             if result.returncode != 0:
                 return jsonify({
                     "success": False,
                     "error": result.stderr.strip() or "Push failed",
+                    "hint": "Check authentication: gh auth status",
                     "steps": steps,
                 })
 
+            logger.info("[git-sync] ✓ Sync complete")
             return jsonify({
                 "success": True,
                 "message": "Committed and pushed successfully",
                 "steps": steps,
             })
+        except subprocess.TimeoutExpired as e:
+            logger.error("[git-sync] Timeout: %s", e)
+            return jsonify({
+                "success": False,
+                "error": f"Command timed out: {e}",
+                "steps": steps,
+            }), 504
         except Exception as e:
+            logger.exception("[git-sync] Unexpected error")
             return jsonify({"success": False, "error": str(e), "steps": steps}), 500
 
     return app

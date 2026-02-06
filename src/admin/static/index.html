@@ -1094,6 +1094,7 @@
             ghSecrets = ghSecretsData.secrets || [];
 
             const ghTool = appData.tools.find(t => t.name === 'gh');
+            const gitTool = appData.tools.find(t => t.name === 'git');
             const ghAlert = document.getElementById('gh-status-alert');
 
             if (!ghTool?.installed) {
@@ -1213,6 +1214,13 @@
                         <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
                         <button class="btn" onclick="loadSecretsForm()">🔄</button>
                     </div>
+                    <div style="margin-top: 0.75rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
+                            <input type="checkbox" id="secrets-git-sync" ${gitTool?.installed ? 'checked' : 'disabled'}>
+                            <span style="color: var(--text-dim);">🔄 Git sync after save (commit & push all changes)</span>
+                            ${!gitTool?.installed ? '<span style="color: var(--warning); font-size: 0.8rem;">⚠️ git not found</span>' : ''}
+                        </label>
+                    </div>
                 </div>
                 <style>
                     .target-btn { padding: 0.5rem 1rem; border: none; background: var(--bg-input); color: var(--text-dim); cursor: pointer; transition: all 0.2s; }
@@ -1228,6 +1236,7 @@
         async function pushSecrets(target = 'both') {
             const inputs = document.querySelectorAll('[data-secret-name]');
             const secrets = {};
+            const gitSyncChecked = document.getElementById('secrets-git-sync')?.checked ?? false;
 
             inputs.forEach(input => {
                 if (input.value) {
@@ -1287,6 +1296,27 @@
 
                 terminal.textContent = output_text || 'Done!';
                 terminal.className = data.all_success !== false ? 'terminal' : 'terminal error';
+
+                // Git sync if requested
+                if (gitSyncChecked) {
+                    terminal.textContent += `\n🔄 Syncing to Git...\n`;
+                    try {
+                        const syncResponse = await fetch('/api/git/sync', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: 'chore: secrets update from admin panel' }),
+                        });
+                        const syncData = await syncResponse.json();
+                        if (syncData.success) {
+                            terminal.textContent += `🔄 ${syncData.message}\n`;
+                        } else {
+                            terminal.textContent += `⚠️ Git sync: ${syncData.error || 'failed'}\n`;
+                            if (syncData.hint) terminal.textContent += `   💡 ${syncData.hint}\n`;
+                        }
+                    } catch (e) {
+                        terminal.textContent += `⚠️ Git sync failed: ${e.message}\n`;
+                    }
+                }
 
                 // Clear inputs on success
                 if (data.all_success !== false) {
