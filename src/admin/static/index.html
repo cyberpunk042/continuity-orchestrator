@@ -555,6 +555,22 @@
             color: var(--accent);
         }
 
+        .wizard-step.completed:hover {
+            background: rgba(74, 222, 128, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .wizard-step.optional {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+            border: 1px dashed rgba(59, 130, 246, 0.4);
+        }
+
+        .wizard-step.optional:hover {
+            background: rgba(59, 130, 246, 0.25);
+            transform: translateY(-1px);
+        }
+
         .wizard-step-num {
             width: 24px;
             height: 24px;
@@ -739,7 +755,11 @@
                 <div id="wizard-body"></div>
                 <div class="wizard-nav">
                     <button class="btn" id="wizard-prev" onclick="wizardPrev()">← Back</button>
-                    <button class="btn primary" id="wizard-next" onclick="wizardNext()">Next →</button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" id="wizard-finish" onclick="wizardFinish()" style="display: none;">✅
+                            Finish</button>
+                        <button class="btn primary" id="wizard-next" onclick="wizardNext()">Next →</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1783,16 +1803,82 @@
             }
         }
 
+        // Required steps that must be completed before optional ones can be accessed
+        const REQUIRED_STEP_COUNT = 4; // welcome, deploy, project, security
+
+        // Check if required steps have been satisfied (have data)
+        function areRequiredStepsSatisfied() {
+            // Check for minimum required values
+            const hasProject = envData.PROJECT_NAME && envData.PROJECT_NAME.length > 0;
+            const hasRenewal = envData.RENEWAL_SECRET || (wizardData.RENEWAL_SECRET && wizardData.RENEWAL_SECRET.length > 0);
+            return hasProject || hasRenewal || wizardData.PROJECT_NAME;
+        }
+
+        // Get the index of the first optional step
+        function getFirstOptionalStepIndex() {
+            return REQUIRED_STEP_COUNT; // After security step
+        }
+
+        // Check if a step is optional (can be skipped)
+        function isOptionalStep(stepIndex) {
+            const step = wizardSteps[stepIndex];
+            return ['email', 'sms', 'twitter', 'reddit'].includes(step?.id);
+        }
+
+        // Navigate to a specific step (if allowed)
+        function goToStep(stepIndex) {
+            // Can always go back
+            if (stepIndex < currentWizardStep) {
+                currentWizardStep = stepIndex;
+                renderWizard();
+                return;
+            }
+
+            // Can skip ahead only if:
+            // 1. Required steps are satisfied, OR
+            // 2. We're going to an earlier required step
+            if (stepIndex < REQUIRED_STEP_COUNT) {
+                // For required steps, only allow going to completed ones or current+1
+                if (stepIndex <= currentWizardStep + 1) {
+                    currentWizardStep = stepIndex;
+                    renderWizard();
+                }
+            } else if (areRequiredStepsSatisfied() || currentWizardStep >= REQUIRED_STEP_COUNT) {
+                // For optional steps, allow jumping if required are done
+                currentWizardStep = stepIndex;
+                renderWizard();
+            }
+        }
+
         function renderWizard() {
+            const requiredSatisfied = areRequiredStepsSatisfied();
+
             // Render step indicators
             const stepsHtml = wizardSteps.map((step, idx) => {
                 let cls = '';
-                if (idx < currentWizardStep) cls = 'completed';
-                else if (idx === currentWizardStep) cls = 'active';
+                let clickable = false;
+
+                if (idx < currentWizardStep) {
+                    cls = 'completed';
+                    clickable = true;
+                } else if (idx === currentWizardStep) {
+                    cls = 'active';
+                } else {
+                    // Future steps: clickable if optional and required steps are satisfied
+                    if (idx >= REQUIRED_STEP_COUNT && (requiredSatisfied || currentWizardStep >= REQUIRED_STEP_COUNT)) {
+                        clickable = true;
+                        cls = 'optional';
+                    }
+                }
+
+                const optionalBadge = isOptionalStep(idx) ? '<small style="opacity: 0.6; font-size: 0.7rem;"> (opt)</small>' : '';
+                const cursor = clickable ? 'pointer' : 'default';
+                const onclick = clickable ? `onclick="goToStep(${idx})"` : '';
+
                 return `
-                    <div class="wizard-step ${cls}">
+                    <div class="wizard-step ${cls}" style="cursor: ${cursor};" ${onclick}>
                         <span class="wizard-step-num">${idx < currentWizardStep ? '✓' : idx + 1}</span>
-                        <span>${step.title}</span>
+                        <span>${step.title}${optionalBadge}</span>
                     </div>
                 `;
             }).join('');
@@ -1806,13 +1892,39 @@
             document.getElementById('wizard-prev').style.visibility = currentWizardStep === 0 ? 'hidden' : 'visible';
 
             const nextBtn = document.getElementById('wizard-next');
+            const finishBtn = document.getElementById('wizard-finish');
+
+            // Show Finish button on optional steps (allows skipping to Push)
+            const isOnOptionalStep = isOptionalStep(currentWizardStep);
+            finishBtn.style.display = isOnOptionalStep ? '' : 'none';
+
             if (currentWizardStep === wizardSteps.length - 1) {
+                // Complete step
                 nextBtn.style.display = 'none';
+                finishBtn.style.display = 'none';
             } else if (currentWizardStep === wizardSteps.length - 2) {
+                // Push step
                 nextBtn.textContent = '🚀 Push & Finish';
+                finishBtn.style.display = 'none';
             } else {
                 nextBtn.style.display = '';
                 nextBtn.textContent = 'Next →';
+            }
+        }
+
+        // Skip to Push step (called from Finish button)
+        async function wizardFinish() {
+            // Collect current step data first
+            const step = wizardSteps[currentWizardStep];
+            if (step.collect) {
+                Object.assign(wizardData, step.collect());
+            }
+
+            // Find the push step index
+            const pushIndex = wizardSteps.findIndex(s => s.id === 'push');
+            if (pushIndex !== -1) {
+                currentWizardStep = pushIndex;
+                renderWizard();
             }
         }
 
