@@ -169,6 +169,15 @@ class AdapterRegistry:
         else:
             self.register(MockAdapter("reddit"))
             logger.debug("Reddit credentials not set, using mock Reddit adapter")
+        
+        # Internet Archive adapter (always available - no auth required)
+        try:
+            from .internet_archive import InternetArchiveAdapter
+            self.register(InternetArchiveAdapter())
+            logger.info("Registered Internet Archive adapter")
+        except ImportError as e:
+            self.register(MockAdapter("archive"))
+            logger.warning(f"Internet Archive adapter not available: {e}")
 
     def register(self, adapter: Adapter) -> None:
         """Register an adapter."""

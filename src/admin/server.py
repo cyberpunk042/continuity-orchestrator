@@ -76,6 +76,14 @@ def create_app() -> Flask:
             "build-site": ["python", "-m", "src.main", "build-site"],
             "check-config": ["python", "-m", "src.main", "check-config"],
             "test-all": ["python", "-m", "src.main", "test", "all"],
+            "health": ["python", "-m", "src.main", "health"],
+            "config-status": ["python", "-m", "src.main", "config-status"],
+            "explain": ["python", "-m", "src.main", "explain"],
+            "simulate": ["python", "-m", "src.main", "simulate"],
+            "retry-queue": ["python", "-m", "src.main", "retry-queue"],
+            "circuit-breakers": ["python", "-m", "src.main", "circuit-breakers"],
+            "test email": ["python", "-m", "src.main", "test", "email"],
+            "test sms": ["python", "-m", "src.main", "test", "sms"],
         }
         
         if command not in allowed_commands:
@@ -122,6 +130,110 @@ def create_app() -> Flask:
             })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+    
+    @app.route("/api/archive", methods=["POST"])
+    def api_archive():
+        """
+        Archive a URL to the Internet Archive's Wayback Machine.
+        
+        Request body:
+        - url: Optional URL to archive (defaults to GitHub Pages URL)
+        
+        Returns:
+        - success: bool
+        - archive_url: The permanent Wayback Machine URL
+        - original_url: The URL that was archived
+        - error: Error message if failed
+        """
+        data = request.json or {}
+        custom_url = data.get("url")
+        
+        try:
+            from ..adapters.internet_archive import archive_url_now
+            
+            # Determine URL to archive
+            if custom_url:
+                url = custom_url
+            else:
+                # Try to get from environment
+                archive_url = os.environ.get("ARCHIVE_URL")
+                if archive_url:
+                    url = archive_url
+                else:
+                    # Fall back to GitHub Pages
+                    repo = os.environ.get("GITHUB_REPOSITORY")
+                    if not repo:
+                        # Try to detect from git
+                        try:
+                            result = subprocess.run(
+                                ["git", "remote", "get-url", "origin"],
+                                cwd=str(project_root),
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                            )
+                            if result.returncode == 0:
+                                remote_url = result.stdout.strip()
+                                import re
+                                match = re.search(r"github\.com[:/]([^/]+/[^/.]+)", remote_url)
+                                if match:
+                                    repo = match.group(1)
+                        except Exception:
+                            pass
+                    
+                    if not repo:
+                        return jsonify({
+                            "success": False,
+                            "error": "No URL to archive. Set ARCHIVE_URL, GITHUB_REPOSITORY, or provide a custom URL.",
+                        }), 400
+                    
+                    parts = repo.split("/")
+                    url = f"https://{parts[0]}.github.io/{parts[1]}/"
+            
+            # Archive the URL
+            result = archive_url_now(url)
+            
+            return jsonify(result)
+            
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": str(e),
+            }), 500
+    
+    @app.route("/api/archive/check", methods=["POST"])
+    def api_archive_check():
+        """
+        Check if a URL is already archived on the Wayback Machine.
+        
+        Request body:
+        - url: URL to check
+        
+        Returns:
+        - archived: bool
+        - snapshot: Latest snapshot info if archived
+        """
+        data = request.json or {}
+        url = data.get("url")
+        
+        if not url:
+            return jsonify({"error": "URL required"}), 400
+        
+        try:
+            from ..adapters.internet_archive import InternetArchiveAdapter
+            snapshot = InternetArchiveAdapter.check_availability(url)
+            
+            return jsonify({
+                "archived": snapshot is not None,
+                "snapshot": snapshot,
+                "url": url,
+            })
+        except Exception as e:
+            return jsonify({
+                "archived": False,
+                "error": str(e),
+                "url": url,
+            })
     
     @app.route("/api/env/read")
     def api_env_read():

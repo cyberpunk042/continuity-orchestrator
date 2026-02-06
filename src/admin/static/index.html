@@ -745,6 +745,27 @@
                 </div>
             </div>
 
+            <div class="card">
+                <h2><span class="icon">📦</span> Archive</h2>
+                <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                    Save a permanent snapshot to <a href="https://archive.org" target="_blank"
+                        style="color: var(--info);">archive.org</a>
+                </p>
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <input type="text" class="form-input" id="archive-url"
+                        placeholder="Custom URL (or leave empty for GitHub Pages)">
+                </div>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn primary" onclick="archiveNow()" style="width: 100%;">
+                        📦 Archive Now
+                    </button>
+                    <button class="btn" onclick="checkArchive()" style="width: 100%;">
+                        🔍 Check Existing
+                    </button>
+                </div>
+                <div id="archive-status" style="margin-top: 0.75rem; font-size: 0.85rem;"></div>
+            </div>
+
             <div class="card full-width">
                 <h2><span class="icon">📟</span> Terminal Output</h2>
                 <pre class="terminal" id="cmd-terminal">Ready. Click a command above to run.</pre>
@@ -1230,6 +1251,83 @@
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Archive functions
+        async function archiveNow() {
+            const statusDiv = document.getElementById('archive-status');
+            const urlInput = document.getElementById('archive-url');
+            const customUrl = urlInput?.value?.trim();
+
+            statusDiv.innerHTML = '<span style="color: var(--info);">📦 Archiving to archive.org...</span>';
+
+            try {
+                const response = await fetch('/api/archive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: customUrl || undefined }),
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent);">✅ Archived successfully!</div>
+                        <div style="margin-top: 0.5rem;">
+                            <a href="${data.archive_url}" target="_blank" style="color: var(--info); word-break: break-all;">
+                                ${data.archive_url}
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function checkArchive() {
+            const statusDiv = document.getElementById('archive-status');
+            const urlInput = document.getElementById('archive-url');
+            let url = urlInput?.value?.trim();
+
+            // If no custom URL, try to build GitHub Pages URL
+            if (!url) {
+                const repo = envData.GITHUB_REPOSITORY;
+                if (repo) {
+                    const parts = repo.split('/');
+                    url = `https://${parts[0]}.github.io/${parts[1]}/`;
+                } else {
+                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Enter a URL to check</span>';
+                    return;
+                }
+            }
+
+            statusDiv.innerHTML = '<span style="color: var(--info);">🔍 Checking archive.org...</span>';
+
+            try {
+                const response = await fetch('/api/archive/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                const data = await response.json();
+
+                if (data.archived && data.snapshot) {
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent);">✅ Found in archive!</div>
+                        <div style="margin-top: 0.5rem;">
+                            <a href="${data.snapshot.url}" target="_blank" style="color: var(--info); word-break: break-all;">
+                                Last snapshot: ${data.snapshot.timestamp}
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Not yet archived. Click "Archive Now" to create a snapshot.</span>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
             }
         }
 
