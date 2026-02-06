@@ -461,6 +461,59 @@
             border-bottom: 1px solid var(--border);
         }
 
+        /* Wizard styles */
+        .wizard-steps {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .wizard-step {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-hover);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .wizard-step.active {
+            background: var(--accent);
+            color: #000;
+        }
+
+        .wizard-step.completed {
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--accent);
+        }
+
+        .wizard-step-num {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            font-weight: 600;
+        }
+
+        .wizard-content {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .wizard-nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+
         /* Footer */
         .footer {
             text-align: center;
@@ -475,6 +528,7 @@
     <!-- Tab Navigation -->
     <nav class="tabs">
         <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+        <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
         <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
         <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
     </nav>
@@ -559,6 +613,26 @@
         </div>
     </div>
 
+    <!-- Setup Wizard Tab -->
+    <div id="tab-wizard" class="tab-content">
+        <header class="header">
+            <h1>🧙 Setup Wizard</h1>
+            <p class="subtitle">Step-by-step configuration guide</p>
+        </header>
+
+        <div class="wizard-steps" id="wizard-steps"></div>
+
+        <div class="wizard-content">
+            <div class="card">
+                <div id="wizard-body"></div>
+                <div class="wizard-nav">
+                    <button class="btn" id="wizard-prev" onclick="wizardPrev()">← Back</button>
+                    <button class="btn primary" id="wizard-next" onclick="wizardNext()">Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer">
         <p>🔒 Local server only — never expose to internet</p>
     </footer>
@@ -579,6 +653,8 @@
             // Load data for the tab
             if (tabId === 'secrets') {
                 loadSecretsForm();
+            } else if (tabId === 'wizard') {
+                renderWizard();
             }
         }
 
@@ -878,6 +954,321 @@
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // ========================================
+        // SETUP WIZARD
+        // ========================================
+
+        const wizardSteps = [
+            {
+                id: 'welcome',
+                title: 'Welcome',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">👋 Welcome to the Setup Wizard</h2>
+                    <p style="color: var(--text-dim); line-height: 1.6; margin-bottom: 1rem;">
+                        This wizard will guide you through configuring the Continuity Orchestrator step-by-step.
+                    </p>
+                    <p style="color: var(--text-dim); line-height: 1.6; margin-bottom: 1rem;">
+                        You'll configure:
+                    </p>
+                    <ul style="color: var(--text-dim); line-height: 1.8; margin-left: 1.5rem;">
+                        <li>✅ Basic project settings</li>
+                        <li>✅ Email notifications (Resend)</li>
+                        <li>✅ Security secrets</li>
+                        <li>✅ Push to GitHub</li>
+                    </ul>
+                `,
+                validate: () => true
+            },
+            {
+                id: 'project',
+                title: 'Project',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">📋 Project Configuration</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                        Basic settings for your orchestrator instance.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Project Name *</label>
+                        <input type="text" class="form-input" id="wiz-project-name" 
+                               placeholder="my-deadman" value="${getSecretValue('PROJECT_NAME')}">
+                        <div class="form-hint">A unique identifier for your project</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Operator Email *</label>
+                        <input type="email" class="form-input" id="wiz-operator-email" 
+                               placeholder="your@email.com" value="${getSecretValue('OPERATOR_EMAIL')}">
+                        <div class="form-hint">Email for receiving notifications</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mock Mode</label>
+                        <select class="form-input" id="wiz-mock-mode">
+                            <option value="true" ${getSecretValue('ADAPTER_MOCK_MODE') !== 'false' ? 'selected' : ''}>On (safe testing)</option>
+                            <option value="false" ${getSecretValue('ADAPTER_MOCK_MODE') === 'false' ? 'selected' : ''}>Off (live operations)</option>
+                        </select>
+                        <div class="form-hint">Keep ON for testing, turn OFF for production</div>
+                    </div>
+                `,
+                validate: () => {
+                    const name = document.getElementById('wiz-project-name')?.value;
+                    const email = document.getElementById('wiz-operator-email')?.value;
+                    if (!name) { alert('Project name is required'); return false; }
+                    if (!email) { alert('Operator email is required'); return false; }
+                    return true;
+                },
+                collect: () => ({
+                    PROJECT_NAME: document.getElementById('wiz-project-name').value,
+                    OPERATOR_EMAIL: document.getElementById('wiz-operator-email').value,
+                    ADAPTER_MOCK_MODE: document.getElementById('wiz-mock-mode').value,
+                })
+            },
+            {
+                id: 'email',
+                title: 'Email',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">📧 Email Configuration</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                        Configure email notifications using <a href="https://resend.com" target="_blank" style="color: var(--info);">Resend</a>.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Resend API Key *</label>
+                        <input type="password" class="form-input" id="wiz-resend-key" 
+                               placeholder="re_xxxxxxxxxx">
+                        <div class="form-hint">
+                            Get from <a href="https://resend.com/api-keys" target="_blank" style="color: var(--info);">resend.com/api-keys</a>
+                            ${appData?.secrets?.find(s => s.name === 'RESEND_API_KEY')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">From Email</label>
+                        <input type="email" class="form-input" id="wiz-resend-from" 
+                               placeholder="noreply@yourdomain.com" value="${getSecretValue('RESEND_FROM_EMAIL')}">
+                        <div class="form-hint">Sender email (must be verified in Resend)</div>
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const key = document.getElementById('wiz-resend-key').value;
+                    if (key) result.RESEND_API_KEY = key;
+                    const from = document.getElementById('wiz-resend-from').value;
+                    if (from) result.RESEND_FROM_EMAIL = from;
+                    return result;
+                }
+            },
+            {
+                id: 'security',
+                title: 'Security',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">🔐 Security Secrets</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                        These secrets control access to critical operations.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Renewal Secret *</label>
+                        <input type="password" class="form-input" id="wiz-renewal-secret" 
+                               placeholder="Enter a secure passphrase">
+                        <div class="form-hint">
+                            Code to extend the deadline
+                            ${appData?.secrets?.find(s => s.name === 'RENEWAL_SECRET')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Release Secret</label>
+                        <input type="password" class="form-input" id="wiz-release-secret" 
+                               placeholder="Enter a different passphrase">
+                        <div class="form-hint">
+                            Code to trigger early disclosure (optional)
+                            ${appData?.secrets?.find(s => s.name === 'RELEASE_SECRET')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">GitHub Token</label>
+                        <input type="password" class="form-input" id="wiz-github-token" 
+                               placeholder="ghp_xxxxxxxxxx">
+                        <div class="form-hint">
+                            <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--info);">Generate token</a> with repo scope
+                            ${appData?.secrets?.find(s => s.name === 'GITHUB_TOKEN')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                `,
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const renewal = document.getElementById('wiz-renewal-secret').value;
+                    if (renewal) result.RENEWAL_SECRET = renewal;
+                    const release = document.getElementById('wiz-release-secret').value;
+                    if (release) result.RELEASE_SECRET = release;
+                    const github = document.getElementById('wiz-github-token').value;
+                    if (github) result.GITHUB_TOKEN = github;
+                    return result;
+                }
+            },
+            {
+                id: 'push',
+                title: 'Push',
+                content: () => {
+                    const ghTool = appData?.tools?.find(t => t.name === 'gh');
+                    const ghOk = ghTool?.installed && ghTool?.authenticated;
+
+                    return `
+                        <h2 style="margin-bottom: 1rem;">🚀 Push to GitHub</h2>
+                        <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                            Push your configuration to GitHub repository secrets.
+                        </p>
+                        ${ghOk ? `
+                            <div class="alert success">
+                                ✅ <strong>gh CLI is ready</strong> — Your secrets will be pushed to GitHub.
+                            </div>
+                        ` : `
+                            <div class="alert warning">
+                                ⚠️ <strong>gh CLI not available</strong><br>
+                                ${!ghTool?.installed ? 'Install from <a href="https://cli.github.com/" target="_blank" style="color: var(--info);">cli.github.com</a>' : 'Run <code>gh auth login</code> to authenticate'}
+                            </div>
+                        `}
+                        <div id="wizard-push-status"></div>
+                    `;
+                },
+                validate: () => true
+            },
+            {
+                id: 'complete',
+                title: 'Done',
+                content: () => `
+                    <h2 style="margin-bottom: 1rem;">🎉 Setup Complete!</h2>
+                    <p style="color: var(--text-dim); line-height: 1.6; margin-bottom: 1rem;">
+                        Your Continuity Orchestrator is configured. Next steps:
+                    </p>
+                    <ul style="color: var(--text-dim); line-height: 1.8; margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                        <li>📊 Check the <strong>Dashboard</strong> for system status</li>
+                        <li>⚡ Run a <strong>Dry Run</strong> to test the tick cycle</li>
+                        <li>🔐 Configure additional secrets in the <strong>Secrets</strong> tab</li>
+                    </ul>
+                    <div class="actions">
+                        <button class="btn primary" onclick="switchTab('dashboard')">Go to Dashboard →</button>
+                    </div>
+                `,
+                validate: () => true
+            }
+        ];
+
+        let currentWizardStep = 0;
+        let wizardData = {};
+
+        function getSecretValue(name) {
+            const secret = appData?.secrets?.find(s => s.name === name);
+            if (secret?.set && secret?.masked) {
+                return ''; // Don't pre-fill masked values
+            }
+            return '';
+        }
+
+        function renderWizard() {
+            // Render step indicators
+            const stepsHtml = wizardSteps.map((step, idx) => {
+                let cls = '';
+                if (idx < currentWizardStep) cls = 'completed';
+                else if (idx === currentWizardStep) cls = 'active';
+                return `
+                    <div class="wizard-step ${cls}">
+                        <span class="wizard-step-num">${idx < currentWizardStep ? '✓' : idx + 1}</span>
+                        <span>${step.title}</span>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('wizard-steps').innerHTML = stepsHtml;
+
+            // Render current step content
+            const step = wizardSteps[currentWizardStep];
+            document.getElementById('wizard-body').innerHTML = step.content();
+
+            // Update nav buttons
+            document.getElementById('wizard-prev').style.visibility = currentWizardStep === 0 ? 'hidden' : 'visible';
+
+            const nextBtn = document.getElementById('wizard-next');
+            if (currentWizardStep === wizardSteps.length - 1) {
+                nextBtn.style.display = 'none';
+            } else if (currentWizardStep === wizardSteps.length - 2) {
+                nextBtn.textContent = '🚀 Push & Finish';
+            } else {
+                nextBtn.style.display = '';
+                nextBtn.textContent = 'Next →';
+            }
+        }
+
+        function wizardPrev() {
+            if (currentWizardStep > 0) {
+                currentWizardStep--;
+                renderWizard();
+            }
+        }
+
+        async function wizardNext() {
+            const step = wizardSteps[currentWizardStep];
+
+            // Validate current step
+            if (step.validate && !step.validate()) {
+                return;
+            }
+
+            // Collect data from current step
+            if (step.collect) {
+                Object.assign(wizardData, step.collect());
+            }
+
+            // If this is the push step, actually push
+            if (step.id === 'push') {
+                await pushWizardSecrets();
+            }
+
+            // Move to next step
+            if (currentWizardStep < wizardSteps.length - 1) {
+                currentWizardStep++;
+                renderWizard();
+            }
+        }
+
+        async function pushWizardSecrets() {
+            const statusDiv = document.getElementById('wizard-push-status');
+            if (!statusDiv) return;
+
+            const secrets = wizardData;
+            if (Object.keys(secrets).length === 0) {
+                statusDiv.innerHTML = '<div class="alert info">No new secrets to push.</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<div class="loading">Pushing secrets</div>';
+
+            try {
+                const response = await fetch('/api/secrets/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secrets }),
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    statusDiv.innerHTML = `<div class="alert error">${data.error}</div>`;
+                    return;
+                }
+
+                let html = '';
+                for (const result of data.results) {
+                    if (result.success) {
+                        html += `<div style="color: var(--accent); margin: 0.25rem 0;">✅ ${result.name}</div>`;
+                    } else {
+                        html += `<div style="color: var(--danger); margin: 0.25rem 0;">❌ ${result.name}: ${result.error}</div>`;
+                    }
+                }
+                statusDiv.innerHTML = html;
+
+                // Refresh status
+                loadStatus();
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="alert error">${error.message}</div>`;
             }
         }
 
