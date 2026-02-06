@@ -267,67 +267,31 @@ def create_app() -> Flask:
     
     @app.route("/api/gh/install", methods=["POST"])
     def api_gh_install():
-        """Install gh CLI using system package manager."""
+        """Return the gh CLI install command for the user to run in terminal."""
         import platform
         
-        # Detect OS and use appropriate install command
         system = platform.system().lower()
         
         if system == "linux":
-            # Try apt first (Debian/Ubuntu)
-            commands = [
-                ["sudo", "apt", "update"],
-                ["sudo", "apt", "install", "-y", "gh"],
-            ]
+            # Full install command with keyrings
+            install_cmd = '''(type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \\
+&& sudo mkdir -p -m 755 /etc/apt/keyrings \\
+&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
+&& cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \\
+&& sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
+&& sudo mkdir -p -m 755 /etc/apt/sources.list.d \\
+&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \\
+&& sudo apt update \\
+&& sudo apt install gh -y'''
         elif system == "darwin":
-            # macOS with Homebrew
-            commands = [
-                ["brew", "install", "gh"],
-            ]
+            install_cmd = "brew install gh"
         else:
-            return jsonify({
-                "error": f"Unsupported OS: {system}",
-                "install_hint": "Visit https://cli.github.com/ for installation instructions",
-            }), 400
-        
-        output_lines = []
-        for cmd in commands:
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                output_lines.append(f"$ {' '.join(cmd)}")
-                if result.stdout:
-                    output_lines.append(result.stdout)
-                if result.returncode != 0:
-                    return jsonify({
-                        "success": False,
-                        "error": result.stderr,
-                        "output": "\n".join(output_lines),
-                    }), 500
-            except subprocess.TimeoutExpired:
-                return jsonify({
-                    "success": False,
-                    "error": "Installation timed out",
-                }), 504
-            except Exception as e:
-                return jsonify({
-                    "success": False,
-                    "error": str(e),
-                }), 500
-        
-        # Verify installation
-        from ..config.system_status import check_tool
-        gh_status = check_tool("gh")
+            install_cmd = "# Visit https://cli.github.com/ for installation"
         
         return jsonify({
-            "success": gh_status.installed,
-            "version": gh_status.version,
-            "output": "\n".join(output_lines),
-            "needs_auth": not gh_status.authenticated if gh_status.installed else False,
+            "command": install_cmd,
+            "instructions": "Run this command in your terminal (requires sudo password):",
+            "after": "Then run: gh auth login",
         })
     
     @app.route("/api/state/reset", methods=["POST"])

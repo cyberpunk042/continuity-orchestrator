@@ -1264,18 +1264,8 @@
             return '';
         }
 
-        // Install gh CLI
+        // Install gh CLI - show command to copy and run
         async function installGh() {
-            if (!confirm('Install GitHub CLI (gh)? This will run: sudo apt install -y gh')) {
-                return;
-            }
-
-            // Show loading in dashboard
-            const toolsCard = document.querySelector('.tool-item');
-            if (toolsCard) {
-                toolsCard.innerHTML = '<div class="loading">Installing gh CLI</div>';
-            }
-
             try {
                 const response = await fetch('/api/gh/install', {
                     method: 'POST',
@@ -1283,17 +1273,29 @@
                 });
                 const data = await response.json();
 
-                if (data.success) {
-                    alert(`✅ gh CLI installed successfully!\n\nVersion: ${data.version}\n\n${data.needs_auth ? 'Next step: Run "gh auth login" in terminal to authenticate.' : ''}`);
-                } else {
-                    alert(`❌ Installation failed: ${data.error}`);
-                }
+                // Show command in a prompt so user can copy it
+                const cmd = data.command;
+                const after = data.after;
 
-                // Refresh status
-                loadStatus();
+                // Create a simple modal to show the command
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                modal.innerHTML = `
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:700px;width:90%;max-height:80vh;overflow:auto;">
+                        <h2 style="margin-bottom:1rem;">📦 Install GitHub CLI</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;">${data.instructions}</p>
+                        <pre style="background:var(--bg-input);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;">${cmd}</pre>
+                        <p style="color:var(--text-dim);margin-top:1rem;">${after}</p>
+                        <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                            <button class="btn primary" onclick="navigator.clipboard.writeText(\`${cmd.replace(/`/g, '\\`')}\`);this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy Command',2000);">📋 Copy Command</button>
+                            <button class="btn" onclick="this.closest('div').parentElement.remove()">Close</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
-                loadStatus();
             }
         }
 
