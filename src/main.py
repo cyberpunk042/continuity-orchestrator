@@ -591,6 +591,41 @@ def check_config(ctx: click.Context) -> None:
                 click.echo(f"    → {status.guidance}")
 
 
+@cli.command("config-status")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--format", "output_format", type=click.Choice(["cli", "json", "compact"]), default="cli", help="Output format")
+@click.pass_context
+def config_status(ctx: click.Context, as_json: bool, output_format: str) -> None:
+    """
+    Show comprehensive system and configuration status.
+    
+    This command provides a unified view of:
+    - System state (stage, deadline)
+    - Adapter configuration
+    - Secrets status
+    - Tool availability (gh, docker)
+    
+    Use --json for API-compatible output.
+    """
+    import json as json_lib
+    from .config.system_status import get_system_status, format_status_cli
+    
+    status = get_system_status()
+    
+    # JSON output
+    if as_json or output_format == "json":
+        click.echo(json_lib.dumps(status.to_dict(), indent=2))
+        return
+    
+    # Compact output (for scripts)
+    if output_format == "compact":
+        click.echo(json_lib.dumps(status.to_dict()))
+        return
+    
+    # CLI display
+    click.echo(format_status_cli(status))
+
+
 @cli.command("generate-config")
 @click.option("--output", "-o", help="Output file (default: stdout)")
 @click.pass_context
