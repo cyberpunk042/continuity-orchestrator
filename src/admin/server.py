@@ -1039,11 +1039,25 @@ read -p "Press Enter to close..."
                 timeout=10,
             )
             if result.returncode == 0:
-                # Our changes were identical to what was pulled
-                logger.info("[git-sync] Changes already present in remote")
+                # Nothing new to commit — but we may still have unpushed commits
+                logger.info("[git-sync] Nothing new to stage — checking if push needed")
+                result = _run(["git", "push"], "git push", timeout=30)
+                if result.returncode == 0:
+                    pushed = result.stderr.strip() or result.stdout.strip()
+                    if "Everything up-to-date" in pushed:
+                        msg = "Already up to date (nothing to commit or push)"
+                    else:
+                        msg = "Pushed existing commits to remote"
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": result.stderr.strip() or "Push failed",
+                        "hint": "Check authentication: gh auth status",
+                        "steps": steps,
+                    })
                 return jsonify({
                     "success": True,
-                    "message": "Already up to date (changes match remote)",
+                    "message": msg,
                     "steps": steps,
                 })
 
