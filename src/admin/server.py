@@ -67,21 +67,28 @@ def create_app() -> Flask:
         """Fire mirror-sync in the background if mirroring is enabled.
         
         Called after git sync or secrets push so the mirror stays up to date.
+        After the sync, auto-commits the state file so it doesn't leave a
+        dirty working tree (which would cause an infinite sync loop).
+        
         Args:
             mode: 'all', 'code-only', or 'secrets-only'
         """
         env = _fresh_env()
         if env.get("MIRROR_ENABLED", "").lower() != "true":
             return
-        cmd = ["python", "-m", "src.main", "mirror-sync"]
-        if mode == "code-only":
-            cmd.append("--code-only")
-        elif mode == "secrets-only":
-            cmd.append("--secrets-only")
+        flag = f"--{mode}" if mode != "all" else ""
+        # Shell script: run mirror-sync, then auto-commit state to avoid dirty loop
+        script = (
+            f'python -m src.main mirror-sync {flag} 2>/dev/null; '
+            'if git diff --quiet state/mirror_status.json 2>/dev/null; then exit 0; fi; '
+            'git add state/mirror_status.json && '
+            'git commit -m "mirror: update sync state" --no-verify && '
+            'git push 2>/dev/null || true'
+        )
         logger.info("[mirror-bg] Triggering background mirror-sync (%s)", mode)
         try:
             subprocess.Popen(
-                cmd,
+                ["bash", "-c", script],
                 cwd=str(project_root),
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -1297,8 +1304,9 @@ read -p "Press Enter to close..."
                         "hint": "Check authentication: gh auth status",
                         "steps": steps,
                     })
-                # Auto-sync code to mirror if enabled
-                _trigger_mirror_sync_bg("code-only")
+                # Only trigger mirror sync if something was actually pushed
+                if "Everything up-to-date" not in (pushed or ""):
+                    _trigger_mirror_sync_bg("code-only")
                 return jsonify({
                     "success": True,
                     "message": msg,
