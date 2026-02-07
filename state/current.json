@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-07T05:06:13.119388+00:00",
+        "updated_at_iso": "2026-02-07T05:06:53.866835Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,9 +12,9 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-07T03:59:28.539092+00:00",
+        "deadline_iso": "2026-02-07T04:06:52.364916+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-07T04:59:28.986344Z",
+        "now_iso": "2026-02-07T05:06:52.678501Z",
         "time_to_deadline_minutes": 0,
         "overdue_minutes": 60
     },
@@ -31,23 +31,61 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "OK",
-        "state_entered_at_iso": "2026-02-07T05:06:13.119388+00:00",
-        "last_transition_rule_id": "MANUAL_RESET",
+        "state": "FULL",
+        "state_entered_at_iso": "2026-02-07T05:06:52.364916+00:00",
+        "last_transition_rule_id": "MANUAL_TRIGGER",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {},
-        "last_tick_actions": []
+        "executed": {
+            "post_x_full": {
+                "status": "ok",
+                "last_delivery_id": "mock_3c21b6ea",
+                "last_executed_iso": "2026-02-07T05:06:52.801023+00:00"
+            },
+            "post_reddit_full": {
+                "status": "ok",
+                "last_delivery_id": "mock_16ff3d74",
+                "last_executed_iso": "2026-02-07T05:06:52.801634+00:00"
+            },
+            "publish_github_full_documents": {
+                "status": "ok",
+                "last_delivery_id": "github_file_e438beecc146",
+                "last_executed_iso": "2026-02-07T05:06:53.819046+00:00"
+            },
+            "publish_article": {
+                "status": "ok",
+                "last_delivery_id": "site_77e6b06b",
+                "last_executed_iso": "2026-02-07T05:06:53.865876+00:00"
+            },
+            "notify_all_webhooks": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-07T05:06:53.866297+00:00"
+            },
+            "persist_final_state": {
+                "status": "ok",
+                "last_delivery_id": "mock_0cad28b3",
+                "last_executed_iso": "2026-02-07T05:06:53.866647+00:00"
+            }
+        },
+        "last_tick_actions": [
+            "post_x_full",
+            "post_reddit_full",
+            "publish_github_full_documents",
+            "publish_article",
+            "notify_all_webhooks",
+            "persist_final_state"
+        ]
     },
     "release": {
-        "triggered": false,
-        "trigger_time_iso": "2026-02-07T04:59:28.539092+00:00",
+        "triggered": true,
+        "trigger_time_iso": "2026-02-07T05:06:52.364916+00:00",
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-07T04:59:28.539092+00:00",
-        "client_token": null
+        "execute_after_iso": "2026-02-07T05:06:52.364916+00:00",
+        "client_token": "HhAvYDnNTLKpS6Ko1JqJFg"
     },
     "integrations": {
         "enabled_adapters": {
