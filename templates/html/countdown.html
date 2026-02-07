@@ -16,7 +16,7 @@
 <div class="container">
     <h1>{{ project }}</h1>
 
-    {% if banner_html %}{{ banner_html }}{% endif %}
+    {% if banner_html %}{{ banner_html|safe }}{% endif %}
 
     <span class="stage-badge">{{ stage }}</span>
 
