@@ -135,6 +135,14 @@ def create_app() -> Flask:
             "circuit-breakers --reset": ["python", "-m", "src.main", "circuit-breakers", "--reset"],
             "test email": ["python", "-m", "src.main", "test", "email"],
             "test sms": ["python", "-m", "src.main", "test", "sms"],
+            # Immediate FULL disclosure (no delay)
+            "trigger-release-full": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "0", "--silent"],
+            # Shadow mode: stealth trigger with delay (same as entering RELEASE_SECRET via public site)
+            "trigger-shadow-0": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "0", "--silent"],
+            "trigger-shadow-30": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "30", "--silent"],
+            "trigger-shadow-60": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "60", "--silent"],
+            "trigger-shadow-120": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "120", "--silent"],
+            "reset": ["python", "-m", "src.main", "reset", "-y"],
         }
         
         if command not in allowed_commands:
@@ -983,6 +991,7 @@ read -p "Press Enter to close..."
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=_fresh_env(),
             )
             return jsonify({
                 "success": result.returncode == 0,
@@ -992,6 +1001,7 @@ read -p "Press Enter to close..."
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
     
+
     @app.route("/api/state/factory-reset", methods=["POST"])
     def api_factory_reset():
         """Full factory reset (calls CLI: reset --full)."""
