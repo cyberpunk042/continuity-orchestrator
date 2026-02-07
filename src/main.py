@@ -915,6 +915,144 @@ def circuit_breakers_cmd(ctx: click.Context, do_reset: bool) -> None:
     click.echo()
 
 
+# ─── Mirror Commands ──────────────────────────────────────────────
+
+@cli.command("mirror-status")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON (for API)")
+@click.pass_context
+def mirror_status(ctx: click.Context, as_json: bool) -> None:
+    """Show mirror configuration and sync status."""
+    import json as json_lib
+    from .mirror.config import MirrorSettings
+    from .mirror.state import MirrorState
+
+    settings = MirrorSettings.from_env()
+    state = MirrorState.load()
+
+    # Merge config + state: always show configured mirrors
+    mirrors = []
+    for mirror in settings.mirrors:
+        slave = state.get_slave(mirror.id)
+        entry = {
+            "id": mirror.id,
+            "repo": mirror.repo,
+            "type": mirror.type,
+            "enabled": mirror.enabled,
+        }
+        if slave:
+            from dataclasses import asdict
+            entry["code"] = asdict(slave.code)
+            entry["secrets"] = asdict(slave.secrets)
+            entry["variables"] = asdict(slave.variables)
+            entry["workflows"] = asdict(slave.workflows)
+            entry["health"] = slave.health
+        else:
+            entry["code"] = {"status": "never", "last_sync_iso": None, "last_error": None, "detail": None}
+            entry["secrets"] = {"status": "never", "last_sync_iso": None, "last_error": None, "detail": None}
+            entry["variables"] = {"status": "never", "last_sync_iso": None, "last_error": None, "detail": None}
+            entry["workflows"] = {"status": "never", "last_sync_iso": None, "last_error": None, "detail": None}
+            entry["health"] = "unknown"
+        mirrors.append(entry)
+
+    result = {
+        "enabled": settings.enabled and len(settings.mirrors) > 0,
+        "self_role": state.self_role,
+        "mirrors_configured": len(settings.mirrors),
+        "last_full_sync_iso": state.last_full_sync_iso,
+        "mirrors": mirrors,
+    }
+
+    if as_json:
+        click.echo(json_lib.dumps(result, indent=2, default=str))
+        return
+
+    # Human-readable output
+    click.echo("\n🔀 Mirror Status\n")
+    click.echo(f"  Enabled:    {'Yes' if result['enabled'] else 'No'}")
+    click.echo(f"  Role:       {state.self_role}")
+    click.echo(f"  Mirrors:    {len(mirrors)} configured")
+    if state.last_full_sync_iso:
+        click.echo(f"  Last sync:  {state.last_full_sync_iso}")
+    click.echo()
+
+    if not mirrors:
+        click.echo("  No mirrors configured.")
+        click.echo("  Set MIRROR_ENABLED=true, MIRROR_1_REPO, MIRROR_1_TOKEN in .env")
+        click.echo()
+        return
+
+    for m in mirrors:
+        click.echo(f"  📦 {m['repo']} ({m['id']})")
+        for layer in ("code", "secrets", "variables"):
+            layer_data = m[layer]
+            status = layer_data.get("status", "unknown")
+            icon = {"ok": "✅", "failed": "❌", "never": "⏳", "unknown": "⏳"}.get(status, "❓")
+            line = f"    {icon} {layer}: {status}"
+            if layer_data.get("detail"):
+                line += f" ({layer_data['detail']})"
+            if layer_data.get("last_error"):
+                line += f" — {layer_data['last_error'][:80]}"
+            if layer_data.get("last_sync_iso"):
+                line += f" [{layer_data['last_sync_iso'][:19]}]"
+            click.echo(line)
+        click.echo()
+
+
+@cli.command("mirror-sync")
+@click.option("--code-only", is_flag=True, help="Only sync code (git push)")
+@click.option("--secrets-only", is_flag=True, help="Only sync secrets")
+@click.option("--vars-only", is_flag=True, help="Only sync variables")
+@click.pass_context
+def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_only: bool) -> None:
+    """Run mirror sync operations (blocking, with full output)."""
+    from .mirror.manager import MirrorManager
+
+    root = ctx.obj["root"]
+    mm = MirrorManager.from_env()
+
+    if not mm.enabled:
+        click.secho("Mirror integration is not enabled.", fg="yellow")
+        click.echo("Set MIRROR_ENABLED=true in .env")
+        raise SystemExit(1)
+
+    mirrors = mm.settings.get_all_enabled()
+    click.echo(f"\n🔀 Syncing {len(mirrors)} mirror(s)...\n")
+
+    sync_all = not (code_only or secrets_only or vars_only)
+
+    if sync_all or code_only:
+        click.echo("📦 Code sync...")
+        mm.propagate_code_sync(root, blocking=True)
+        click.echo("   Done.")
+
+    if sync_all or secrets_only:
+        click.echo("🔐 Secrets sync...")
+        mm.propagate_secrets(blocking=True)
+        click.echo("   Done.")
+
+    if sync_all or vars_only:
+        click.echo("📋 Variables sync...")
+        master_repo = os.environ.get("GITHUB_REPOSITORY")
+        mm.propagate_variables(master_repo=master_repo, blocking=True)
+        click.echo("   Done.")
+
+    # Reload state to show results
+    from .mirror.state import MirrorState
+    state = MirrorState.load()
+
+    click.echo()
+    for slave in state.slaves:
+        click.echo(f"  {slave.repo or slave.id}:")
+        for layer_name in ("code", "secrets", "variables"):
+            layer = getattr(slave, layer_name)
+            icon = {"ok": "✅", "failed": "❌"}.get(layer.status, "⏳")
+            detail = f" ({layer.detail})" if layer.detail else ""
+            error = f" — {layer.last_error[:80]}" if layer.last_error else ""
+            click.echo(f"    {icon} {layer_name}: {layer.status}{detail}{error}")
+
+    click.secho("\n✅ Mirror sync complete", fg="green")
+
+
 @cli.command("init")
 @click.option(
     "--project",

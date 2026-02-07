@@ -1,14 +1,12 @@
 """
 GitHub Sync — Sync secrets, variables, and workflow state to GitHub mirrors.
 
-Uses the GitHub REST API to propagate secrets and variables to slave repos,
+Uses the `gh` CLI to propagate secrets and variables to slave repos,
 and to enable/disable workflows for failover.
 """
 
 from __future__ import annotations
 
-import base64
-import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,98 +15,49 @@ from .config import MirrorConfig
 
 logger = logging.getLogger(__name__)
 
-# Optional httpx import (same pattern as other adapters)
-try:
-    import httpx
-
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-    httpx = None
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ ⚠️  These lists MUST stay in sync with:                            │
+# │   1. .github/workflows/cron.yml  → env: blocks (what the pipeline │
+# │      injects). If a secret is here but not in cron.yml env:, the  │
+# │      mirror-sync step won't have the value to push.               │
+# │   2. src/admin/static/index.html → GITHUB_SECRETS / GITHUB_VARS   │
+# │      arrays (~line 1765). If a value isn't in the right tier,     │
+# │      it shows "Local only" and never reaches GitHub.              │
+# └─────────────────────────────────────────────────────────────────────┘
 
 # Secrets that should be synced to mirrors
-# These are the env var names that map to GitHub secret names
+# Must match what .github/workflows/cron.yml and deploy-site.yml inject
 SYNCABLE_SECRETS = [
-    "GITHUB_TOKEN",       # Will be stored as MASTER_TOKEN on slave
-    "RESEND_API_KEY",
-    "TWILIO_ACCOUNT_SID",
+    "GITHUB_TOKEN",           # Will be stored as MASTER_TOKEN on slave
+    "CONTINUITY_CONFIG",      # Core config (cron.yml line 85)
+    "RESEND_API_KEY",         # Email adapter
+    "TWILIO_ACCOUNT_SID",     # SMS adapter
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM_NUMBER",
-    "PERSISTENCE_API_URL",
-    "REDDIT_CLIENT_ID",
-    "REDDIT_CLIENT_SECRET",
-    "REDDIT_USERNAME",
-    "REDDIT_PASSWORD",
-    "X_API_KEY",
+    "X_API_KEY",              # X/Twitter adapter
     "X_API_SECRET",
     "X_ACCESS_TOKEN",
     "X_ACCESS_SECRET",
-    "RELEASE_SECRET",
-    "ADMIN_TOKEN",
+    "REDDIT_CLIENT_ID",       # Reddit adapter
+    "REDDIT_CLIENT_SECRET",
+    "REDDIT_USERNAME",
+    "REDDIT_PASSWORD",
+    "PERSISTENCE_API_URL",    # Persistence layer
+    "PERSISTENCE_API_KEY",    # Persistence auth (cron.yml line 99)
+    "RENEWAL_TRIGGER_TOKEN",  # Site build (deploy-site.yml)
+    "RELEASE_SECRET",         # Release endpoint auth
+    "ADMIN_TOKEN",            # Admin panel auth
 ]
 
-# Variables (non-secret) to sync
+# Variables (non-secret) to sync to mirror repos
+# Must match what .github/workflows/cron.yml reads via ${{ vars.X }}
 SYNCABLE_VARS = [
-    "MASTER_REPO",  # Set to the primary repo for sentinel to check
-    "MIRROR_ROLE",  # SLAVE / TEMPORARY_MASTER / MASTER
-    "SENTINEL_THRESHOLD",  # Number of failures before self-promotion
+    "MASTER_REPO",        # Primary repo for sentinel to check
+    "MIRROR_ROLE",        # SLAVE / TEMPORARY_MASTER / MASTER
+    "SENTINEL_THRESHOLD", # Number of failures before self-promotion
+    "ADAPTER_MOCK_MODE",  # cron.yml line 51 — 'true' while slave
 ]
 
-
-def _get_headers(token: str) -> Dict[str, str]:
-    """Get GitHub API headers."""
-    return {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-
-def get_repo_public_key(
-    token: str, repo: str
-) -> Optional[Tuple[str, str]]:
-    """
-    Get the repository's public key for encrypting secrets.
-
-    Returns (key_id, key) or None.
-    """
-    if not HTTPX_AVAILABLE:
-        logger.error("[mirror-github] httpx not available")
-        return None
-
-    url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
-    try:
-        resp = httpx.get(url, headers=_get_headers(token), timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            return data["key_id"], data["key"]
-        logger.error(f"[mirror-github] Failed to get public key: {resp.status_code}")
-        return None
-    except Exception as e:
-        logger.error(f"[mirror-github] Error getting public key: {e}")
-        return None
-
-
-def _encrypt_secret(public_key: str, secret_value: str) -> str:
-    """Encrypt a secret value with the repo's public key using libsodium."""
-    try:
-        from nacl import encoding, public as nacl_public
-
-        public_key_bytes = nacl_public.PublicKey(
-            public_key.encode("utf-8"), encoding.Base64Encoder
-        )
-        sealed_box = nacl_public.SealedBox(public_key_bytes)
-        encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-        return base64.b64encode(encrypted).decode("utf-8")
-    except ImportError:
-        logger.error(
-            "[mirror-github] PyNaCl not installed. "
-            "Install with: pip install PyNaCl"
-        )
-        raise
-    except Exception as e:
-        logger.error(f"[mirror-github] Encryption failed: {e}")
-        raise
 
 
 def sync_secret(
@@ -116,38 +65,34 @@ def sync_secret(
     repo: str,
     secret_name: str,
     secret_value: str,
-    key_id: str,
-    public_key: str,
 ) -> Tuple[bool, Optional[str]]:
     """
-    Set a secret on a GitHub repository.
+    Set a secret on a GitHub repository using `gh secret set`.
 
+    Uses the gh CLI which handles encryption internally.
     Returns (success, error_message).
     """
-    if not HTTPX_AVAILABLE:
-        return False, "httpx not available"
+    import subprocess
+
+    env = {**os.environ, "GH_TOKEN": token}
 
     try:
-        encrypted_value = _encrypt_secret(public_key, secret_value)
-    except Exception as e:
-        return False, f"Encryption failed: {e}"
-
-    url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
-
-    try:
-        resp = httpx.put(
-            url,
-            headers=_get_headers(token),
-            json={
-                "encrypted_value": encrypted_value,
-                "key_id": key_id,
-            },
-            timeout=15,
+        result = subprocess.run(
+            ["gh", "secret", "set", secret_name, "-R", repo],
+            input=secret_value,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
         )
-        if resp.status_code in (201, 204):
+        if result.returncode == 0:
             logger.info(f"[mirror-github] Secret {secret_name} synced to {repo}")
             return True, None
-        return False, f"HTTP {resp.status_code}: {resp.text}"
+        return False, f"gh secret set failed: {result.stderr.strip()}"
+    except FileNotFoundError:
+        return False, "gh CLI not installed. Install from https://cli.github.com"
+    except subprocess.TimeoutExpired:
+        return False, "gh secret set timed out"
     except Exception as e:
         return False, str(e)
 
@@ -159,45 +104,31 @@ def sync_variable(
     var_value: str,
 ) -> Tuple[bool, Optional[str]]:
     """
-    Set a variable on a GitHub repository.
+    Set a variable on a GitHub repository using `gh variable set`.
 
+    Uses the gh CLI which handles create-or-update internally.
     Returns (success, error_message).
     """
-    if not HTTPX_AVAILABLE:
-        return False, "httpx not available"
+    import subprocess
 
-    headers = _get_headers(token)
-
-    # Try to update first (PATCH), then create (POST) if not found
-    url = f"https://api.github.com/repos/{repo}/actions/variables/{var_name}"
+    env = {**os.environ, "GH_TOKEN": token}
 
     try:
-        resp = httpx.patch(
-            url,
-            headers=headers,
-            json={"value": var_value},
-            timeout=15,
+        result = subprocess.run(
+            ["gh", "variable", "set", var_name, "-R", repo, "--body", var_value],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
         )
-
-        if resp.status_code == 204:
-            logger.info(f"[mirror-github] Variable {var_name} updated on {repo}")
+        if result.returncode == 0:
+            logger.info(f"[mirror-github] Variable {var_name} synced to {repo}")
             return True, None
-
-        if resp.status_code == 404:
-            # Variable doesn't exist — create it
-            create_url = f"https://api.github.com/repos/{repo}/actions/variables"
-            resp = httpx.post(
-                create_url,
-                headers=headers,
-                json={"name": var_name, "value": var_value},
-                timeout=15,
-            )
-            if resp.status_code == 201:
-                logger.info(f"[mirror-github] Variable {var_name} created on {repo}")
-                return True, None
-            return False, f"Create failed: HTTP {resp.status_code}"
-
-        return False, f"HTTP {resp.status_code}: {resp.text}"
+        return False, f"gh variable set failed: {result.stderr.strip()}"
+    except FileNotFoundError:
+        return False, "gh CLI not installed. Install from https://cli.github.com"
+    except subprocess.TimeoutExpired:
+        return False, "gh variable set timed out"
     except Exception as e:
         return False, str(e)
 
@@ -213,12 +144,6 @@ def sync_all_secrets(
     if not mirror.is_github or not mirror.sync_secrets:
         return True, 0, 0, "Secrets sync not configured for this mirror"
 
-    # Get the repo's public key for encryption
-    key_result = get_repo_public_key(mirror.token, mirror.repo)
-    if not key_result:
-        return False, 0, 0, "Could not get repo public key"
-
-    key_id, public_key = key_result
     synced = 0
     total = 0
     errors = []
@@ -233,7 +158,7 @@ def sync_all_secrets(
         target_name = "MASTER_TOKEN" if secret_name == "GITHUB_TOKEN" else secret_name
 
         ok, err = sync_secret(
-            mirror.token, mirror.repo, target_name, value, key_id, public_key
+            mirror.token, mirror.repo, target_name, value
         )
         if ok:
             synced += 1
@@ -267,6 +192,7 @@ def sync_all_variables(
     vars_to_sync = {
         "MIRROR_ROLE": "SLAVE",
         "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
+        "ADAPTER_MOCK_MODE": "true",  # Slave doesn't send notifications
     }
 
     # Set MASTER_REPO so sentinel knows what to check
@@ -302,37 +228,34 @@ def set_workflow_enabled(
     enabled: bool,
 ) -> Tuple[bool, Optional[str]]:
     """
-    Enable or disable a GitHub Actions workflow.
+    Enable or disable a GitHub Actions workflow using `gh workflow`.
 
     Returns (success, error_message).
     """
-    if not HTTPX_AVAILABLE:
-        return False, "httpx not available"
+    import subprocess
 
-    headers = _get_headers(token)
+    action = "enable" if enabled else "disable"
+    env = {**os.environ, "GH_TOKEN": token}
 
-    # First, get the workflow ID from its filename
-    url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_filename}"
     try:
-        resp = httpx.get(url, headers=headers, timeout=15)
-        if resp.status_code != 200:
-            return False, f"Workflow {workflow_filename} not found: HTTP {resp.status_code}"
-
-        workflow_id = resp.json()["id"]
-
-        # Enable or disable
-        action = "enable" if enabled else "disable"
-        action_url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_id}/{action}"
-
-        resp = httpx.put(action_url, headers=headers, timeout=15)
-        if resp.status_code == 204:
+        result = subprocess.run(
+            ["gh", "workflow", action, workflow_filename, "-R", repo],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        if result.returncode == 0:
             logger.info(
                 f"[mirror-github] Workflow {workflow_filename} "
                 f"{'enabled' if enabled else 'disabled'} on {repo}"
             )
             return True, None
-
-        return False, f"HTTP {resp.status_code}: {resp.text}"
+        return False, f"gh workflow {action} failed: {result.stderr.strip()}"
+    except FileNotFoundError:
+        return False, "gh CLI not installed. Install from https://cli.github.com"
+    except subprocess.TimeoutExpired:
+        return False, f"gh workflow {action} timed out"
     except Exception as e:
         return False, str(e)
 
@@ -368,18 +291,28 @@ def check_repo_health(
     token: str, repo: str
 ) -> Tuple[bool, Optional[str]]:
     """
-    Check if a GitHub repository is reachable.
+    Check if a GitHub repository is reachable using `gh repo view`.
 
     Returns (healthy, error_message).
     """
-    if not HTTPX_AVAILABLE:
-        return False, "httpx not available"
+    import subprocess
 
-    url = f"https://api.github.com/repos/{repo}"
+    env = {**os.environ, "GH_TOKEN": token}
+
     try:
-        resp = httpx.get(url, headers=_get_headers(token), timeout=15)
-        if resp.status_code == 200:
+        result = subprocess.run(
+            ["gh", "repo", "view", repo, "--json", "name"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
+        )
+        if result.returncode == 0:
             return True, None
-        return False, f"HTTP {resp.status_code}"
+        return False, f"gh repo view failed: {result.stderr.strip()}"
+    except FileNotFoundError:
+        return False, "gh CLI not installed. Install from https://cli.github.com"
+    except subprocess.TimeoutExpired:
+        return False, "gh repo view timed out"
     except Exception as e:
         return False, str(e)

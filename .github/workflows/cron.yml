@@ -81,6 +81,9 @@ jobs:
       
       - name: Run continuity tick
         id: tick
+        # ⚠️  Keep in sync with:
+        #   - src/admin/static/index.html  → GITHUB_SECRETS array
+        #   - src/mirror/github_sync.py    → SYNCABLE_SECRETS list
         env:
           CONTINUITY_CONFIG: ${{ secrets.CONTINUITY_CONFIG }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -132,6 +135,41 @@ jobs:
             echo "state_changed=false" >> $GITHUB_OUTPUT
           fi
       
+      # ── Mirror replication ─────────────────────────────────────
+      # After committing state, replicate everything to mirror repos.
+      # Runs on every tick so the mirror is always up to date.
+      - name: Sync to mirror repos
+        if: |
+          inputs.dry_run != 'true' &&
+          vars.MIRROR_ENABLED == 'true'
+        env:
+          MIRROR_ENABLED: ${{ vars.MIRROR_ENABLED }}
+          MIRROR_1_REPO: ${{ vars.MIRROR_1_REPO }}
+          MIRROR_1_TOKEN: ${{ secrets.MIRROR_1_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # All secrets needed by the mirror's pipeline
+          CONTINUITY_CONFIG: ${{ secrets.CONTINUITY_CONFIG }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
+          PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
+          RENEWAL_TRIGGER_TOKEN: ${{ secrets.RENEWAL_TRIGGER_TOKEN }}
+          RELEASE_SECRET: ${{ secrets.RELEASE_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m src.main mirror-sync || echo "::warning::Mirror sync failed"
+
       # Only rebuild site if state changed OR if force_deploy is requested
       - name: Build static site
         id: build

@@ -1,0 +1,39 @@
+{
+    "self_role": "MASTER",
+    "last_full_sync_iso": null,
+    "slaves": [
+        {
+            "id": "mirror-1",
+            "type": "github",
+            "repo": "Eloverflow/continuity-orchestrator-mirror-1",
+            "url": null,
+            "role": "SLAVE",
+            "health": "unknown",
+            "last_health_check_iso": null,
+            "code": {
+                "last_sync_iso": "2026-02-07T18:27:48.169309+00:00",
+                "status": "ok",
+                "last_error": null,
+                "detail": "093f7683e987"
+            },
+            "secrets": {
+                "last_sync_iso": "2026-02-07T18:27:48.704824+00:00",
+                "status": "failed",
+                "last_error": "MASTER_TOKEN: Encryption failed: No module named 'nacl'; RESEND_API_KEY: Encryption failed: No module named 'nacl'; RELEASE_SECRET: Encryption failed: No module named 'nacl'",
+                "detail": null
+            },
+            "variables": {
+                "last_sync_iso": "2026-02-07T18:27:49.884230+00:00",
+                "status": "ok",
+                "last_error": null,
+                "detail": "3/3"
+            },
+            "workflows": {
+                "last_sync_iso": null,
+                "status": "unknown",
+                "last_error": null,
+                "detail": null
+            }
+        }
+    ]
+}

@@ -40,18 +40,6 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     
-    # Initialize mirror manager
-    try:
-        from ..mirror.manager import MirrorManager
-        mirror_manager = MirrorManager.from_env()
-        if mirror_manager.enabled:
-            logger.info("[mirror] Mirror integration enabled with %d mirror(s)",
-                       len(mirror_manager.settings.mirrors))
-        app.config["MIRROR_MANAGER"] = mirror_manager
-    except Exception as e:
-        logger.warning("[mirror] Mirror integration not available: %s", e)
-        app.config["MIRROR_MANAGER"] = None
-    
     def _fresh_env() -> dict:
         """Build subprocess env with fresh .env values.
         
@@ -74,7 +62,17 @@ def create_app() -> Flask:
                             value = value[1:-1]
                         env[key] = value
         return env
-    
+
+    def _gh_repo_flag() -> list:
+        """Get -R repo flag for gh CLI commands.
+        
+        Required because mirror remotes cause gh to fail with
+        'multiple remotes detected' when no -R is specified.
+        """
+        repo = _fresh_env().get("GITHUB_REPOSITORY", "")
+        return ["-R", repo] if repo else []
+
+
     # ---------------------------------------------------------------------------
     # REQUEST LOGGING — log all API requests with timing
     # ---------------------------------------------------------------------------
@@ -537,11 +535,7 @@ def create_app() -> Flask:
             for key, value in sorted(existing.items()):
                 f.write(f"{key}={value}\n")
         
-        # Mirror propagation: sync secrets to mirrors (non-blocking)
-        mm = app.config.get("MIRROR_MANAGER")
-        if mm and mm.enabled:
-            logger.info("[env-write] Propagating secrets to mirrors...")
-            mm.propagate_secrets()
+
 
         return jsonify({
             "success": True,
@@ -624,6 +618,7 @@ def create_app() -> Flask:
                 })
             
             # Push secrets via gh secret set
+            repo_flag = _gh_repo_flag()
             for name, value in secrets.items():
                 if not value:
                     continue
@@ -631,7 +626,7 @@ def create_app() -> Flask:
                     continue
                 try:
                     result = subprocess.run(
-                        ["gh", "secret", "set", name, "--body", value],
+                        ["gh", "secret", "set", name, "--body", value] + repo_flag,
                         cwd=str(project_root),
                         capture_output=True,
                         text=True,
@@ -657,7 +652,7 @@ def create_app() -> Flask:
                     continue
                 try:
                     result = subprocess.run(
-                        ["gh", "variable", "set", name, "--body", value],
+                        ["gh", "variable", "set", name, "--body", value] + repo_flag,
                         cwd=str(project_root),
                         capture_output=True,
                         text=True,
@@ -754,9 +749,11 @@ def create_app() -> Flask:
                     "variables": [],
                 })
             
+            repo_flag = _gh_repo_flag()
+
             # Get list of secrets from GitHub
             result = subprocess.run(
-                ["gh", "secret", "list"],
+                ["gh", "secret", "list"] + repo_flag,
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
@@ -773,7 +770,7 @@ def create_app() -> Flask:
             
             # Get list of variables from GitHub
             var_result = subprocess.run(
-                ["gh", "variable", "list"],
+                ["gh", "variable", "list"] + repo_flag,
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
@@ -840,9 +837,10 @@ def create_app() -> Flask:
         
         # Push to GitHub
         if target in ("github", "both") and value:
+            repo_flag = _gh_repo_flag()
             try:
                 result = subprocess.run(
-                    ["gh", "secret", "set", name],
+                    ["gh", "secret", "set", name] + repo_flag,
                     input=value,
                     cwd=str(project_root),
                     capture_output=True,
@@ -893,9 +891,10 @@ def create_app() -> Flask:
         if target in ("github", "both"):
             # Use correct gh command based on kind
             gh_cmd = "variable" if kind == "variable" else "secret"
+            repo_flag = _gh_repo_flag()
             try:
                 result = subprocess.run(
-                    ["gh", gh_cmd, "delete", name],
+                    ["gh", gh_cmd, "delete", name] + repo_flag,
                     cwd=str(project_root),
                     capture_output=True,
                     text=True,
@@ -1292,12 +1291,7 @@ read -p "Press Enter to close..."
 
             logger.info("[git-sync] ✓ Sync complete")
 
-            # Mirror propagation: push code to all mirrors (non-blocking)
-            mm = app.config.get("MIRROR_MANAGER")
-            if mm and mm.enabled:
-                logger.info("[git-sync] Propagating to mirrors...")
-                mm.propagate_code_sync(project_root)
-                steps.append({"step": "mirror propagate", "ok": True, "output": "queued"})
+
 
             return jsonify({
                 "success": True,
@@ -1316,56 +1310,92 @@ read -p "Press Enter to close..."
             return jsonify({"success": False, "error": str(e), "steps": steps}), 500
 
     # ─── Mirror API Endpoints ─────────────────────────────────────
+    # These call CLI commands via subprocess (same pattern as test email, git sync, etc.)
 
     @app.route("/api/mirror/status", methods=["GET"])
     def api_mirror_status():
-        """Get mirror sync status for the integrations tab."""
-        mm = app.config.get("MIRROR_MANAGER")
-        if not mm:
-            return jsonify({"enabled": False, "mirrors": {"slaves": []}})
-        return jsonify(mm.get_status())
+        """Get mirror status via CLI."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "mirror-status", "--json"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env=_fresh_env(),
+            )
+            if result.returncode == 0:
+                import json as _json
+                return jsonify(_json.loads(result.stdout))
+            return jsonify({"enabled": False, "error": result.stderr.strip()})
+        except Exception as e:
+            return jsonify({"enabled": False, "error": str(e)})
 
     @app.route("/api/mirror/sync", methods=["POST"])
     def api_mirror_sync():
-        """Force sync all mirrors (code + secrets + variables)."""
-        mm = app.config.get("MIRROR_MANAGER")
-        if not mm or not mm.enabled:
-            return jsonify({"success": False, "error": "Mirror integration not enabled"})
-
-        data = request.json or {}
-        blocking = data.get("blocking", False)
-        master_repo = os.environ.get("GITHUB_REPOSITORY")
-
-        mm.propagate_all(
-            project_root,
-            master_repo=master_repo,
-            blocking=blocking,
-        )
-
-        return jsonify({
-            "success": True,
-            "message": "Full mirror sync " + ("complete" if blocking else "queued"),
-        })
+        """Run full mirror sync via CLI."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "mirror-sync"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=_fresh_env(),
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr.strip() if result.returncode != 0 else None,
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({"success": False, "error": "Mirror sync timed out"}), 504
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/mirror/sync/code", methods=["POST"])
     def api_mirror_sync_code():
-        """Force sync code to all mirrors."""
-        mm = app.config.get("MIRROR_MANAGER")
-        if not mm or not mm.enabled:
-            return jsonify({"success": False, "error": "Mirror integration not enabled"})
-
-        mm.propagate_code_sync(project_root)
-        return jsonify({"success": True, "message": "Code sync queued"})
+        """Run code-only mirror sync via CLI."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "mirror-sync", "--code-only"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=_fresh_env(),
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr.strip() if result.returncode != 0 else None,
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({"success": False, "error": "Code sync timed out"}), 504
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/mirror/sync/secrets", methods=["POST"])
     def api_mirror_sync_secrets():
-        """Force sync secrets to all GitHub mirrors."""
-        mm = app.config.get("MIRROR_MANAGER")
-        if not mm or not mm.enabled:
-            return jsonify({"success": False, "error": "Mirror integration not enabled"})
-
-        mm.propagate_secrets()
-        return jsonify({"success": True, "message": "Secrets sync queued"})
+        """Run secrets-only mirror sync via CLI."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "src.main", "mirror-sync", "--secrets-only"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=_fresh_env(),
+            )
+            return jsonify({
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr.strip() if result.returncode != 0 else None,
+            })
+        except subprocess.TimeoutExpired:
+            return jsonify({"success": False, "error": "Secrets sync timed out"}), 504
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
 
     return app
 
