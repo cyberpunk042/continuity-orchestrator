@@ -63,6 +63,8 @@ class AdapterCredentials:
     
     # Renewal
     renewal_secret: Optional[str] = None
+    release_secret: Optional[str] = None
+    renewal_trigger_token: Optional[str] = None
     
     # Project config (not adapter credentials, but needed in CI via master secret)
     project_name: Optional[str] = None
@@ -122,6 +124,8 @@ class AdapterCredentials:
             "PERSISTENCE_API_URL": self.persistence_api_url,
             "PERSISTENCE_API_KEY": self.persistence_api_key,
             "RENEWAL_SECRET": self.renewal_secret,
+            "RELEASE_SECRET": self.release_secret,
+            "RENEWAL_TRIGGER_TOKEN": self.renewal_trigger_token,
             "PROJECT_NAME": self.project_name,
             "OPERATOR_EMAIL": self.operator_email,
             "OPERATOR_SMS": self.operator_sms,
@@ -172,7 +176,12 @@ def load_config() -> AdapterCredentials:
 
 
 def _parse_master_config(data: Dict[str, Any]) -> AdapterCredentials:
-    """Parse master config JSON into credentials."""
+    """Parse master config JSON into credentials.
+    
+    Note: github_token and github_repository are deliberately excluded.
+    They are auto-provided by GitHub Actions at runtime and should never
+    be overridden by the master config.
+    """
     return AdapterCredentials(
         # Email
         resend_api_key=data.get("resend_api_key") or data.get("RESEND_API_KEY"),
@@ -195,9 +204,8 @@ def _parse_master_config(data: Dict[str, Any]) -> AdapterCredentials:
         reddit_username=data.get("reddit_username") or data.get("REDDIT_USERNAME"),
         reddit_password=data.get("reddit_password") or data.get("REDDIT_PASSWORD"),
         
-        # GitHub
-        github_token=data.get("github_token") or data.get("GITHUB_TOKEN"),
-        github_repository=data.get("github_repository") or data.get("GITHUB_REPOSITORY"),
+        # github_token / github_repository deliberately NOT parsed from master config
+        # — auto-provided by GitHub Actions at runtime
         
         # Persistence
         persistence_api_url=data.get("persistence_api_url") or data.get("PERSISTENCE_API_URL"),
@@ -205,6 +213,8 @@ def _parse_master_config(data: Dict[str, Any]) -> AdapterCredentials:
         
         # Renewal
         renewal_secret=data.get("renewal_secret") or data.get("RENEWAL_SECRET"),
+        release_secret=data.get("release_secret") or data.get("RELEASE_SECRET"),
+        renewal_trigger_token=data.get("renewal_trigger_token") or data.get("RENEWAL_TRIGGER_TOKEN"),
         
         # Project config
         project_name=data.get("project_name") or data.get("PROJECT_NAME"),
@@ -234,6 +244,8 @@ def _load_individual_vars(existing: AdapterCredentials) -> AdapterCredentials:
         persistence_api_url=existing.persistence_api_url or os.environ.get("PERSISTENCE_API_URL"),
         persistence_api_key=existing.persistence_api_key or os.environ.get("PERSISTENCE_API_KEY"),
         renewal_secret=existing.renewal_secret or os.environ.get("RENEWAL_SECRET"),
+        release_secret=existing.release_secret or os.environ.get("RELEASE_SECRET"),
+        renewal_trigger_token=existing.renewal_trigger_token or os.environ.get("RENEWAL_TRIGGER_TOKEN"),
         project_name=existing.project_name or os.environ.get("PROJECT_NAME"),
         operator_email=existing.operator_email or os.environ.get("OPERATOR_EMAIL"),
         operator_sms=existing.operator_sms or os.environ.get("OPERATOR_SMS"),

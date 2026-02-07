@@ -1493,9 +1493,9 @@
             'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
             'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET',
             'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD',
-            'GITHUB_TOKEN', 'GITHUB_REPOSITORY',
+            // NOT GITHUB_TOKEN/GITHUB_REPOSITORY — auto-provided by GitHub Actions at runtime
             'PERSISTENCE_API_URL', 'PERSISTENCE_API_KEY',
-            'RENEWAL_SECRET',
+            'RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN',
         ];
 
         function getSecretTier(name) {
@@ -1572,6 +1572,7 @@
                 'SMS (Twilio)': 'sms',
                 'X (Twitter)': 'twitter',
                 'Reddit': 'reddit',
+                'Security': 'security',
             };
 
             for (const [category, names] of Object.entries(categories)) {
@@ -1999,14 +2000,15 @@
                 reddit_client_secret: envData['REDDIT_CLIENT_SECRET'] || '',
                 reddit_username: envData['REDDIT_USERNAME'] || '',
                 reddit_password: envData['REDDIT_PASSWORD'] || '',
-                // GitHub
-                github_token: envData['GITHUB_TOKEN'] || '',
-                github_repository: envData['GITHUB_REPOSITORY'] || '',
+                // NOT github_token/github_repository — auto-provided by GitHub Actions at runtime.
+                // Including them would override CI values with your local gh token.
                 // Persistence
                 persistence_api_url: envData['PERSISTENCE_API_URL'] || '',
                 persistence_api_key: envData['PERSISTENCE_API_KEY'] || '',
-                // Renewal
+                // Renewal / Security
                 renewal_secret: envData['RENEWAL_SECRET'] || '',
+                release_secret: envData['RELEASE_SECRET'] || '',
+                renewal_trigger_token: envData['RENEWAL_TRIGGER_TOKEN'] || '',
             };
             // Only include non-empty values
             const clean = {};
@@ -3370,6 +3372,33 @@
                             ${appData?.secrets?.find(s => s.name === 'RELEASE_SECRET')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Renewal Trigger Token</label>
+                        <input type="password" class="form-input" id="wiz-renewal-trigger-token" 
+                               placeholder="github_pat_xxxxxxxxxx">
+                        <div class="form-hint">
+                            Fine-grained GitHub PAT for one-click renewal from the public site (optional)
+                            ${appData?.secrets?.find(s => s.name === 'RENEWAL_TRIGGER_TOKEN')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                        <details style="margin-top: 0.75rem;">
+                            <summary style="cursor: pointer; color: var(--info); font-size: 0.85rem;">📖 How to create a fine-grained PAT</summary>
+                            <div style="color: var(--text-dim); line-height: 1.8; margin: 0.75rem 0 0 0; font-size: 0.85rem; padding: 0.75rem; background: var(--bg-input); border-radius: 6px;">
+                                <ol style="margin: 0 0 0 1.25rem; padding: 0;">
+                                    <li>Go to <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color: var(--info);">GitHub → Settings → Fine-grained tokens</a></li>
+                                    <li>Click <strong>"Generate new token"</strong></li>
+                                    <li>Set <strong>Token name</strong>: <code>continuity-renewal</code></li>
+                                    <li>Set <strong>Expiration</strong>: 90 days (or custom)</li>
+                                    <li>Under <strong>Repository access</strong>, select <em>"Only select repositories"</em> and pick your continuity repo</li>
+                                    <li>Under <strong>Permissions → Actions</strong>, set to <strong>Read and write</strong> (needed to trigger workflows)</li>
+                                    <li>Click <strong>"Generate token"</strong> and paste the <code>github_pat_...</code> value above</li>
+                                </ol>
+                                <p style="margin: 0.75rem 0 0 0;">
+                                    ⚠️ This token allows triggering the renewal workflow from the public site's "Renew" button.
+                                    Only grant the minimum permissions needed.
+                                </p>
+                            </div>
+                        </details>
+                    </div>
                     
                     <h3 style="margin: 1.5rem 0 1rem; color: var(--text-dim); font-size: 0.9rem;">🐙 GITHUB CONFIGURATION</h3>
                     <div class="form-group">
@@ -3401,6 +3430,8 @@
                     if (renewal) result.RENEWAL_SECRET = renewal;
                     const release = document.getElementById('wiz-release-secret').value;
                     if (release) result.RELEASE_SECRET = release;
+                    const triggerToken = document.getElementById('wiz-renewal-trigger-token').value;
+                    if (triggerToken) result.RENEWAL_TRIGGER_TOKEN = triggerToken;
                     const github = document.getElementById('wiz-github-token').value;
                     if (github) result.GITHUB_TOKEN = github;
                     const repo = document.getElementById('wiz-github-repo').value;
