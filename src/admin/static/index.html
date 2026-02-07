@@ -4161,9 +4161,8 @@
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
             }
 
-            // Delay refresh so status messages stay visible
-            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim); font-size: 0.8rem;">Dashboard refreshing in 5s...</span>`;
-            setTimeout(() => loadStatus(), 5000);
+            // Done — let periodic poll handle state refresh
+            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ All steps completed</span>`;
         }
 
         async function returnToOK() {
@@ -4211,9 +4210,8 @@
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
                 }
 
-                // Single refresh after everything completes
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Done — refreshing dashboard...</span>`;
-                await loadStatus();
+                // Done — let periodic poll handle state refresh
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ All steps completed</span>`;
 
             } catch (error) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
