@@ -4161,8 +4161,9 @@
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
             }
 
-            // Done — let periodic poll handle state refresh
+            // Single refresh after short delay
             if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ All steps completed</span>`;
+            setTimeout(() => loadStatus(), 3000);
         }
 
         async function returnToOK() {
@@ -4210,8 +4211,9 @@
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
                 }
 
-                // Done — let periodic poll handle state refresh
+                // Single refresh after short delay
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ All steps completed</span>`;
+                setTimeout(() => loadStatus(), 3000);
 
             } catch (error) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
