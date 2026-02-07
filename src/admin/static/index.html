@@ -1486,6 +1486,17 @@
         const AUTO_PROVIDED = ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'];
         // Combined known secrets (for sync/clear operations)
         const KNOWN_SECRETS = [...GITHUB_SECRETS, ...GITHUB_VARS, ...LOCAL_ONLY, ...AUTO_PROVIDED];
+        // Env var names that feed the master config JSON (mirrors buildMasterConfigJson)
+        const MASTER_CONFIG_ENVVARS = [
+            'PROJECT_NAME', 'OPERATOR_EMAIL', 'OPERATOR_SMS',
+            'RESEND_API_KEY', 'RESEND_FROM_EMAIL',
+            'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
+            'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET',
+            'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD',
+            'GITHUB_TOKEN', 'GITHUB_REPOSITORY',
+            'PERSISTENCE_API_URL', 'PERSISTENCE_API_KEY',
+            'RENEWAL_SECRET',
+        ];
 
         function getSecretTier(name) {
             if (AUTO_PROVIDED.includes(name)) return 'auto';
@@ -1678,27 +1689,29 @@
             const masterKeyCount = Object.keys(masterConfig).length;
 
             html += `
-                <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid ${ghMasterSet ? 'var(--warning)' : 'var(--border)'}; border-radius: 8px; background: ${ghMasterSet ? 'rgba(255,193,7,0.08)' : 'transparent'};">
+                <div id="master-secret-panel" style="margin-top: 1.5rem; padding: 1rem; border: 2px solid ${ghMasterSet ? 'var(--warning)' : 'var(--border)'}; border-radius: 8px; background: ${ghMasterSet ? 'rgba(255,193,7,0.08)' : 'transparent'};">
                     <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
                         <strong style="font-size: 1rem;">🔑 Master Secret: <code>CONTINUITY_CONFIG</code></strong>
                         <span style="font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 4px; background: ${ghMasterSet ? 'var(--warning)' : 'var(--bg-input)'}; color: ${ghMasterSet ? '#000' : 'var(--text-dim)'};">
                             ${ghMasterSet ? '✅ SET ON GITHUB' : 'NOT SET'}
                         </span>
+                        <span id="master-status-badge" style="font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 4px; display: none; background: var(--danger); color: #fff;"></span>
                         ${!ghMasterSet ? '<span style="font-size: 0.75rem; color: var(--text-dim); font-style: italic;">(optional — individual secrets work fine without it)</span>' : ''}
                     </div>
                     <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
                         ${ghMasterSet
-                    ? `<strong style="color: var(--warning);">⚠️ Active — overrides individual secrets in CI.</strong><br>
-                               If you changed secrets above, re-generate and push to update it.<br>
-                               <em>Individual env vars only fill gaps not covered by this JSON.</em>`
-                    : `Bundles all adapter credentials into a single GitHub secret. <strong>Not required</strong> — you can push secrets individually instead.<br>
+                    ? `<strong style="color: var(--warning);">⚠️ Active — overrides individual secrets in CI.</strong>
+                               Bundles secrets only — does not include GitHub Variables (${GITHUB_VARS.join(', ')}).<br>
+                               <em>If you modify secrets above, re-generate and push to keep the master in sync.</em>`
+                    : `Bundles all adapter credentials (secrets only, not variables) into a single GitHub secret.<br>
+                               <strong>Not required</strong> — you can push secrets individually instead.
                                <em>Useful if you prefer one secret over many. Priority: CONTINUITY_CONFIG → individual env vars.</em>`
                 }
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
-                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials configured"' : `title="${masterKeyCount} credentials would be bundled"`}>📋 Preview JSON (<span id="master-key-count">${masterKeyCount} keys</span>)</button>
-                        <button class="btn primary" id="master-push-btn" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials to push"' : `title="Push ${masterKeyCount} credentials as CONTINUITY_CONFIG — GitHub only, does not save to .env"`}>☁️ Push to GitHub</button>
-                        ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.3rem 0.75rem;font-size:0.8rem;" title="Remove CONTINUITY_CONFIG from GitHub">🗑️ Remove from GitHub</button>` : ''}
+                        <button class="btn" id="master-preview-btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials configured yet"' : `title="Preview the ${masterKeyCount} credentials that would be bundled into CONTINUITY_CONFIG"`}>📋 Preview JSON (<span id="master-key-count">${masterKeyCount} keys</span>)</button>
+                        <button class="btn primary" id="master-push-btn" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials to push"' : `title="Push ${masterKeyCount} credentials as CONTINUITY_CONFIG to GitHub (does not save to local .env)"`}>☁️ Push to GitHub</button>
+                        ${ghMasterSet ? `<button class="btn" id="master-remove-btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.3rem 0.75rem;font-size:0.8rem;" title="Remove CONTINUITY_CONFIG from GitHub">🗑️ Remove from GitHub</button>` : ''}
                     </div>
                 </div>
             `;
@@ -1713,8 +1726,8 @@
                             <button type="button" class="target-btn" data-target="local" onclick="selectTarget('local')">Local Only</button>
                             <button type="button" class="target-btn" data-target="github" onclick="selectTarget('github')">GitHub Only</button>
                         </div>
-                        <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
-                        <span id="sync-pending-badge" style="font-size: 0.8rem; color: var(--warning); ${totalPending > 0 ? '' : 'display:none;'}" title="${pendingSecrets} secret(s) + ${pendingVars} variable(s) exist locally but not on GitHub">${totalPending > 0 ? `⚠️ ${totalPending} to sync` : ''}</span>
+                        <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)" disabled>💾 Save & Push</button>
+                        <span id="sync-pending-badge" style="font-size: 0.8rem; color: var(--warning); ${totalPending > 0 ? '' : 'display:none;'}"></span>
                     </div>
                     <div style="margin-top: 0.75rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
@@ -1754,6 +1767,9 @@
             // Listen for changes
             document.getElementById('secrets-form').addEventListener('input', checkSecretsDirty);
             document.getElementById('secrets-form').addEventListener('change', checkSecretsDirty);
+
+            // Run initial state evaluation (enable/disable Save button, set badges)
+            checkSecretsDirty();
         }
 
         let secretsInitialValues = {};
@@ -1764,51 +1780,78 @@
             const fields = document.querySelectorAll('#secrets-form [data-secret-name]');
             let changed = 0;
             let changedNames = [];
+            let masterChanged = 0;
             fields.forEach(el => {
-                if (el.value !== (secretsInitialValues[el.dataset.secretName] ?? '')) {
+                const name = el.dataset.secretName;
+                if (el.value !== (secretsInitialValues[name] ?? '')) {
                     changed++;
-                    changedNames.push(el.dataset.secretName);
+                    changedNames.push(name);
+                    // Track changes to fields that feed the master config
+                    if (MASTER_CONFIG_ENVVARS.includes(name)) masterChanged++;
                 }
             });
             secretsDirty = changed > 0;
 
-            // Live-update the pending badge next to Save & Push
+            // --- Save & Push button: enable/disable ---
+            const saveBtn = document.getElementById('save-secrets-btn');
+
+            // Count unsynced secrets (local .env → GitHub)
+            let unsyncedSecrets = 0;
+            let unsyncedVars = 0;
+            for (const name of GITHUB_SECRETS) {
+                if (AUTO_PROVIDED.includes(name) || name === 'CONTINUITY_CONFIG') continue;
+                if (envData[name] && !ghSecrets.includes(name)) unsyncedSecrets++;
+            }
+            for (const name of GITHUB_VARS) {
+                if (envData[name] && !ghVariables.includes(name)) unsyncedVars++;
+            }
+            // Count form changes that are NEW pushable items (not already counted as unsynced)
+            let newFormChanges = 0;
+            for (const name of changedNames) {
+                const tier = getSecretTier(name);
+                if (tier === 'auto') continue;
+                const alreadyCounted = (tier === 'secret' && !ghSecrets.includes(name) && envData[name])
+                    || (tier === 'var' && !ghVariables.includes(name) && envData[name]);
+                if (!alreadyCounted) newFormChanges++;
+            }
+
+            const totalActionable = unsyncedSecrets + unsyncedVars + newFormChanges;
+            const hasAnythingToDo = changed > 0 || totalActionable > 0;
+
+            if (saveBtn) {
+                saveBtn.disabled = !hasAnythingToDo;
+                if (saveBtn.disabled) {
+                    saveBtn.title = 'No changes to save and all values are synced to GitHub';
+                } else {
+                    saveBtn.title = '';
+                }
+            }
+
+            // --- Pending badge: precise message ---
             const badge = document.getElementById('sync-pending-badge');
             if (badge) {
-                // Recompute: pending unsynced + form changes
-                let pending = 0;
-                for (const name of GITHUB_SECRETS) {
-                    if (AUTO_PROVIDED.includes(name) || name === 'CONTINUITY_CONFIG') continue;
-                    const localVal = envData[name];
-                    if (localVal && !ghSecrets.includes(name)) pending++;
-                }
-                for (const name of GITHUB_VARS) {
-                    const localVal = envData[name];
-                    if (localVal && !ghVariables.includes(name)) pending++;
-                }
-                // Add form changes not already counted
-                for (const name of changedNames) {
-                    const tier = getSecretTier(name);
-                    if (tier === 'auto') continue;
-                    const alreadyCounted = (tier === 'secret' && !ghSecrets.includes(name) && envData[name])
-                        || (tier === 'var' && !ghVariables.includes(name) && envData[name]);
-                    if (!alreadyCounted) pending++;
-                }
-                if (pending > 0) {
-                    badge.textContent = `⚠️ ${pending} to sync`;
-                    badge.style.display = '';
-                } else if (changed > 0) {
-                    badge.textContent = `✏️ ${changed} changed`;
+                const parts = [];
+                if (unsyncedSecrets > 0) parts.push(`${unsyncedSecrets} secret(s) local only — not yet on GitHub`);
+                if (unsyncedVars > 0) parts.push(`${unsyncedVars} variable(s) local only — not yet on GitHub`);
+                if (changed > 0 && parts.length === 0) parts.push(`${changed} value(s) modified in form`);
+                else if (changed > 0) parts.push(`${changed} value(s) modified`);
+
+                if (parts.length > 0) {
+                    badge.textContent = '⚠️ ' + parts.join(' · ');
+                    badge.title = parts.join('\n');
                     badge.style.display = '';
                 } else {
                     badge.style.display = 'none';
                 }
             }
 
-            // Live-update master secret key count
+            // --- Master secret: outdated detection + key count ---
+            const masterStatusBadge = document.getElementById('master-status-badge');
             const masterBadge = document.getElementById('master-key-count');
+            const ghMasterIsSet = ghSecrets.includes('CONTINUITY_CONFIG');
+
             if (masterBadge) {
-                // Merge current form values on top of envData for the count
+                // Merge live form values on top of envData for key count
                 const liveEnv = { ...envData };
                 fields.forEach(el => {
                     if (el.value) liveEnv[el.dataset.secretName] = el.value;
@@ -1819,6 +1862,15 @@
                 envData = oldEnvData;
                 const count = Object.keys(config).length;
                 masterBadge.textContent = `${count} keys`;
+            }
+
+            if (masterStatusBadge) {
+                if (ghMasterIsSet && masterChanged > 0) {
+                    masterStatusBadge.textContent = `⚠️ OUTDATED — ${masterChanged} secret(s) changed since last push`;
+                    masterStatusBadge.style.display = '';
+                } else {
+                    masterStatusBadge.style.display = 'none';
+                }
             }
         }
 
@@ -2047,11 +2099,16 @@
             const label = target === 'local' ? 'local .env' : target === 'github' ? 'GitHub' : 'local & GitHub';
             if (!confirm(`Remove ${name} from ${label}?\n\nThis cannot be undone.`)) return;
 
-            // Put affected row in loading state
+            // Put affected row or master panel in loading state
             const rowInput = document.querySelector(`[data-secret-name="${name}"]`);
             if (rowInput) {
                 const rowEl = rowInput.closest('.secret-config-row');
                 if (rowEl) { rowEl.style.opacity = '0.5'; rowEl.style.pointerEvents = 'none'; }
+            }
+            // Handle master secret panel separately (CONTINUITY_CONFIG has no regular row)
+            if (name === 'CONTINUITY_CONFIG') {
+                const panel = document.getElementById('master-secret-panel');
+                if (panel) { panel.style.opacity = '0.5'; panel.style.pointerEvents = 'none'; }
             }
 
             const output = document.getElementById('secrets-output');
@@ -2168,7 +2225,7 @@
             }
 
             if (Object.keys(secrets).length === 0) {
-                alert('Nothing to push — no changes and all local values are already synced to GitHub.');
+                // Should not happen since the button is disabled, but safety check
                 return;
             }
 
