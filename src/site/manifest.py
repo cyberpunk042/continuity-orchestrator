@@ -125,7 +125,7 @@ class ContentManifest:
             with open(path) as f:
                 data = yaml.safe_load(f)
             
-            return cls._from_dict(data)
+            return cls._from_dict(data, manifest_path=path)
         except Exception as e:
             logger.error(f"Failed to load manifest: {e}")
             return cls._empty()
@@ -145,7 +145,7 @@ class ContentManifest:
         )
     
     @classmethod
-    def _from_dict(cls, data: Dict[str, Any]) -> "ContentManifest":
+    def _from_dict(cls, data: Dict[str, Any], manifest_path: Optional[Path] = None) -> "ContentManifest":
         """Parse manifest from dictionary."""
         articles = []
         for a in data.get("articles", []):
@@ -179,7 +179,8 @@ class ContentManifest:
         
         # Auto-discover articles from content/articles/ directory
         known_slugs = {a.slug for a in articles}
-        articles_dir = cls._default_path().parent / "articles"
+        manifest_dir = manifest_path.parent if manifest_path else cls._default_path().parent
+        articles_dir = manifest_dir / "articles"
         if articles_dir.exists():
             for json_file in sorted(articles_dir.glob("*.json")):
                 slug = json_file.stem

@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-07T05:24:47.769927+00:00",
+        "updated_at_iso": "2026-02-07T05:18:41.235656Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -31,23 +31,37 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "OK",
-        "state_entered_at_iso": "2026-02-07T05:24:47.769927+00:00",
-        "last_transition_rule_id": "MANUAL_RESET",
+        "state": "PRE_RELEASE",
+        "state_entered_at_iso": "2026-02-07T05:18:40.739229Z",
+        "last_transition_rule_id": "R12_ESCALATE_TO_PRE_RELEASE",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {},
-        "last_tick_actions": []
+        "executed": {
+            "notify_custodians_email": {
+                "status": "ok",
+                "last_delivery_id": "c7da3760-cad7-4220-b126-1a8a150c443d",
+                "last_executed_iso": "2026-02-07T05:18:41.234977+00:00"
+            },
+            "notify_watchers_webhook": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-07T05:18:41.235442+00:00"
+            }
+        },
+        "last_tick_actions": [
+            "notify_custodians_email",
+            "notify_watchers_webhook"
+        ]
     },
     "release": {
-        "triggered": false,
+        "triggered": true,
         "trigger_time_iso": "2026-02-07T05:18:40.432790+00:00",
         "target_stage": "FULL",
         "delay_minutes": 60,
         "delay_scope": "full",
         "execute_after_iso": "2026-02-07T06:18:40.432790+00:00",
-        "client_token": null
+        "client_token": "C1Icbq9IDKQf0eN15MLyCg"
     },
     "integrations": {
         "enabled_adapters": {
