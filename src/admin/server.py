@@ -63,27 +63,38 @@ def create_app() -> Flask:
                         env[key] = value
         return env
 
-    def _trigger_mirror_sync_bg(mode: str = "all") -> None:
+    def _trigger_mirror_sync_bg(mode: str = "all") -> bool:
         """Fire mirror-sync in the background if mirroring is enabled.
         
         Called after git sync or secrets push so the mirror stays up to date.
         After the sync, auto-commits the state file so it doesn't leave a
         dirty working tree (which would cause an infinite sync loop).
+        Uses a lock file so the UI can detect syncing in progress.
         
         Args:
             mode: 'all', 'code-only', or 'secrets-only'
+        Returns:
+            True if mirror sync was triggered, False if skipped.
         """
         env = _fresh_env()
         if env.get("MIRROR_ENABLED", "").lower() != "true":
-            return
+            return False
+        lock = project_root / "state" / ".mirror_sync_lock"
+        if lock.exists():
+            logger.info("[mirror-bg] Sync already in progress, skipping")
+            return False
         flag = f"--{mode}" if mode != "all" else ""
-        # Shell script: run mirror-sync, then auto-commit state to avoid dirty loop
+        lock_path = str(lock)
+        # Shell script: lock → mirror-sync → auto-commit state → unlock
         script = (
+            f'touch "{lock_path}"; '
             f'python -m src.main mirror-sync {flag} 2>/dev/null; '
-            'if git diff --quiet state/mirror_status.json 2>/dev/null; then exit 0; fi; '
+            'if ! git diff --quiet state/mirror_status.json 2>/dev/null; then '
             'git add state/mirror_status.json && '
             'git commit -m "mirror: update sync state" --no-verify && '
-            'git push 2>/dev/null || true'
+            'git push 2>/dev/null || true; '
+            'fi; '
+            f'rm -f "{lock_path}"'
         )
         logger.info("[mirror-bg] Triggering background mirror-sync (%s)", mode)
         try:
@@ -94,8 +105,11 @@ def create_app() -> Flask:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            return True
         except Exception as e:
             logger.warning("[mirror-bg] Failed to start mirror-sync: %s", e)
+            lock.unlink(missing_ok=True)
+            return False
 
     def _gh_repo_flag() -> list:
         """Get -R repo flag for gh CLI commands.
@@ -1305,11 +1319,13 @@ read -p "Press Enter to close..."
                         "steps": steps,
                     })
                 # Only trigger mirror sync if something was actually pushed
+                mirror_triggered = False
                 if "Everything up-to-date" not in (pushed or ""):
-                    _trigger_mirror_sync_bg("code-only")
+                    mirror_triggered = _trigger_mirror_sync_bg("code-only")
                 return jsonify({
                     "success": True,
                     "message": msg,
+                    "mirror_sync_triggered": mirror_triggered,
                     "steps": steps,
                 })
 
@@ -1334,11 +1350,12 @@ read -p "Press Enter to close..."
             logger.info("[git-sync] ✓ Sync complete")
 
             # Auto-sync code to mirror if enabled
-            _trigger_mirror_sync_bg("code-only")
+            mirror_triggered = _trigger_mirror_sync_bg("code-only")
 
             return jsonify({
                 "success": True,
                 "message": "Committed and pushed successfully",
+                "mirror_sync_triggered": mirror_triggered,
                 "steps": steps,
             })
         except subprocess.TimeoutExpired as e:
@@ -1367,12 +1384,15 @@ read -p "Press Enter to close..."
                 timeout=15,
                 env=_fresh_env(),
             )
+            lock = project_root / "state" / ".mirror_sync_lock"
             if result.returncode == 0:
                 import json as _json
-                return jsonify(_json.loads(result.stdout))
-            return jsonify({"enabled": False, "error": result.stderr.strip()})
+                data = _json.loads(result.stdout)
+                data["syncing"] = lock.exists()
+                return jsonify(data)
+            return jsonify({"enabled": False, "syncing": lock.exists(), "error": result.stderr.strip()})
         except Exception as e:
-            return jsonify({"enabled": False, "error": str(e)})
+            return jsonify({"enabled": False, "syncing": False, "error": str(e)})
 
     @app.route("/api/mirror/sync/stream")
     def api_mirror_sync_stream():

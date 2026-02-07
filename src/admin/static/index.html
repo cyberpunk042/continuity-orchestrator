@@ -87,6 +87,18 @@
             }
         }
 
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
         @keyframes shimmer {
             0% {
                 background-position: -200% 0;
@@ -2927,7 +2939,15 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ ${data.message}</span>`;
+                    let msg = `✅ ${data.message}`;
+                    if (data.mirror_sync_triggered) {
+                        msg += ' · 🪞 Mirror sync in progress…';
+                        // Refresh mirror panel after a short delay to pick up syncing state
+                        setTimeout(loadMirrorStatus, 2000);
+                        // And again after sync likely completes
+                        setTimeout(loadMirrorStatus, 15000);
+                    }
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">${msg}</span>`;
                 } else {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ ${data.error || 'Failed'}</span>`;
                 }
@@ -3256,19 +3276,29 @@
                     html += `</div>`;
                 }
 
+                // Syncing banner (shown when background sync is in progress)
+                if (data.syncing) {
+                    html += `
+                        <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: rgba(99,102,241,0.12); border-radius: 6px; margin-bottom: 0.5rem; border: 1px solid rgba(99,102,241,0.25);">
+                            <span style="animation: pulse 1.5s ease-in-out infinite;">🔄</span>
+                            <span style="font-size: 0.8rem; color: var(--info);">Mirror sync in progress…</span>
+                        </div>`;
+                }
+
                 // Action buttons row 1: Sync
+                const syncDisabled = data.syncing ? 'disabled title="Sync already in progress"' : '';
                 html += `
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="btn primary" onclick="mirrorStream('all')" id="mirror-sync-all-btn" style="flex: 1; font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn primary" onclick="mirrorStream('all')" id="mirror-sync-all-btn" ${syncDisabled} style="flex: 1; font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             🔄 Sync All
                         </button>
-                        <button class="btn" onclick="mirrorStream('code')" id="mirror-sync-code-btn" title="Sync code only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn" onclick="mirrorStream('code')" id="mirror-sync-code-btn" title="Sync code only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             📦 Code
                         </button>
-                        <button class="btn" onclick="mirrorStream('secrets')" id="mirror-sync-secrets-btn" title="Sync secrets only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn" onclick="mirrorStream('secrets')" id="mirror-sync-secrets-btn" title="Sync secrets only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             🔐 Secrets
                         </button>
-                        <button class="btn" onclick="mirrorStream('vars')" id="mirror-sync-vars-btn" title="Sync variables only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn" onclick="mirrorStream('vars')" id="mirror-sync-vars-btn" title="Sync variables only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             📋 Vars
                         </button>
                     </div>`;

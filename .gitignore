@@ -41,3 +41,6 @@ Thumbs.db
 # Generated (rebuilt by build-site)
 public/
 temp/
+
+# Runtime state (not tracked)
+state/.mirror_sync_lock
