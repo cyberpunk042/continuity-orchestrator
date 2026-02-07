@@ -1644,7 +1644,7 @@
                     }
 
                     html += `
-                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr auto 80px 95px 32px; gap: 0.5rem; align-items: center;">
+                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr auto 110px 110px; gap: 0.5rem; align-items: center;">
                             <div class="secret-config-name">
                                 ${secret.name}
                                 ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
@@ -1653,13 +1653,12 @@
                                 ${inputHtml}
                             </div>
                             <div>${actionBtn}</div>
-                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
+                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem; display: flex; align-items: center; gap: 0.25rem; justify-content: center;">
                                 <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
+                                ${localSet ? `<button class="btn" onclick="markForDeletion('${secret.name}')" style="padding:0.15rem 0.35rem;font-size:0.7rem;" title="Mark ${secret.name} for deletion from local .env (applied on Save)">🗑️</button>` : ''}
                             </div>
-                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
+                            <div class="secret-config-status" style="text-align: center; font-size: 0.8rem; display: flex; align-items: center; gap: 0.25rem; justify-content: center;">
                                 ${ghColumn}
-                            </div>
-                            <div style="text-align: center;">
                                 ${canDeleteGh ? `<button class="btn" onclick="removeSecret('${secret.name}','github','${deleteKind}')" style="padding:0.15rem 0.35rem;font-size:0.7rem;" title="Remove ${secret.name} from GitHub">🗑️</button>` : ''}
                             </div>
                         </div>
@@ -1764,9 +1763,20 @@
             secretsDirty = false;
             secretsLoaded = true;
 
-            // Listen for changes
-            document.getElementById('secrets-form').addEventListener('input', checkSecretsDirty);
-            document.getElementById('secrets-form').addEventListener('change', checkSecretsDirty);
+            // Listen for changes — also un-marks deletion when user types
+            document.getElementById('secrets-form').addEventListener('input', (e) => {
+                if (e.target.dataset && e.target.dataset.secretName && e.target.dataset.markedDelete) {
+                    // User started typing in a field marked for deletion → un-mark it
+                    unmarkDeletion(e.target.dataset.secretName);
+                }
+                checkSecretsDirty();
+            });
+            document.getElementById('secrets-form').addEventListener('change', (e) => {
+                if (e.target.dataset && e.target.dataset.secretName && e.target.dataset.markedDelete) {
+                    unmarkDeletion(e.target.dataset.secretName);
+                }
+                checkSecretsDirty();
+            });
 
             // Run initial state evaluation (enable/disable Save button, set badges)
             checkSecretsDirty();
@@ -1781,12 +1791,18 @@
             let changed = 0;
             let changedNames = [];
             let masterChanged = 0;
+            let deletionCount = 0;
             fields.forEach(el => {
                 const name = el.dataset.secretName;
-                if (el.value !== (secretsInitialValues[name] ?? '')) {
+                const isMarkedDelete = el.dataset.markedDelete === 'true';
+                if (isMarkedDelete) {
+                    changed++;
+                    deletionCount++;
+                    changedNames.push(name);
+                    if (MASTER_CONFIG_ENVVARS.includes(name)) masterChanged++;
+                } else if (el.value !== (secretsInitialValues[name] ?? '')) {
                     changed++;
                     changedNames.push(name);
-                    // Track changes to fields that feed the master config
                     if (MASTER_CONFIG_ENVVARS.includes(name)) masterChanged++;
                 }
             });
@@ -1833,8 +1849,11 @@
                 const parts = [];
                 if (unsyncedSecrets > 0) parts.push(`${unsyncedSecrets} secret(s) local only — not yet on GitHub`);
                 if (unsyncedVars > 0) parts.push(`${unsyncedVars} variable(s) local only — not yet on GitHub`);
-                if (changed > 0 && parts.length === 0) parts.push(`${changed} value(s) modified in form`);
-                else if (changed > 0) parts.push(`${changed} value(s) modified`);
+                if (deletionCount > 0) parts.push(`${deletionCount} marked for deletion`);
+                if (changed > 0 && deletionCount < changed) {
+                    const modified = changed - deletionCount;
+                    if (modified > 0) parts.push(`${modified} value(s) modified`);
+                }
 
                 if (parts.length > 0) {
                     badge.textContent = '⚠️ ' + parts.join(' · ');
@@ -1872,6 +1891,67 @@
                     masterStatusBadge.style.display = 'none';
                 }
             }
+        }
+
+        function markForDeletion(name) {
+            const input = document.querySelector(`[data-secret-name="${name}"]`);
+            if (!input) return;
+            input.dataset.markedDelete = 'true';
+            input.value = '';
+            input.disabled = true;
+            input.placeholder = '🗑️ Will be deleted on Save';
+            input.style.borderColor = 'var(--danger)';
+            input.style.opacity = '0.5';
+
+            const row = input.closest('.secret-config-row');
+            if (row) {
+                // Strikethrough the name
+                const nameEl = row.querySelector('.secret-config-name');
+                if (nameEl) nameEl.style.textDecoration = 'line-through';
+                // Replace the local delete button with an undo button
+                const localStatus = row.querySelectorAll('.secret-config-status')[0];
+                if (localStatus) {
+                    localStatus.innerHTML = `
+                        <div title="Marked for deletion" style="color: var(--danger);">🗑️ Delete</div>
+                        <button class="btn" onclick="unmarkDeletion('${name}')" style="padding:0.15rem 0.35rem;font-size:0.7rem;" title="Undo: keep ${name} in local .env">↩️</button>
+                    `;
+                }
+            }
+            checkSecretsDirty();
+        }
+
+        function unmarkDeletion(name) {
+            const input = document.querySelector(`[data-secret-name="${name}"]`);
+            if (!input) return;
+            delete input.dataset.markedDelete;
+            input.disabled = false;
+            input.style.borderColor = '';
+            input.style.opacity = '';
+            // Restore original placeholder and value
+            const localSet = envData[name] && envData[name].length > 0;
+            const nonSensitive = ['GITHUB_REPOSITORY', 'OPERATOR_EMAIL', 'RESEND_FROM_EMAIL',
+                'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'PROJECT_NAME',
+                'REDDIT_USERNAME', 'TWILIO_ACCOUNT_SID', 'REDDIT_CLIENT_ID',
+                'ARCHIVE_URL', 'WEBHOOK_TIMEOUT', 'DEPLOY_MODE',
+                'PERSISTENCE_API_URL'];
+            const isSensitive = !nonSensitive.includes(name);
+            input.placeholder = localSet && isSensitive ? '••••••••' : 'Enter value...';
+            if (!isSensitive && localSet) input.value = envData[name];
+
+            const row = input.closest('.secret-config-row');
+            if (row) {
+                const nameEl = row.querySelector('.secret-config-name');
+                if (nameEl) nameEl.style.textDecoration = '';
+                // Restore local status with delete button
+                const localStatus = row.querySelectorAll('.secret-config-status')[0];
+                if (localStatus) {
+                    localStatus.innerHTML = `
+                        <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
+                        ${localSet ? `<button class="btn" onclick="markForDeletion('${name}')" style="padding:0.15rem 0.35rem;font-size:0.7rem;" title="Mark ${name} for deletion from local .env (applied on Save)">🗑️</button>` : ''}
+                    `;
+                }
+            }
+            checkSecretsDirty();
         }
 
         function refreshSecrets() {
@@ -2195,12 +2275,15 @@
             const inputs = document.querySelectorAll('[data-secret-name]');
             const gitSyncChecked = document.getElementById('secrets-git-sync')?.checked ?? false;
 
-            // Only collect fields that were actually changed
+            // Only collect fields that were actually changed or marked for deletion
             const secrets = {};
+            const deletions = [];
             inputs.forEach(input => {
                 const name = input.dataset.secretName;
                 const initial = secretsInitialValues[name] ?? '';
-                if (input.value && input.value !== initial) {
+                if (input.dataset.markedDelete === 'true') {
+                    deletions.push(name);
+                } else if (input.value && input.value !== initial) {
                     secrets[name] = input.value;
                 }
             });
@@ -2224,7 +2307,7 @@
                 }
             }
 
-            if (Object.keys(secrets).length === 0) {
+            if (Object.keys(secrets).length === 0 && deletions.length === 0) {
                 // Should not happen since the button is disabled, but safety check
                 return;
             }
@@ -2248,13 +2331,14 @@
             const output = document.getElementById('secrets-output');
             const terminal = document.getElementById('secrets-terminal');
 
+            const actionCount = Object.keys(secrets).length + deletions.length;
             const targetLabel = target === 'both' ? 'local & GitHub' : target;
             output.style.display = 'block';
             terminal.className = 'terminal';
-            terminal.textContent = `Saving ${Object.keys(secrets).length} value(s) to ${targetLabel}...\n`;
+            terminal.textContent = `Saving ${actionCount} change(s) to ${targetLabel}...\n`;
 
             // Put affected rows in loading state
-            for (const name of Object.keys(secrets)) {
+            for (const name of [...Object.keys(secrets), ...deletions]) {
                 const row = document.querySelector(`[data-secret-name="${name}"]`);
                 if (row) {
                     const rowEl = row.closest('.secret-config-row');
@@ -2270,6 +2354,7 @@
                         secrets: secretsForGh,
                         variables: variablesForGh,
                         env_values: (target === 'both' || target === 'local') ? secrets : {},
+                        deletions: (target === 'both' || target === 'local') ? deletions : [],
                         push_to_github: ghPush,
                         save_to_env: target === 'both' || target === 'local',
                         exclude_from_github: AUTO_PROVIDED,
@@ -2290,7 +2375,11 @@
 
                 // Show env save status
                 if (data.env_saved) {
-                    output_text += `📁 Saved to .env: ${Object.keys(secrets).join(', ')}\n`;
+                    const savedKeys = Object.keys(secrets);
+                    if (savedKeys.length > 0) output_text += `📁 Saved to .env: ${savedKeys.join(', ')}\n`;
+                    if (data.deletions_applied && data.deletions_applied.length > 0) {
+                        output_text += `🗑️ Deleted from .env: ${data.deletions_applied.join(', ')}\n`;
+                    }
                 }
 
                 // Show GitHub push results (secrets + variables)

@@ -417,6 +417,7 @@ def create_app() -> Flask:
             secrets: dict of name->value for GitHub secrets (gh secret set)
             variables: dict of name->value for GitHub variables (gh variable set)
             env_values: dict of name->value for .env saving (all values)
+            deletions: list of names to delete from .env
             push_to_github: bool
             save_to_env: bool
             exclude_from_github: list of names to skip for GitHub push
@@ -425,6 +426,7 @@ def create_app() -> Flask:
         secrets = data.get("secrets", {})
         variables = data.get("variables", {})
         env_values = data.get("env_values", {})
+        deletions = data.get("deletions", [])
         push_to_github = data.get("push_to_github", True)
         save_to_env = data.get("save_to_env", True)
         exclude_from_github = set(data.get("exclude_from_github", []))
@@ -432,9 +434,10 @@ def create_app() -> Flask:
         # For .env saving: use env_values if provided, otherwise fall back to secrets+variables
         all_values = env_values if env_values else {**secrets, **variables}
         results = []
+        deletions_applied = []
         
         # First, save to .env file
-        if save_to_env and all_values:
+        if save_to_env and (all_values or deletions):
             env_file = project_root / ".env"
             existing = {}
             if env_file.exists():
@@ -448,6 +451,12 @@ def create_app() -> Flask:
             for name, value in all_values.items():
                 if value:
                     existing[name] = f'"{value}"' if " " in value or "=" in value else value
+            
+            # Apply deletions
+            for name in deletions:
+                if name in existing:
+                    del existing[name]
+                    deletions_applied.append(name)
             
             with open(env_file, "w") as f:
                 for key, value in sorted(existing.items()):
@@ -529,6 +538,7 @@ def create_app() -> Flask:
         
         return jsonify({
             "env_saved": save_to_env,
+            "deletions_applied": deletions_applied,
             "results": results,
             "all_success": all(r["success"] for r in results) if results else True,
         })
