@@ -136,7 +136,7 @@ def create_app() -> Flask:
             "test email": ["python", "-m", "src.main", "test", "email"],
             "test sms": ["python", "-m", "src.main", "test", "sms"],
             # Immediate FULL disclosure (no delay)
-            "trigger-release-full": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "0", "--silent"],
+            "trigger-release-full": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "0"],
             # Shadow mode: stealth trigger with delay (same as entering RELEASE_SECRET via public site)
             "trigger-shadow-0": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "0", "--silent"],
             "trigger-shadow-30": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "30", "--silent"],

@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-07T05:06:13.119388+00:00",
+        "updated_at_iso": "2026-02-07T04:59:30.019252Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -31,14 +31,52 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "OK",
-        "state_entered_at_iso": "2026-02-07T05:06:13.119388+00:00",
-        "last_transition_rule_id": "MANUAL_RESET",
+        "state": "FULL",
+        "state_entered_at_iso": "2026-02-07T04:59:28.539092+00:00",
+        "last_transition_rule_id": "MANUAL_TRIGGER",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {},
-        "last_tick_actions": []
+        "executed": {
+            "post_x_full": {
+                "status": "ok",
+                "last_delivery_id": "mock_37edddde",
+                "last_executed_iso": "2026-02-07T04:59:29.149380+00:00"
+            },
+            "post_reddit_full": {
+                "status": "ok",
+                "last_delivery_id": "mock_4648f471",
+                "last_executed_iso": "2026-02-07T04:59:29.150124+00:00"
+            },
+            "publish_github_full_documents": {
+                "status": "ok",
+                "last_delivery_id": "github_file_a73ce6dbf336",
+                "last_executed_iso": "2026-02-07T04:59:29.964311+00:00"
+            },
+            "publish_article": {
+                "status": "ok",
+                "last_delivery_id": "site_3f3e64ec",
+                "last_executed_iso": "2026-02-07T04:59:30.017839+00:00"
+            },
+            "notify_all_webhooks": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-07T04:59:30.018510+00:00"
+            },
+            "persist_final_state": {
+                "status": "ok",
+                "last_delivery_id": "mock_170a8820",
+                "last_executed_iso": "2026-02-07T04:59:30.019022+00:00"
+            }
+        },
+        "last_tick_actions": [
+            "post_x_full",
+            "post_reddit_full",
+            "publish_github_full_documents",
+            "publish_article",
+            "notify_all_webhooks",
+            "persist_final_state"
+        ]
     },
     "release": {
         "triggered": false,
@@ -47,7 +85,7 @@
         "delay_minutes": 0,
         "delay_scope": "full",
         "execute_after_iso": "2026-02-07T04:59:28.539092+00:00",
-        "client_token": null
+        "client_token": "oW4AF44RnWQyWM-6p4uFPg"
     },
     "integrations": {
         "enabled_adapters": {
