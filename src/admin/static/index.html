@@ -1604,7 +1604,35 @@
                 }
             }
 
+            // Detect CONTINUITY_CONFIG master secret
+            const masterSet = envData['CONTINUITY_CONFIG'] && envData['CONTINUITY_CONFIG'].length > 0;
+            const ghMasterSet = ghSecrets.includes('CONTINUITY_CONFIG');
+
+            if (masterSet || ghMasterSet) {
+                html += `
+                    <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid var(--warning); border-radius: 8px; background: rgba(255,193,7,0.08);">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <strong style="font-size: 1rem;">🔑 Master Secret Detected: <code>CONTINUITY_CONFIG</code></strong>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                            This is a single JSON blob containing all adapter credentials. <strong>When present, it overrides individual secrets</strong>
+                            (individual env vars still fill gaps not covered by the master).<br>
+                            <em>Priority: CONTINUITY_CONFIG → individual env vars.</em>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
+                            <span>${masterSet ? '✅' : '❌'} Local</span>
+                            <span style="margin: 0 0.25rem;">|</span>
+                            <span>${ghMasterSet ? '✅' : '❌'} GitHub</span>
+                            <span style="flex: 1;"></span>
+                            ${masterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','local')" style="padding:0.2rem 0.5rem;font-size:0.75rem;" title="Remove from .env">🗑️ Clear Local</button>` : ''}
+                            ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.2rem 0.5rem;font-size:0.75rem;" title="Remove from GitHub">🗑️ Clear GitHub</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
             html += `
+                <!-- Save Section -->
                 <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                     <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
                         <label style="color: var(--text-dim);">Save to:</label>
@@ -1621,6 +1649,16 @@
                             <span style="color: var(--text-dim);">🔄 Git sync after save (commit & push all changes)</span>
                             ${!gitTool?.installed ? '<span style="color: var(--warning); font-size: 0.8rem;">⚠️ git not found</span>' : ''}
                         </label>
+                    </div>
+                </div>
+
+                <!-- Manage Section -->
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim); margin-bottom: 0.75rem;">🛠️ Manage</div>
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button class="btn" onclick="syncEnvToGithub()" title="Force re-push all known .env secret values to GitHub">☁️ Sync .env → GitHub</button>
+                        <button class="btn" onclick="clearSecretsPrompt('local')" title="Clear all local .env secret values" style="color: var(--warning);">🗑️ Clear Local Secrets</button>
+                        <button class="btn" onclick="clearSecretsPrompt('github')" title="Remove all GitHub secrets" style="color: var(--danger);">🗑️ Clear GitHub Secrets</button>
                     </div>
                 </div>
                 <style>
@@ -1669,6 +1707,177 @@
         }
 
         // Push secrets
+        // Known secret names (mirrors SECRET_DEFINITIONS in system_status.py)
+        const KNOWN_SECRETS = [
+            'PROJECT_NAME', 'OPERATOR_EMAIL', 'ADAPTER_MOCK_MODE',
+            'RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN',
+            'RESEND_API_KEY', 'RESEND_FROM_EMAIL',
+            'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS',
+            'GITHUB_TOKEN', 'GITHUB_REPOSITORY',
+            'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET',
+            'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD',
+            'ARCHIVE_ENABLED', 'ARCHIVE_URL',
+        ];
+        const AUTO_PROVIDED = ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'];
+
+        async function syncEnvToGithub() {
+            if (!envData || Object.keys(envData).length === 0) {
+                alert('No local .env values found.');
+                return;
+            }
+
+            // Only push known secrets that have values, skip auto-provided
+            const secrets = {};
+            for (const name of KNOWN_SECRETS) {
+                const val = envData[name];
+                if (val && !AUTO_PROVIDED.includes(name)) {
+                    secrets[name] = val;
+                }
+            }
+
+            const count = Object.keys(secrets).length;
+            if (count === 0) {
+                alert('No known secrets with values in .env to sync.');
+                return;
+            }
+
+            if (!confirm(`Push ${count} known secrets from .env → GitHub?\n\nSecrets: ${Object.keys(secrets).join(', ')}\n\nThis will overwrite any existing GitHub secret values.`)) {
+                return;
+            }
+
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
+            output.style.display = 'block';
+            terminal.className = 'terminal';
+            terminal.textContent = `☁️ Syncing ${count} known secret(s) from .env → GitHub...\n`;
+
+            try {
+                const response = await fetch('/api/secrets/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        secrets,
+                        push_to_github: true,
+                        save_to_env: false,
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    terminal.className = 'terminal error';
+                    terminal.textContent = `Error: ${data.error}\n`;
+                    return;
+                }
+
+                let text = '';
+                let ok = 0, fail = 0;
+                for (const r of (data.results || [])) {
+                    if (r.success) {
+                        text += `✅ ${r.name}\n`;
+                        ok++;
+                    } else {
+                        text += `❌ ${r.name}: ${r.error}\n`;
+                        fail++;
+                    }
+                }
+
+                terminal.textContent = `☁️ Sync complete: ${ok} pushed${fail ? `, ${fail} failed` : ''}\n\n${text}`;
+                terminal.className = fail ? 'terminal error' : 'terminal';
+
+                // Refresh to update GitHub column status
+                secretsLoaded = false;
+                appData = null;
+                loadSecretsForm();
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+
+        async function removeSecret(name, target) {
+            const label = target === 'local' ? 'local .env' : target === 'github' ? 'GitHub' : 'local & GitHub';
+            if (!confirm(`Remove ${name} from ${label}?\n\nThis cannot be undone.`)) return;
+
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
+            output.style.display = 'block';
+            terminal.className = 'terminal';
+            terminal.textContent = `🗑️ Removing ${name} from ${label}...\n`;
+
+            try {
+                const response = await fetch('/api/secret/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, target }),
+                });
+                const data = await response.json();
+
+                let text = `🗑️ ${name}:\n`;
+                if (data.local) text += `  Local: ${data.local.success ? '✅ removed' : '❌ ' + data.local.error}\n`;
+                if (data.github) text += `  GitHub: ${data.github.success ? '✅ removed' : '❌ ' + data.github.error}\n`;
+                terminal.textContent = text;
+
+                // Refresh
+                secretsLoaded = false;
+                appData = null;
+                loadSecretsForm();
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+
+        async function clearSecretsPrompt(target) {
+            const label = target === 'local' ? 'local .env' : 'GitHub';
+            const secretsToRemove = target === 'local'
+                ? KNOWN_SECRETS.filter(n => envData[n] && !AUTO_PROVIDED.includes(n))
+                : ghSecrets.filter(n => !AUTO_PROVIDED.includes(n));
+
+            if (secretsToRemove.length === 0) {
+                alert(`No secrets to clear from ${label}.`);
+                return;
+            }
+
+            if (!confirm(`⚠️ DANGER: Remove ${secretsToRemove.length} secrets from ${label}?\n\n${secretsToRemove.join(', ')}\n\nThis cannot be undone!`)) return;
+            if (!confirm(`Are you absolutely sure? This will delete all secret values from ${label}.`)) return;
+
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
+            output.style.display = 'block';
+            terminal.className = 'terminal';
+            terminal.textContent = `🗑️ Clearing ${secretsToRemove.length} secrets from ${label}...\n`;
+
+            let ok = 0, fail = 0;
+            for (const name of secretsToRemove) {
+                try {
+                    const response = await fetch('/api/secret/remove', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, target }),
+                    });
+                    const data = await response.json();
+                    const result = target === 'local' ? data.local : data.github;
+                    if (result?.success) {
+                        terminal.textContent += `✅ ${name}\n`;
+                        ok++;
+                    } else {
+                        terminal.textContent += `❌ ${name}: ${result?.error || 'unknown'}\n`;
+                        fail++;
+                    }
+                } catch (e) {
+                    terminal.textContent += `❌ ${name}: ${e.message}\n`;
+                    fail++;
+                }
+            }
+
+            terminal.textContent += `\n🗑️ Done: ${ok} removed${fail ? `, ${fail} failed` : ''}`;
+            terminal.className = fail ? 'terminal error' : 'terminal';
+
+            // Refresh
+            secretsLoaded = false;
+            appData = null;
+            loadSecretsForm();
+        }
         async function pushSecrets(target = 'both') {
             const inputs = document.querySelectorAll('[data-secret-name]');
             const secrets = {};
@@ -2223,8 +2432,8 @@
                     <div class="form-group">
                         <label class="form-label">Select your deployment method:</label>
                         <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
-                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.deployMode === 'github-pages' ? 'var(--accent-dim)' : 'transparent'};">
-                                <input type="radio" name="deploy-mode" value="github-pages" ${wizardData.deployMode !== 'docker' ? 'checked' : ''} onchange="wizardData.deployMode='github-pages'">
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.DEPLOY_MODE === 'github-pages' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deploy-mode" value="github-pages" ${wizardData.DEPLOY_MODE !== 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='github-pages'">
                                 <div>
                                     <strong>🌐 GitHub Pages</strong> <span style="color: var(--accent);">Recommended</span>
                                     <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
@@ -2233,8 +2442,8 @@
                                     </div>
                                 </div>
                             </label>
-                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.deployMode === 'docker' ? 'var(--accent-dim)' : 'transparent'};">
-                                <input type="radio" name="deploy-mode" value="docker" ${wizardData.deployMode === 'docker' ? 'checked' : ''} onchange="wizardData.deployMode='docker'">
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.DEPLOY_MODE === 'docker' ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deploy-mode" value="docker" ${wizardData.DEPLOY_MODE === 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='docker'">
                                 <div>
                                     <strong>🐳 Docker (Self-Hosted)</strong>
                                     <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
