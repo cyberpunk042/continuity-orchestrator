@@ -439,7 +439,8 @@ def trigger_release(
     execute_after = now + timedelta(minutes=delay)
     
     # Set release config
-    state.release.triggered = True
+    # Only mark as "triggered" for shadow/delayed releases — immediate FULL is not pending
+    state.release.triggered = (delay > 0)
     state.release.trigger_time_iso = now.isoformat()
     state.release.target_stage = stage
     state.release.delay_minutes = delay

@@ -203,22 +203,12 @@ class SiteGenerator:
             status_class = "status-full"
             status_message = "Full disclosure active."
         
-        # Override if release is triggered with a future delay (shadow mode)
+        # Override if release is triggered (shadow mode)
         release_triggered = state.release.triggered if hasattr(state, 'release') else False
         if release_triggered:
-            delay_minutes = getattr(state.release, 'delay_minutes', 0)
-            execute_after_iso = getattr(state.release, 'execute_after_iso', None)
-            is_pending = False
-            if delay_minutes > 0 and execute_after_iso:
-                try:
-                    execute_dt = datetime.fromisoformat(execute_after_iso.replace("Z", "+00:00"))
-                    is_pending = datetime.now(timezone.utc) < execute_dt
-                except Exception:
-                    is_pending = delay_minutes > 0
-            if is_pending:
-                stage = "DELAYED"
-                status_class = "status-delayed"
-                status_message = "Release delayed. Awaiting confirmation."
+            stage = "DELAYED"
+            status_class = "status-delayed"
+            status_message = "Release delayed. Awaiting confirmation."
         
         # Banner from manifest
         banner_html = ""

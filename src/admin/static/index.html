@@ -4061,7 +4061,7 @@
         }
 
         async function triggerRelease() {
-            if (!confirm(
+            const typed = prompt(
                 '💀 TRIGGER FULL DISCLOSURE?\n\n' +
                 '⚠️  THIS IS IRREVERSIBLE IN PRODUCTION.\n\n' +
                 'This will:\n' +
@@ -4069,16 +4069,10 @@
                 '• Set deadline to past (overdue)\n' +
                 '• On next tick: send emails, SMS, tweets, posts\n' +
                 '• On next tick: build & deploy disclosure site\n\n' +
-                'Only proceed if you understand the consequences.'
-            )) return;
-
-            const typed = prompt(
-                '🔐 TYPE "CONFIRM FULL" TO PROCEED:\n\n' +
-                'This is the final safety check.\n' +
-                'Type exactly: CONFIRM FULL'
+                'Type FULL to proceed:'
             );
-            if (typed !== 'CONFIRM FULL') {
-                alert('❌ Cancelled — text did not match.');
+            if (typed !== 'FULL') {
+                if (typed !== null) alert('❌ Cancelled — text did not match.');
                 return;
             }
 
@@ -4146,7 +4140,7 @@
             }
 
             // Build site (fire-and-forget)
-            apiRun('build-site');
+            apiRun('build-site').catch(() => { });
             if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild kicked off (background)</span>`;
 
             // Git sync
@@ -4160,7 +4154,7 @@
             if (syncData.success) {
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
                 // Trigger deploy-site workflow (fire-and-forget)
-                apiRun('deploy-site');
+                apiRun('deploy-site').catch(() => { });
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🚀 Deploy pipeline triggered (background)</span>`;
             } else {
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
@@ -4209,8 +4203,8 @@
                 if (syncData.success) {
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
                     // Rebuild site + trigger deploy (fire-and-forget)
-                    apiRun('build-site');
-                    apiRun('deploy-site');
+                    apiRun('build-site').catch(() => { });
+                    apiRun('deploy-site').catch(() => { });
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
                 } else {
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
