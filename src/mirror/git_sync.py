@@ -135,6 +135,7 @@ def push_all_mirrors(
     mirrors: list,
     project_root: Path,
     branch: str = "main",
+    force: bool = True,
 ) -> dict:
     """
     Push to all mirrors. Returns results per mirror.
@@ -144,7 +145,7 @@ def push_all_mirrors(
     results = {}
 
     for mirror in mirrors:
-        ok, commit, error = push_to_mirror(mirror, project_root, branch)
+        ok, commit, error = push_to_mirror(mirror, project_root, branch, force=force)
         results[mirror.id] = {
             "ok": ok,
             "commit": commit,

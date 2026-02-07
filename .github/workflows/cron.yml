@@ -79,7 +79,18 @@ jobs:
           python -m pip install --upgrade pip --quiet
           pip install -e . --quiet
       
+      - name: Check mirror role
+        id: role
+        run: |
+          ROLE="${{ vars.MIRROR_ROLE }}"
+          echo "mirror_role=${ROLE}" >> $GITHUB_OUTPUT
+          if [ "$ROLE" = "SLAVE" ]; then
+            echo "⏭️ This repo is a SLAVE mirror — skipping full tick."
+            echo "   Only the sentinel workflow should run on slaves."
+          fi
+
       - name: Run continuity tick
+        if: steps.role.outputs.mirror_role != 'SLAVE'
         id: tick
         # ⚠️  Keep in sync with:
         #   - src/admin/static/index.html  → GITHUB_SECRETS array
@@ -111,7 +122,7 @@ jobs:
       
       - name: Commit state and audit changes
         id: commit
-        if: inputs.dry_run != 'true'
+        if: steps.role.outputs.mirror_role != 'SLAVE' && inputs.dry_run != 'true'
         run: |
           if git status --porcelain state/ audit/ | grep -q .; then
             git config user.name "continuity-orchestrator[bot]"
@@ -140,6 +151,7 @@ jobs:
       # Runs on every tick so the mirror is always up to date.
       - name: Sync to mirror repos
         if: |
+          steps.role.outputs.mirror_role != 'SLAVE' &&
           inputs.dry_run != 'true' &&
           vars.MIRROR_ENABLED == 'true'
         env:
@@ -163,8 +175,7 @@ jobs:
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
-          RENEWAL_TRIGGER_TOKEN: ${{ secrets.RENEWAL_TRIGGER_TOKEN }}
-          RELEASE_SECRET: ${{ secrets.RELEASE_SECRET }}
+          MIRROR_1_RENEWAL_TRIGGER_TOKEN: ${{ secrets.MIRROR_1_RENEWAL_TRIGGER_TOKEN }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -174,6 +185,7 @@ jobs:
       - name: Build static site
         id: build
         if: |
+          steps.role.outputs.mirror_role != 'SLAVE' &&
           inputs.dry_run != 'true' && (
             steps.commit.outputs.state_changed == 'true' ||
             inputs.force_deploy == 'true'

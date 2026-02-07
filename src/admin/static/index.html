@@ -1219,6 +1219,7 @@
                 <div id="mirror-body" style="display: flex; flex-direction: column; gap: 0.75rem;">
                     <div class="loading">Loading mirror status...</div>
                 </div>
+                <div id="mirror-sync-log" style="display: none;"></div>
             </div>
 
             <div class="card">
@@ -1773,7 +1774,7 @@
             'PERSISTENCE_API_URL', 'PERSISTENCE_API_KEY',
             'RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN',
             'OPERATOR_EMAIL', 'OPERATOR_SMS', 'PROJECT_NAME',
-            'MIRROR_1_TOKEN', 'ADMIN_TOKEN',
+            'MIRROR_1_TOKEN', 'MIRROR_1_RENEWAL_TRIGGER_TOKEN', 'ADMIN_TOKEN',
         ];
         // Tier 2: GitHub repository variables (consumed via vars.* in workflows — NOT secrets)
         const GITHUB_VARS = ['ADAPTER_MOCK_MODE', 'ARCHIVE_ENABLED', 'ARCHIVE_URL', 'MIRROR_ENABLED', 'MIRROR_1_REPO'];
@@ -1858,7 +1859,7 @@
                 'GitHub': ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'],
                 'X (Twitter)': ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
                 'Reddit': ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
-                'Repo Mirror': ['MIRROR_ENABLED', 'MIRROR_1_REPO', 'MIRROR_1_TOKEN'],
+                'Repo Mirror': ['MIRROR_ENABLED', 'MIRROR_1_REPO', 'MIRROR_1_TOKEN', 'MIRROR_1_RENEWAL_TRIGGER_TOKEN'],
                 'Operational': ['ADAPTER_MOCK_MODE', 'ARCHIVE_ENABLED', 'ARCHIVE_URL'],
             };
 
@@ -3214,9 +3215,9 @@
                     const varsStatus = mirror.variables?.status || 'never';
                     const codeAge = mirrorTimeAgo(mirror.code?.last_sync_iso);
 
-                    const statusIcon = (s) => ({ ok: '✅', failed: '❌', never: '⏳', unknown: '⏳' }[s] || '❓');
-                    const statusBg = (s) => s === 'ok' ? 'rgba(74,222,128,0.1)' : s === 'failed' ? 'rgba(248,113,113,0.1)' : 'rgba(136,136,136,0.1)';
-                    const statusColor = (s) => s === 'ok' ? 'var(--accent)' : s === 'failed' ? 'var(--danger)' : 'var(--text-dim)';
+                    const statusIcon = (s) => ({ ok: '✅', failed: '❌', stale: '⚠️', never: '⏳', unknown: '⏳' }[s] || '❓');
+                    const statusBg = (s) => s === 'ok' ? 'rgba(74,222,128,0.1)' : s === 'failed' ? 'rgba(248,113,113,0.1)' : s === 'stale' ? 'rgba(245,158,11,0.15)' : 'rgba(136,136,136,0.1)';
+                    const statusColor = (s) => s === 'ok' ? 'var(--accent)' : s === 'failed' ? 'var(--danger)' : s === 'stale' ? '#f59e0b' : 'var(--text-dim)';
 
                     html += `
                         <div class="mirror-slave-row" style="padding: 0.75rem 1rem;">
@@ -3252,20 +3253,39 @@
                     html += `</div>`;
                 }
 
-                // Action buttons with proper labels
+                // Action buttons row 1: Sync
                 html += `
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="btn primary" onclick="mirrorSyncAll()" id="mirror-sync-all-btn" style="flex: 1; font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn primary" onclick="mirrorStream('all')" id="mirror-sync-all-btn" style="flex: 1; font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             🔄 Sync All
                         </button>
-                        <button class="btn" onclick="mirrorSyncCode()" id="mirror-sync-code-btn" title="Sync code only (git push)" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn" onclick="mirrorStream('code')" id="mirror-sync-code-btn" title="Sync code only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             📦 Code
                         </button>
-                        <button class="btn" onclick="mirrorSyncSecrets()" id="mirror-sync-secrets-btn" title="Sync secrets only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                        <button class="btn" onclick="mirrorStream('secrets')" id="mirror-sync-secrets-btn" title="Sync secrets only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
                             🔐 Secrets
                         </button>
-                    </div>
-                    <div id="mirror-sync-log" style="display: none;"></div>`;
+                        <button class="btn" onclick="mirrorStream('vars')" id="mirror-sync-vars-btn" title="Sync variables only" style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                            📋 Vars
+                        </button>
+                    </div>`;
+
+                // Action buttons row 2: Clean (only on mirror, NEVER master)
+                html += `
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem;">
+                        <button class="btn" onclick="mirrorClean('all')" id="mirror-clean-all-btn" title="Wipe EVERYTHING: code + secrets + variables" style="flex: 1; font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            ☠️ Clean All
+                        </button>
+                        <button class="btn" onclick="mirrorClean('code')" id="mirror-clean-code-btn" title="Reset repo to empty" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Code
+                        </button>
+                        <button class="btn" onclick="mirrorClean('secrets')" id="mirror-clean-secrets-btn" title="Delete all secrets" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Secrets
+                        </button>
+                        <button class="btn" onclick="mirrorClean('variables')" id="mirror-clean-vars-btn" title="Delete all variables" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Vars
+                        </button>
+                    </div>`;
 
                 body.innerHTML = html;
 
@@ -3276,84 +3296,161 @@
             }
         }
 
-        function mirrorShowLog(output, isError) {
-            const logEl = document.getElementById('mirror-sync-log');
-            if (!logEl) return;
-            const color = isError ? 'var(--danger)' : 'var(--text-dim)';
-            logEl.style.display = 'block';
-            logEl.innerHTML = `<pre style="margin: 0; padding: 0.6rem 0.8rem; background: rgba(0,0,0,0.3); border-radius: 6px; font-size: 0.72rem; line-height: 1.5; color: ${color}; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">${output.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
-        }
+        // ── Mirror SSE streaming ──
 
-        async function mirrorSyncAll() {
-            const btn = document.getElementById('mirror-sync-all-btn');
-            if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
-            const logEl = document.getElementById('mirror-sync-log');
-            if (logEl) { logEl.style.display = 'block'; logEl.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-dim); padding: 0.5rem;">⏳ Running mirror sync...</div>'; }
-            try {
-                const resp = await fetch('/api/mirror/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}),
+        let _mirrorEventSource = null;
+
+        function _mirrorLockButtons(locked) {
+            ['mirror-sync-all-btn', 'mirror-sync-code-btn', 'mirror-sync-secrets-btn',
+                'mirror-sync-vars-btn', 'mirror-clean-all-btn', 'mirror-clean-secrets-btn',
+                'mirror-clean-vars-btn'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.disabled = locked;
                 });
-                const data = await resp.json();
-                if (data.output) {
-                    mirrorShowLog(data.output, !data.success);
-                } else if (data.error) {
-                    mirrorShowLog('❌ ' + data.error, true);
-                }
-                // Reload status to update the badges
-                loadMirrorStatus();
-            } catch (err) {
-                mirrorShowLog('❌ Sync failed: ' + err.message, true);
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync All'; }
-            }
         }
 
-        async function mirrorSyncCode() {
-            const btn = document.getElementById('mirror-sync-code-btn');
-            if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
-            const logEl = document.getElementById('mirror-sync-log');
-            if (logEl) { logEl.style.display = 'block'; logEl.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-dim); padding: 0.5rem;">⏳ Syncing code...</div>'; }
-            try {
-                const resp = await fetch('/api/mirror/sync/code', { method: 'POST' });
-                const data = await resp.json();
-                if (data.output) {
-                    mirrorShowLog(data.output, !data.success);
-                } else if (data.error) {
-                    mirrorShowLog('❌ ' + data.error, true);
-                } else {
-                    mirrorShowLog('✅ Code sync complete', false);
-                }
-                loadMirrorStatus();
-            } catch (err) {
-                mirrorShowLog('❌ Code sync failed: ' + err.message, true);
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '📦 Code'; }
+        function _mirrorLogEl() {
+            const el = document.getElementById('mirror-sync-log');
+            if (el) {
+                el.style.display = 'block';
+                el.style.cssText = 'display:block; margin-top:0.5rem; background:rgba(0,0,0,0.4); border-radius:8px; padding:0.6rem 0.8rem; font-family:monospace; font-size:0.73rem; line-height:1.7; max-height:280px; overflow-y:auto; color:var(--text-dim);';
             }
+            return el;
         }
 
-        async function mirrorSyncSecrets() {
-            const btn = document.getElementById('mirror-sync-secrets-btn');
-            if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
-            const logEl = document.getElementById('mirror-sync-log');
-            if (logEl) { logEl.style.display = 'block'; logEl.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-dim); padding: 0.5rem;">⏳ Syncing secrets...</div>'; }
-            try {
-                const resp = await fetch('/api/mirror/sync/secrets', { method: 'POST' });
-                const data = await resp.json();
-                if (data.output) {
-                    mirrorShowLog(data.output, !data.success);
-                } else if (data.error) {
-                    mirrorShowLog('❌ ' + data.error, true);
-                } else {
-                    mirrorShowLog('✅ Secrets sync complete', false);
+        function _mirrorAppendLog(logEl, html) {
+            if (!logEl) return;
+            logEl.innerHTML += html;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function mirrorStream(mode) {
+            if (_mirrorEventSource) { _mirrorEventSource.close(); }
+            _mirrorLockButtons(true);
+
+            const logEl = _mirrorLogEl();
+            if (logEl) logEl.innerHTML = '<div style="color:var(--accent);">⏳ Starting sync...</div>';
+
+            // Track progress per step
+            const progress = {};
+
+            _mirrorEventSource = new EventSource(`/api/mirror/sync/stream?mode=${mode}`);
+
+            _mirrorEventSource.onmessage = (event) => {
+                try {
+                    const d = JSON.parse(event.data);
+
+                    if (d.status === 'start') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--accent);">🔀 ${d.detail}</div>`);
+
+                    } else if (d.status === 'mirror_start') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:var(--text); font-weight:600;">── ${d.detail} ──</div>`);
+
+                    } else if (d.status === 'running') {
+                        // Create a progress row that we'll update
+                        const rowId = `mirror-prog-${d.step}`;
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        _mirrorAppendLog(logEl, `<div id="${rowId}">${icon} ${d.step}: <span style="color:var(--text-dim);">⏳ starting...</span></div>`);
+
+                    } else if (d.status === 'progress') {
+                        // Update the progress row in-place
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const itemIcon = d.ok ? '✅' : '❌';
+                        const color = d.ok ? 'var(--accent)' : 'var(--danger)';
+                        if (rowEl) {
+                            rowEl.innerHTML = `${icon} ${d.step}: <span style="color:${color};">${d.progress}</span> ${itemIcon} ${d.detail || ''}`;
+                        } else {
+                            _mirrorAppendLog(logEl, `<div>${icon} ${d.step}: <span style="color:${color};">${d.progress}</span> ${itemIcon} ${d.detail || ''}</div>`);
+                        }
+
+                    } else if (d.status === 'ok') {
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const detail = d.detail ? ` ${d.detail}` : '';
+                        const prog = d.progress ? ` ${d.progress}` : '';
+                        const html = `${icon} ${d.step}:${prog}${detail} <span style="color:var(--accent);">✅</span>`;
+                        if (rowEl) { rowEl.innerHTML = html; }
+                        else { _mirrorAppendLog(logEl, `<div>${html}</div>`); }
+
+                    } else if (d.status === 'failed') {
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const prog = d.progress ? ` ${d.progress}` : '';
+                        const html = `${icon} ${d.step}:${prog} <span style="color:var(--danger);">❌ ${d.error || 'failed'}</span>`;
+                        if (rowEl) { rowEl.innerHTML = html; }
+                        else { _mirrorAppendLog(logEl, `<div>${html}</div>`); }
+
+                    } else if (d.status === 'done') {
+                        const color = d.success ? 'var(--accent)' : 'var(--danger)';
+                        const msg = d.success ? '✅ Sync complete' : `⚠️ Finished with ${d.errors} error(s)`;
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:${color}; font-weight:600;">${msg}</div>`);
+                        _mirrorEventSource.close();
+                        _mirrorEventSource = null;
+                        _mirrorLockButtons(false);
+                        loadMirrorStatus();
+                    }
+                } catch (e) {
+                    _mirrorAppendLog(logEl, `<div style="color:var(--danger);">Parse error: ${e.message}</div>`);
                 }
+            };
+
+            _mirrorEventSource.onerror = () => {
+                _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">Stream ended.</div>`);
+                _mirrorEventSource.close();
+                _mirrorEventSource = null;
+                _mirrorLockButtons(false);
                 loadMirrorStatus();
-            } catch (err) {
-                mirrorShowLog('❌ Secrets sync failed: ' + err.message, true);
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '🔐 Secrets'; }
-            }
+            };
+        }
+
+        function mirrorClean(mode) {
+            const labels = { all: 'EVERYTHING (code + secrets + variables)', code: 'all CODE (wipe repo)', secrets: 'all SECRETS', variables: 'all VARIABLES' };
+            if (!confirm(`☠️ Delete ${labels[mode] || mode} from MIRROR repo?\n\nThis targets the MIRROR only, never the master.`)) return;
+            if (_mirrorEventSource) { _mirrorEventSource.close(); }
+            _mirrorLockButtons(true);
+
+            const logEl = _mirrorLogEl();
+            if (logEl) logEl.innerHTML = '<div style="color:var(--danger);">🗑️ Starting clean...</div>';
+
+            _mirrorEventSource = new EventSource(`/api/mirror/clean/stream?mode=${mode}`);
+
+            _mirrorEventSource.onmessage = (event) => {
+                try {
+                    const d = JSON.parse(event.data);
+                    if (d.status === 'start') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--text);">🗑️ ${d.detail}</div>`);
+                    } else if (d.status === 'running') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.2rem; color:var(--text-dim); font-weight:600;">${d.detail}</div>`);
+                    } else if (d.status === 'ok') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--accent);">  ✅ ${d.detail}</div>`);
+                    } else if (d.status === 'skipped') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">  ⏭️ ${d.detail}</div>`);
+                    } else if (d.status === 'failed') {
+                        const err = d.error ? `: ${d.error}` : '';
+                        _mirrorAppendLog(logEl, `<div style="color:var(--danger);">  ❌ ${d.detail}${err}</div>`);
+                    } else if (d.status === 'done') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:var(--accent); font-weight:600;">✅ Clean complete</div>`);
+                        _mirrorEventSource.close();
+                        _mirrorEventSource = null;
+                        _mirrorLockButtons(false);
+                        loadMirrorStatus();
+                    }
+                } catch (e) {
+                    _mirrorAppendLog(logEl, `<div style="color:var(--danger);">Parse error: ${e.message}</div>`);
+                }
+            };
+
+            _mirrorEventSource.onerror = () => {
+                _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">Stream ended.</div>`);
+                _mirrorEventSource.close();
+                _mirrorEventSource = null;
+                _mirrorLockButtons(false);
+                loadMirrorStatus();
+            };
         }
 
         function getLastTestHtml(integId) {
@@ -4097,6 +4194,7 @@
                     const mirrorEnabled = getSecretValue('MIRROR_ENABLED') === 'true';
                     const mirrorRepo = getSecretValue('MIRROR_1_REPO') || '';
                     const mirrorToken = getSecretValue('MIRROR_1_TOKEN');
+                    const renewalToken = getSecretValue('MIRROR_1_RENEWAL_TRIGGER_TOKEN');
 
                     return `
                         <h2 style="margin-bottom: 1rem;">🔁 Repo Mirror</h2>
@@ -4153,6 +4251,30 @@
                                     The personal access token you generated on the backup account.
                                 </div>
                             </div>
+
+                            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-top: 1.25rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem;">🔑 Renewal Token for Mirror <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-dim);">(optional)</span></div>
+                                <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+                                    If you want the mirror to support <strong>one-click renewal</strong> when it takes over,
+                                    it needs its own trigger token. This is a <strong>separate PAT</strong> created on
+                                    the <strong>backup account</strong>, scoped to the <strong>backup repo</strong>.
+                                </p>
+                                <ol style="color: var(--text-dim); line-height: 2; margin: 0 0 1rem 1.25rem; font-size: 0.85rem;">
+                                    <li>On the <strong>backup account</strong>, go to <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color: var(--info);">Fine-grained tokens</a></li>
+                                    <li>Create a token scoped to the <strong>backup repo only</strong></li>
+                                    <li>Permissions: <code>Actions</code> (read/write) — that's all it needs</li>
+                                    <li>Paste below ↓</li>
+                                </ol>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Mirror Renewal Trigger Token</label>
+                                    <input type="password" class="form-input" id="wiz-mirror-renewal-token"
+                                           placeholder="${renewalToken ? '••••••••' : 'github_pat_...'}"
+                                           value="">
+                                    <div class="form-hint">
+                                        Stored as <code>MIRROR_1_RENEWAL_TRIGGER_TOKEN</code> on master. Synced as <code>RENEWAL_TRIGGER_TOKEN</code> to mirror.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(74, 222, 128, 0.06); border: 1px solid rgba(74, 222, 128, 0.15); border-radius: 8px; font-size: 0.85rem; color: var(--text-dim); line-height: 1.7;">
@@ -4181,6 +4303,8 @@
                         if (repo) result.MIRROR_1_REPO = repo;
                         const token = document.getElementById('wiz-mirror-token').value;
                         if (token) result.MIRROR_1_TOKEN = token;
+                        const renewToken = document.getElementById('wiz-mirror-renewal-token').value;
+                        if (renewToken) result.MIRROR_1_RENEWAL_TRIGGER_TOKEN = renewToken;
                     }
                     return result;
                 }

@@ -27,15 +27,18 @@ class SyncStatus:
     """Status of a specific sync layer."""
 
     last_sync_iso: Optional[str] = None
-    status: str = "unknown"  # ok, failed, unknown
+    status: str = "unknown"  # ok, failed, unknown, stale
     last_error: Optional[str] = None
     detail: Optional[str] = None  # e.g. commit hash, count
+    fingerprint: Optional[str] = None  # hash of synced values (for staleness detection)
 
-    def mark_ok(self, detail: Optional[str] = None):
+    def mark_ok(self, detail: Optional[str] = None, fingerprint: Optional[str] = None):
         self.last_sync_iso = datetime.now(timezone.utc).isoformat()
         self.status = "ok"
         self.last_error = None
         self.detail = detail
+        if fingerprint is not None:
+            self.fingerprint = fingerprint
 
     def mark_failed(self, error: str):
         self.last_sync_iso = datetime.now(timezone.utc).isoformat()
@@ -145,6 +148,7 @@ class MirrorState:
                         status=layer_data.get("status", "unknown"),
                         last_error=layer_data.get("last_error"),
                         detail=layer_data.get("detail"),
+                        fingerprint=layer_data.get("fingerprint"),
                     )
                     setattr(slave, layer, sync)
             slaves.append(slave)

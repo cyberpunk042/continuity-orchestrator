@@ -196,6 +196,7 @@ SECRET_DEFINITIONS = {
     "MIRROR_ENABLED": {"required_for": [], "guidance": "Set to 'true' to enable repo mirroring"},
     "MIRROR_1_REPO": {"required_for": [], "guidance": "Backup repo: backup-user/repo-name"},
     "MIRROR_1_TOKEN": {"required_for": ["mirror"], "guidance": "PAT from backup GitHub account (repo + workflow scopes)"},
+    "MIRROR_1_RENEWAL_TRIGGER_TOKEN": {"required_for": [], "guidance": "PAT from backup account with Actions scope (for one-click renewal on mirror)"},
 }
 
 

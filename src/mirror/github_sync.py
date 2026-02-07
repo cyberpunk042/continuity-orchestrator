@@ -7,6 +7,7 @@ and to enable/disable workflows for failover.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,10 +28,19 @@ logger = logging.getLogger(__name__)
 
 # Secrets that should be synced to mirrors
 # Must match what .github/workflows/cron.yml and deploy-site.yml inject
+#
+# WHAT IS NOT HERE (and why):
+# - GITHUB_TOKEN: NEVER sync the master's token to the slave. The slave's
+#   own GITHUB_TOKEN (auto-provided by GitHub Actions) is sufficient for
+#   sentinel health checks on the master repo. Syncing the master's token
+#   would give the slave write access to the master — a security hole.
+# - MIRROR_1_TOKEN: Never synced to slave — slave doesn't manage its own mirrors.
+# - RELEASE_SECRET: Master-specific. Syncing it would let the slave trigger
+#   disclosure using the master's secret. If slave promotes, it uses its own.
+# - RENEWAL_TRIGGER_TOKEN: Per-repo PAT, synced via RENAMED_SECRETS instead.
 SYNCABLE_SECRETS = [
-    "GITHUB_TOKEN",           # Will be stored as MASTER_TOKEN on slave
-    "CONTINUITY_CONFIG",      # Core config (cron.yml line 85)
-    "RESEND_API_KEY",         # Email adapter
+    "CONTINUITY_CONFIG",      # Core config (needed if slave promotes to master)
+    "RESEND_API_KEY",         # Email adapter (needed for failover notifications)
     "TWILIO_ACCOUNT_SID",     # SMS adapter
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM_NUMBER",
@@ -44,10 +54,18 @@ SYNCABLE_SECRETS = [
     "REDDIT_PASSWORD",
     "PERSISTENCE_API_URL",    # Persistence layer
     "PERSISTENCE_API_KEY",    # Persistence auth (cron.yml line 99)
-    "RENEWAL_TRIGGER_TOKEN",  # Site build (deploy-site.yml)
-    "RELEASE_SECRET",         # Release endpoint auth
     "ADMIN_TOKEN",            # Admin panel auth
 ]
+
+# Per-mirror secrets that are stored on the MASTER with a mirror-specific name
+# and pushed to the slave under a different (standard) name.
+#
+# Example: master stores MIRROR_1_RENEWAL_TRIGGER_TOKEN (a PAT scoped to the
+# slave's repo). The sync pushes it as RENEWAL_TRIGGER_TOKEN on the slave.
+# The "{N}" placeholder is replaced with the mirror number (1, 2, ...).
+RENAMED_SECRETS = {
+    "MIRROR_{N}_RENEWAL_TRIGGER_TOKEN": "RENEWAL_TRIGGER_TOKEN",
+}
 
 # Variables (non-secret) to sync to mirror repos
 # Must match what .github/workflows/cron.yml reads via ${{ vars.X }}
@@ -59,6 +77,43 @@ SYNCABLE_VARS = [
 ]
 
 
+def compute_fingerprint(items: Dict[str, str]) -> str:
+    """Hash a dict of name→value pairs into a short fingerprint.
+
+    Used to detect staleness: if the fingerprint at status-check time
+    differs from the one stored at sync time, values have changed.
+    """
+    canonical = "\n".join(f"{k}={v}" for k, v in sorted(items.items()))
+    return hashlib.sha256(canonical.encode()).hexdigest()[:12]
+
+
+def secrets_fingerprint(mirror_num: str = "1") -> str:
+    """Compute fingerprint for secrets that would be synced right now."""
+    items = {}
+    for name in SYNCABLE_SECRETS:
+        val = os.environ.get(name)
+        if val:
+            items[name] = val
+    # Include renamed secrets
+    for master_tmpl, slave_name in RENAMED_SECRETS.items():
+        master_key = master_tmpl.replace("{N}", mirror_num)
+        val = os.environ.get(master_key)
+        if val:
+            items[slave_name] = val
+    return compute_fingerprint(items)
+
+
+def variables_fingerprint() -> str:
+    """Compute fingerprint for variables that would be synced right now."""
+    master_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    items = {
+        "MIRROR_ROLE": "SLAVE",
+        "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
+        "ADAPTER_MOCK_MODE": "true",
+    }
+    if master_repo:
+        items["MASTER_REPO"] = master_repo
+    return compute_fingerprint(items)
 
 def sync_secret(
     token: str,
@@ -154,16 +209,14 @@ def sync_all_secrets(
             continue
 
         total += 1
-        # Special case: GITHUB_TOKEN → MASTER_TOKEN on slave
-        target_name = "MASTER_TOKEN" if secret_name == "GITHUB_TOKEN" else secret_name
 
         ok, err = sync_secret(
-            mirror.token, mirror.repo, target_name, value
+            mirror.token, mirror.repo, secret_name, value
         )
         if ok:
             synced += 1
         else:
-            errors.append(f"{target_name}: {err}")
+            errors.append(f"{secret_name}: {err}")
 
     overall_ok = synced == total
     error_msg = "; ".join(errors) if errors else None
