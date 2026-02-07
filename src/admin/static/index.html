@@ -104,10 +104,45 @@
             gap: 0.5rem;
             padding: 0.75rem 1rem;
             background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
+            border-bottom: none;
             position: sticky;
             top: 0;
             z-index: 100;
+        }
+
+        /* Refresh progress bar */
+        .refresh-bar {
+            position: sticky;
+            top: 50px;
+            /* height of .tabs */
+            z-index: 99;
+            height: 2px;
+            background: var(--border);
+            overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .refresh-bar.active {
+            opacity: 1;
+        }
+
+        .refresh-bar .refresh-bar-inner {
+            height: 100%;
+            width: 40%;
+            background: linear-gradient(90deg, transparent, var(--accent), var(--info), var(--accent), transparent);
+            border-radius: 2px;
+            animation: refresh-sweep 1.2s ease-in-out infinite;
+        }
+
+        @keyframes refresh-sweep {
+            0% {
+                transform: translateX(-100%);
+            }
+
+            100% {
+                transform: translateX(350%);
+            }
         }
 
         .tabs-group {
@@ -777,6 +812,9 @@
             </button>
         </div>
     </nav>
+    <div class="refresh-bar" id="refresh-bar">
+        <div class="refresh-bar-inner"></div>
+    </div>
 
     <!-- Dashboard Tab -->
     <div id="tab-dashboard" class="tab-content active">
@@ -1268,6 +1306,8 @@
 
         // Load status
         async function loadStatus() {
+            const bar = document.getElementById('refresh-bar');
+            bar?.classList.add('active');
             try {
                 // Load both status and env values
                 const [statusRes, envRes] = await Promise.all([
@@ -1284,6 +1324,9 @@
                         <p class="terminal error">Error loading status: ${error.message}</p>
                     </div>
                 `;
+            } finally {
+                // Brief delay so the bar is visible even on fast responses
+                setTimeout(() => bar?.classList.remove('active'), 300);
             }
         }
 
