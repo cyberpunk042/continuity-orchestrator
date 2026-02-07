@@ -179,6 +179,67 @@
             color: var(--text);
         }
 
+        /* GitHub shortcut menu */
+        .gh-menu {
+            position: relative;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 0.3rem 0.65rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            transition: all 0.2s;
+            display: none;
+            align-items: center;
+            gap: 0.3rem;
+            user-select: none;
+        }
+
+        .gh-menu.visible {
+            display: flex;
+        }
+
+        .gh-menu:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .gh-menu .gh-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.35rem;
+            min-width: 180px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            z-index: 200;
+        }
+
+        .gh-menu:hover .gh-dropdown {
+            display: block;
+        }
+
+        .gh-dropdown a {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.65rem;
+            border-radius: 7px;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+
+        .gh-dropdown a:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+
         /* Google Translate widget styling */
         /* ── Hide ALL Google Translate UI ── */
         #google_translate_element,
@@ -806,6 +867,15 @@
                 <span id="lang-label">EN</span>
                 <span style="font-size:0.6rem;">▾</span>
                 <div class="lang-dropdown" id="lang-dropdown"></div>
+            </div>
+            <div class="gh-menu" id="gh-menu">
+                <span>🔗</span>
+                <span style="font-size:0.6rem;">▾</span>
+                <div class="gh-dropdown">
+                    <a id="gh-link-repo" href="#" target="_blank">📦 Repository</a>
+                    <a id="gh-link-pages" href="#" target="_blank">🌐 Pages</a>
+                    <a id="gh-link-actions" href="#" target="_blank">⚡ Actions</a>
+                </div>
             </div>
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
                 🌙
@@ -4075,14 +4145,9 @@
                 }
             }
 
-            // Build site (so countdown page shows DELAYED status like the GitHub workflow does)
-            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">🏗️ Rebuilding site...</span>`;
-            const buildData = await apiRun('build-site');
-            if (buildData.success) {
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Site rebuilt</span>`;
-            } else {
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Site rebuild failed: ${buildData.error || 'Unknown'}</span>`;
-            }
+            // Build site (fire-and-forget — don't block the UI)
+            apiRun('build-site');
+            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild kicked off (background)</span>`;
 
             const gitSync = document.getElementById('trigger-git-sync')?.checked;
             if (gitSync) {
