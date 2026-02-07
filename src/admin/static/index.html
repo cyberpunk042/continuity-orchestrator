@@ -1410,6 +1410,17 @@
                         <span class="status-label">Stage</span>
                         <span class="badge ${stageClass}">${data.state.stage}</span>
                     </div>
+                    ${data.state.release_triggered ? `
+                    <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid var(--warning); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;">
+                        <div style="font-weight: 700; color: var(--warning); font-size: 0.85rem;">👻 SHADOW MODE — DELAYED</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">
+                            Target: ${data.state.release_target_stage || 'FULL'}
+                            ${data.state.release_delay_minutes > 0 ? ` • Delay: ${data.state.release_delay_minutes}m` : ' • Immediate'}
+                            ${data.state.release_execute_after ? `<br>Executes: ${new Date(data.state.release_execute_after).toLocaleString()}` : ''}
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">Cancel by renewing before the execute time.</div>
+                    </div>
+                    ` : ''}
                     <div class="status-row">
                         <span class="status-label">Project</span>
                         <span class="status-value">${data.config.project_name || '—'}</span>
@@ -1428,6 +1439,33 @@
                         <div class="actions">
                             <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                             <button class="btn primary" onclick="switchTab('wizard')">🧙 Start Setup →</button>
+                        </div>
+                    ` : data.state.release_triggered || data.state.stage === 'FULL' || data.state.stage === 'PARTIAL' || data.state.stage === 'PRE_RELEASE' ? `
+                        <div style="border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem;">
+                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--danger);">
+                                ${data.state.release_triggered && data.state.release_delay_minutes > 0
+                        ? '👻 Shadow mode is active — disclosure is pending'
+                        : `⚠️ Disclosure is <strong>${data.state.stage}</strong> — system is active`}
+                            </div>
+                            <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                                ${data.state.release_triggered && data.state.release_delay_minutes > 0
+                        ? 'Cancel shadow mode by returning to OK. This clears the pending release and restores the countdown.'
+                        : 'Returning to OK will reset escalation, cancel any pending release, and restore the countdown.'}
+                            </p>
+                            <div class="actions" style="flex-direction: column; gap: 0.5rem;">
+                                <button class="btn primary" onclick="returnToOK()" style="width: 100%;">
+                                    🔙 Return to OK
+                                </button>
+                            </div>
+                            <div style="margin-top: 0.75rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
+                                    <input type="checkbox" id="return-git-sync" checked style="accent-color: var(--accent);">
+                                    📤 Git sync after reset
+                                </label>
+                            </div>
+                        </div>
+                        <div class="actions" style="margin-top: 0.75rem;">
+                            <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                         </div>
                     ` : data.state.stage === 'OK' || data.state.stage === 'WARNING' || data.state.stage === 'REMIND_1' || data.state.stage === 'REMIND_2' ? `
                         <div style="border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem;">
@@ -1466,25 +1504,6 @@
                             <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                         </div>
                     ` : `
-                        <div style="border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem;">
-                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--danger);">
-                                ⚠️ Disclosure is <strong>${data.state.stage}</strong> — system is active
-                            </div>
-                            <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem;">
-                                Returning to OK will reset escalation, cancel any pending release, and restore the countdown.
-                            </p>
-                            <div class="actions" style="flex-direction: column; gap: 0.5rem;">
-                                <button class="btn primary" onclick="returnToOK()" style="width: 100%;">
-                                    🔙 Return to OK
-                                </button>
-                            </div>
-                            <div style="margin-top: 0.75rem;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
-                                    <input type="checkbox" id="return-git-sync" checked style="accent-color: var(--accent);">
-                                    📤 Git sync after reset
-                                </label>
-                            </div>
-                        </div>
                         <div class="actions" style="margin-top: 0.75rem;">
                             <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                         </div>
@@ -4054,6 +4073,15 @@
                 } else {
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Tick error: ${tickData.error || 'Unknown'}</span>`;
                 }
+            }
+
+            // Build site (so countdown page shows DELAYED status like the GitHub workflow does)
+            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">🏗️ Rebuilding site...</span>`;
+            const buildData = await apiRun('build-site');
+            if (buildData.success) {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Site rebuilt</span>`;
+            } else {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Site rebuild failed: ${buildData.error || 'Unknown'}</span>`;
             }
 
             const gitSync = document.getElementById('trigger-git-sync')?.checked;

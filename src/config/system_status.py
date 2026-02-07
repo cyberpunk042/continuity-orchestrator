@@ -102,6 +102,12 @@ class SystemStatus:
     renewal_count: int = 0
     last_tick: Optional[str] = None
     
+    # Release / shadow mode
+    release_triggered: bool = False
+    release_target_stage: Optional[str] = None
+    release_delay_minutes: int = 0
+    release_execute_after: Optional[str] = None
+    
     # Config
     project_name: str = ""
     operator_email: str = ""
@@ -125,6 +131,10 @@ class SystemStatus:
                 "time_to_deadline_minutes": self.time_to_deadline_minutes,
                 "renewal_count": self.renewal_count,
                 "last_tick": self.last_tick,
+                "release_triggered": self.release_triggered,
+                "release_target_stage": self.release_target_stage,
+                "release_delay_minutes": self.release_delay_minutes,
+                "release_execute_after": self.release_execute_after,
             },
             "config": {
                 "project_name": self.project_name,
@@ -286,11 +296,18 @@ def get_system_status(
             timer = state_data.get("timer", {})
             renewal = state_data.get("renewal", {})
             meta = state_data.get("meta", {})
+            release = state_data.get("release", {})
             
             status.stage = escalation.get("state", "UNKNOWN")
             status.deadline = timer.get("deadline_iso")
             status.renewal_count = renewal.get("renewal_count", 0)
             status.last_tick = meta.get("updated_at_iso")
+            
+            # Release / shadow mode info
+            status.release_triggered = release.get("triggered", False)
+            status.release_target_stage = release.get("target_stage")
+            status.release_delay_minutes = release.get("delay_minutes", 0)
+            status.release_execute_after = release.get("execute_after_iso")
             
             # Calculate TTD
             if status.deadline:
