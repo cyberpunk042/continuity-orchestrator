@@ -203,10 +203,12 @@ class SiteGenerator:
             status_class = "status-full"
             status_message = "Full disclosure active."
         
-        # Override if release is triggered (shadow mode)
+        # Override display if shadow mode is active (release.triggered)
         release_triggered = state.release.triggered if hasattr(state, 'release') else False
+        content_stage = stage  # Real stage for article visibility
+        display_stage = stage  # Visual stage for countdown/banner
         if release_triggered:
-            stage = "DELAYED"
+            display_stage = "DELAYED"
             status_class = "status-delayed"
             status_message = "Release delayed. Awaiting confirmation."
         
@@ -219,9 +221,9 @@ class SiteGenerator:
         try:
             from .manifest import ContentManifest
             manifest = ContentManifest.load()
-            stage_behavior = manifest.get_stage_behavior(stage)
-            nav_articles = manifest.get_nav_articles(stage)
-            visible_articles = manifest.get_visible_articles(stage)
+            stage_behavior = manifest.get_stage_behavior(display_stage)
+            nav_articles = manifest.get_nav_articles(content_stage)
+            visible_articles = manifest.get_visible_articles(content_stage)
             
             if stage_behavior and stage_behavior.banner:
                 banner_class = stage_behavior.banner_class or "info"
@@ -232,8 +234,8 @@ class SiteGenerator:
         context = {
             "project": state.meta.project,
             "state_id": state.meta.state_id,
-            "stage": stage,
-            "stage_color": stage_colors.get(stage, "#6b7280"),
+            "stage": display_stage,
+            "stage_color": stage_colors.get(display_stage, "#6b7280"),
             "stage_entered": state.escalation.state_entered_at_iso,
             "deadline": state.timer.deadline_iso,
             "time_to_deadline": state.timer.time_to_deadline_minutes,
@@ -260,7 +262,7 @@ class SiteGenerator:
             "release_triggered": state.release.triggered if hasattr(state, 'release') else False,
             "raw_state_json": json.dumps({
                 "project": state.meta.project,
-                "stage": stage,
+                "stage": content_stage,
                 "deadline": state.timer.deadline_iso,
                 "time_to_deadline": state.timer.time_to_deadline_minutes,
                 "mode": state.mode.name,
