@@ -1544,30 +1544,27 @@
                         ? 'Cancel shadow mode by returning to OK. This clears the pending release and restores the countdown.'
                         : 'Returning to OK will reset escalation, cancel any pending release, and restore the countdown.'}
                             </p>
-                            <div class="actions" style="flex-direction: column; gap: 0.5rem;">
-                                <button class="btn primary" onclick="returnToOK()" style="width: 100%;">
+                            <div class="actions" style="gap: 0.5rem;">
+                                <button class="btn primary" onclick="returnToOK()" style="flex: 1;">
                                     🔙 Return to OK
                                 </button>
+                                <button class="btn" onclick="loadStatus()" style="padding: 0 0.6rem;" title="Refresh status">🔄</button>
                             </div>
-                            <div style="margin-top: 0.75rem;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
-                                    <input type="checkbox" id="return-git-sync" checked style="accent-color: var(--accent);">
-                                    📤 Git sync after reset
-                                </label>
-                            </div>
-                        </div>
-                        <div class="actions" style="margin-top: 0.75rem;">
-                            <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                         </div>
                     ` : data.state.stage === 'OK' || data.state.stage === 'WARNING' || data.state.stage === 'REMIND_1' || data.state.stage === 'REMIND_2' ? `
-                        <div style="border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem;">
+                        <div style="padding-top: 1rem;">
                             <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.75rem; color: var(--text-dim);">⚡ Manual Trigger</div>
                             <div class="actions" style="flex-direction: column; gap: 0.5rem;">
-                                <button class="btn danger" onclick="triggerRelease()" style="width: 100%;">
-                                    💀 Trigger FULL Disclosure (Immediate)
-                                </button>
                                 <div style="display: flex; gap: 0.5rem; align-items: stretch;">
-                                    <button class="btn" onclick="triggerShadow()" style="flex: 1; border-color: var(--warning); color: var(--warning);">
+                                    <button class="btn danger" onclick="triggerRelease()" style="flex: 1;"
+                                        title="Immediately sets state to FULL and executes all disclosure actions on the next tick. This is irreversible without a manual Return to OK.">
+                                        💀 Trigger FULL Disclosure
+                                    </button>
+                                    <button class="btn" onclick="loadStatus()" style="padding: 0 0.6rem;" title="Refresh status">🔄</button>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                    <button class="btn" onclick="triggerShadow()" style="flex: 1; border-color: var(--warning); color: var(--warning);"
+                                        title="Stealth trigger with delay — same as entering RELEASE_SECRET on the public site. Cancelable by renewal during the delay window.">
                                         👻 Shadow Mode
                                     </button>
                                     <select id="shadow-delay" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer;">
@@ -1577,23 +1574,7 @@
                                         <option value="120">2 hour delay</option>
                                     </select>
                                 </div>
-                                <p style="font-size: 0.7rem; color: var(--text-dim); margin: 0; line-height: 1.3;">
-                                    Shadow = stealth trigger with delay (same as entering RELEASE_SECRET on the public site). Cancelable by renewal during delay.
-                                </p>
                             </div>
-                            <div style="margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
-                                    <input type="checkbox" id="trigger-auto-tick" checked style="accent-color: var(--accent);">
-                                    🔄 Auto-tick after trigger (executes actions)
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
-                                    <input type="checkbox" id="trigger-git-sync" checked style="accent-color: var(--accent);">
-                                    📤 Git sync after execution
-                                </label>
-                            </div>
-                        </div>
-                        <div class="actions" style="margin-top: 0.75rem;">
-                            <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
                         </div>
                     ` : `
                         <div class="actions" style="margin-top: 0.75rem;">
@@ -4154,40 +4135,36 @@
             }
         }
 
-        // Shared post-trigger steps: auto-tick + git sync
+        // Shared post-trigger steps: auto-tick + build + git sync + deploy
         async function _postTriggerSteps(statusDiv, label) {
-            const autoTick = document.getElementById('trigger-auto-tick')?.checked;
-            if (autoTick) {
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">🔄 Running tick...</span>`;
-                const tickData = await apiRun('tick');
-                if (tickData.success) {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Tick completed</span>`;
-                } else {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Tick error: ${tickData.error || 'Unknown'}</span>`;
-                }
+            // Auto-tick
+            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">🔄 Running tick...</span>`;
+            const tickData = await apiRun('tick');
+            if (tickData.success) {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Tick completed</span>`;
+            } else {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Tick error: ${tickData.error || 'Unknown'}</span>`;
             }
 
-            // Build site (fire-and-forget — don't block the UI)
+            // Build site (fire-and-forget)
             apiRun('build-site');
             if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild kicked off (background)</span>`;
 
-            const gitSync = document.getElementById('trigger-git-sync')?.checked;
-            if (gitSync) {
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
-                const syncResp = await fetch('/api/git/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: `trigger: ${label} via admin panel` }),
-                });
-                const syncData = await syncResp.json();
-                if (syncData.success) {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
-                    // Trigger deploy-site workflow (fire-and-forget)
-                    apiRun('deploy-site');
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🚀 Deploy pipeline triggered (background)</span>`;
-                } else {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
-                }
+            // Git sync
+            if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
+            const syncResp = await fetch('/api/git/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: `trigger: ${label} via admin panel` }),
+            });
+            const syncData = await syncResp.json();
+            if (syncData.success) {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
+                // Trigger deploy-site workflow (fire-and-forget)
+                apiRun('deploy-site');
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🚀 Deploy pipeline triggered (background)</span>`;
+            } else {
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
             }
 
             await loadStatus();
@@ -4220,27 +4197,22 @@
 
                 if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--accent);">✅ State reset to OK</span>';
 
-                // Git sync if checked
-                const gitSync = document.getElementById('return-git-sync')?.checked;
-                if (gitSync) {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
-
-                    const syncResp = await fetch('/api/git/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: 'chore: return to OK via admin panel' }),
-                    });
-                    const syncData = await syncResp.json();
-
-                    if (syncData.success) {
-                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
-                        // Rebuild site + trigger deploy (fire-and-forget)
-                        apiRun('build-site');
-                        apiRun('deploy-site');
-                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
-                    } else {
-                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
-                    }
+                // Git sync + build + deploy
+                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
+                const syncResp = await fetch('/api/git/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'chore: return to OK via admin panel' }),
+                });
+                const syncData = await syncResp.json();
+                if (syncData.success) {
+                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
+                    // Rebuild site + trigger deploy (fire-and-forget)
+                    apiRun('build-site');
+                    apiRun('deploy-site');
+                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
+                } else {
+                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
                 }
 
                 await loadStatus();
