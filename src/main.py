@@ -1135,6 +1135,10 @@ def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_on
                 "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
                 "ADAPTER_MOCK_MODE": "true",
             }
+            if os.environ.get("ARCHIVE_ENABLED"):
+                vars_to_sync["ARCHIVE_ENABLED"] = os.environ["ARCHIVE_ENABLED"]
+            if os.environ.get("ARCHIVE_URL"):
+                vars_to_sync["ARCHIVE_URL"] = os.environ["ARCHIVE_URL"]
             if master_repo:
                 vars_to_sync["MASTER_REPO"] = master_repo
 

@@ -135,6 +135,10 @@ def variables_fingerprint() -> str:
         "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
         "ADAPTER_MOCK_MODE": "true",
     }
+    if os.environ.get("ARCHIVE_ENABLED"):
+        items["ARCHIVE_ENABLED"] = os.environ["ARCHIVE_ENABLED"]
+    if os.environ.get("ARCHIVE_URL"):
+        items["ARCHIVE_URL"] = os.environ["ARCHIVE_URL"]
     if master_repo:
         items["MASTER_REPO"] = master_repo
     return compute_fingerprint(items)

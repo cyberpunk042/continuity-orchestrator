@@ -11,25 +11,25 @@
             "health": "unknown",
             "last_health_check_iso": null,
             "code": {
-                "last_sync_iso": "2026-02-07T20:37:29.094003+00:00",
+                "last_sync_iso": "2026-02-07T20:45:11.876855+00:00",
                 "status": "ok",
                 "last_error": null,
-                "detail": "cc38c0747f34",
+                "detail": "710583bd9051",
                 "fingerprint": null
             },
             "secrets": {
-                "last_sync_iso": "2026-02-07T20:37:36.818857+00:00",
+                "last_sync_iso": "2026-02-07T20:45:24.207456+00:00",
                 "status": "ok",
                 "last_error": null,
                 "detail": "7/7",
                 "fingerprint": "39e0e9e6f9c8"
             },
             "variables": {
-                "last_sync_iso": "2026-02-07T20:37:41.802132+00:00",
+                "last_sync_iso": "2026-02-07T20:45:29.636411+00:00",
                 "status": "ok",
                 "last_error": null,
-                "detail": "4/4",
-                "fingerprint": "121a256cbba1"
+                "detail": "5/5",
+                "fingerprint": "b3b730180bd9"
             },
             "workflows": {
                 "last_sync_iso": null,
