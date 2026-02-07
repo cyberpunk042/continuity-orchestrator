@@ -11,21 +11,21 @@
             "health": "unknown",
             "last_health_check_iso": null,
             "code": {
-                "last_sync_iso": "2026-02-07T19:59:16.808899+00:00",
+                "last_sync_iso": "2026-02-07T20:37:29.094003+00:00",
                 "status": "ok",
                 "last_error": null,
-                "detail": "97720fe80fa9",
+                "detail": "cc38c0747f34",
                 "fingerprint": null
             },
             "secrets": {
-                "last_sync_iso": "2026-02-07T20:13:24.174779+00:00",
+                "last_sync_iso": "2026-02-07T20:37:36.818857+00:00",
                 "status": "ok",
                 "last_error": null,
-                "detail": "2/2",
-                "fingerprint": "a4895f427afc"
+                "detail": "7/7",
+                "fingerprint": "39e0e9e6f9c8"
             },
             "variables": {
-                "last_sync_iso": "2026-02-07T20:13:28.988733+00:00",
+                "last_sync_iso": "2026-02-07T20:37:41.802132+00:00",
                 "status": "ok",
                 "last_error": null,
                 "detail": "4/4",

@@ -159,9 +159,14 @@ jobs:
           MIRROR_1_REPO: ${{ vars.MIRROR_1_REPO }}
           MIRROR_1_TOKEN: ${{ secrets.MIRROR_1_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # All secrets needed by the mirror's pipeline
-          CONTINUITY_CONFIG: ${{ secrets.CONTINUITY_CONFIG }}
+          # All secrets that mirror-sync pushes to the slave
+          PROJECT_NAME: ${{ secrets.PROJECT_NAME }}
+          OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
+          OPERATOR_SMS: ${{ secrets.OPERATOR_SMS }}
+          RENEWAL_SECRET: ${{ secrets.RENEWAL_SECRET }}
+          RELEASE_SECRET: ${{ secrets.RELEASE_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
@@ -175,8 +180,8 @@ jobs:
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
-          MIRROR_1_RENEWAL_TRIGGER_TOKEN: ${{ secrets.MIRROR_1_RENEWAL_TRIGGER_TOKEN }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          MIRROR_1_RENEWAL_TRIGGER_TOKEN: ${{ secrets.MIRROR_1_RENEWAL_TRIGGER_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m src.main mirror-sync || echo "::warning::Mirror sync failed"

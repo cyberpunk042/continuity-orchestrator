@@ -30,31 +30,53 @@ logger = logging.getLogger(__name__)
 # Must match what .github/workflows/cron.yml and deploy-site.yml inject
 #
 # WHAT IS NOT HERE (and why):
-# - GITHUB_TOKEN: NEVER sync the master's token to the slave. The slave's
-#   own GITHUB_TOKEN (auto-provided by GitHub Actions) is sufficient for
-#   sentinel health checks on the master repo. Syncing the master's token
-#   would give the slave write access to the master — a security hole.
-# - MIRROR_1_TOKEN: Never synced to slave — slave doesn't manage its own mirrors.
-# - RELEASE_SECRET: Master-specific. Syncing it would let the slave trigger
-#   disclosure using the master's secret. If slave promotes, it uses its own.
-# - RENEWAL_TRIGGER_TOKEN: Per-repo PAT, synced via RENAMED_SECRETS instead.
+# - GITHUB_TOKEN: NEVER sync. Slave's own GITHUB_TOKEN is auto-provided.
+#   Syncing master's would give slave write access to master — security hole.
+# - GITHUB_REPOSITORY: Auto-provided by GitHub Actions runtime.
+# - MIRROR_1_TOKEN: Slave doesn't manage its own mirrors.
+# - MIRROR_1_REPO: Slave doesn't need the master's mirror config.
+# - MIRROR_ENABLED: Slave has its own value.
+# - RENEWAL_TRIGGER_TOKEN: Per-repo PAT — synced via RENAMED_SECRETS instead.
+# - CONTINUITY_CONFIG: Master JSON blob with ALL credentials bundled.
+#   Syncing it would overwrite the slave's individual secret values.
+#   We sync each secret individually instead.
 SYNCABLE_SECRETS = [
-    "CONTINUITY_CONFIG",      # Core config (needed if slave promotes to master)
-    "RESEND_API_KEY",         # Email adapter (needed for failover notifications)
-    "TWILIO_ACCOUNT_SID",     # SMS adapter
+    # Core
+    "PROJECT_NAME",           # Project identity
+    "OPERATOR_EMAIL",         # Notification recipient
+    "OPERATOR_SMS",           # SMS notification recipient
+
+    # Security / renewal
+    "RENEWAL_SECRET",         # Code to extend deadline
+    "RELEASE_SECRET",         # Code to trigger disclosure
+
+    # Email adapter
+    "RESEND_API_KEY",         # Resend API key
+    "RESEND_FROM_EMAIL",      # Sender email address
+
+    # SMS adapter
+    "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM_NUMBER",
-    "X_API_KEY",              # X/Twitter adapter
+
+    # X/Twitter adapter
+    "X_API_KEY",
     "X_API_SECRET",
     "X_ACCESS_TOKEN",
     "X_ACCESS_SECRET",
-    "REDDIT_CLIENT_ID",       # Reddit adapter
+
+    # Reddit adapter
+    "REDDIT_CLIENT_ID",
     "REDDIT_CLIENT_SECRET",
     "REDDIT_USERNAME",
     "REDDIT_PASSWORD",
-    "PERSISTENCE_API_URL",    # Persistence layer
-    "PERSISTENCE_API_KEY",    # Persistence auth (cron.yml line 99)
-    "ADMIN_TOKEN",            # Admin panel auth
+
+    # Persistence
+    "PERSISTENCE_API_URL",
+    "PERSISTENCE_API_KEY",
+
+    # Admin
+    "ADMIN_TOKEN",
 ]
 
 # Per-mirror secrets that are stored on the MASTER with a mirror-specific name
@@ -74,6 +96,8 @@ SYNCABLE_VARS = [
     "MIRROR_ROLE",        # SLAVE / TEMPORARY_MASTER / MASTER
     "SENTINEL_THRESHOLD", # Number of failures before self-promotion
     "ADAPTER_MOCK_MODE",  # cron.yml line 51 — 'true' while slave
+    "ARCHIVE_ENABLED",    # Auto-archive to archive.org after publish
+    "ARCHIVE_URL",        # Custom archive URL (optional)
 ]
 
 
