@@ -143,6 +143,8 @@ def create_app() -> Flask:
             "trigger-shadow-60": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "60", "--silent"],
             "trigger-shadow-120": ["python", "-m", "src.main", "trigger-release", "--stage", "FULL", "--delay", "120", "--silent"],
             "reset": ["python", "-m", "src.main", "reset", "-y"],
+            # Trigger GitHub deploy-site workflow
+            "deploy-site": ["gh", "workflow", "run", "deploy-site.yml"],
         }
         
         if command not in allowed_commands:

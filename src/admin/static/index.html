@@ -208,15 +208,18 @@
         .gh-menu .gh-dropdown {
             display: none;
             position: absolute;
-            top: calc(100% + 6px);
+            top: 100%;
             right: 0;
+            padding-top: 6px;
+        }
+
+        .gh-menu .gh-dropdown>div {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 0.35rem;
             min-width: 180px;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-            z-index: 200;
         }
 
         .gh-menu:hover .gh-dropdown {
@@ -872,9 +875,11 @@
                 <span>🔗</span>
                 <span style="font-size:0.6rem;">▾</span>
                 <div class="gh-dropdown">
-                    <a id="gh-link-repo" href="#" target="_blank">📦 Repository</a>
-                    <a id="gh-link-pages" href="#" target="_blank">🌐 Pages</a>
-                    <a id="gh-link-actions" href="#" target="_blank">⚡ Actions</a>
+                    <div>
+                        <a id="gh-link-repo" href="#" target="_blank">📦 Repository</a>
+                        <a id="gh-link-pages" href="#" target="_blank">🌐 Pages</a>
+                        <a id="gh-link-actions" href="#" target="_blank">⚡ Actions</a>
+                    </div>
                 </div>
             </div>
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -4177,6 +4182,9 @@
                 const syncData = await syncResp.json();
                 if (syncData.success) {
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
+                    // Trigger deploy-site workflow (fire-and-forget)
+                    apiRun('deploy-site');
+                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🚀 Deploy pipeline triggered (background)</span>`;
                 } else {
                     if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.steps?.find(s => !s.ok)?.output || 'Unknown'}</span>`;
                 }
