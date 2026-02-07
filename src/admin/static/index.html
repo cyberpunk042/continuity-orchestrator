@@ -1216,7 +1216,7 @@
 
             // Load data for the tab
             if (tabId === 'secrets') {
-                loadSecretsForm();
+                if (!secretsLoaded) loadSecretsForm();
             } else if (tabId === 'wizard') {
                 // Navigate to specific wizard step if provided
                 if (subStep) {
@@ -1242,13 +1242,21 @@
                 if (!confirm('You have unsaved wizard progress. Leave anyway?')) return;
                 wizardDirty = false;  // user confirmed — reset
             }
+            if (activeTab === 'secrets' && targetTab !== 'secrets' && secretsDirty) {
+                if (!confirm('You have unsaved secret changes. Leave anyway?')) return;
+                // Immediately restore fields to their saved values (no reload needed)
+                document.querySelectorAll('#secrets-form [data-secret-name]').forEach(el => {
+                    el.value = secretsInitialValues[el.dataset.secretName] ?? '';
+                });
+                secretsDirty = false;
+            }
             activeTab = targetTab;
             _origSwitchTab(tabId, subStep);
         };
 
         // Warn before page unload if wizard has unsaved data
         window.addEventListener('beforeunload', (e) => {
-            if (wizardDirty) {
+            if (wizardDirty || secretsDirty) {
                 e.preventDefault();
                 e.returnValue = '';
             }
@@ -1474,21 +1482,26 @@
 
             if (!ghTool?.installed) {
                 ghAlert.innerHTML = `
-                    <div class="alert warning">
-                        ⚠️ <strong>gh CLI not installed</strong>
-                        <button class="btn" onclick="installGh()" style="margin-left: 1rem; padding: 0.25rem 0.75rem;">Install gh CLI</button>
+                    <div class="alert warning" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>⚠️ <strong>gh CLI not installed</strong></span>
+                        <span style="display: flex; gap: 0.5rem;">
+                            <button class="btn" onclick="installGh()" style="padding: 0.25rem 0.75rem;">Install gh CLI</button>
+                            <button class="btn" onclick="refreshSecrets()" style="padding: 0.25rem 0.5rem;" title="Refresh">🔄</button>
+                        </span>
                     </div>
                 `;
             } else if (!ghTool?.authenticated) {
                 ghAlert.innerHTML = `
-                    <div class="alert warning">
-                        ⚠️ <strong>gh CLI not authenticated</strong> — Run <code>gh auth login</code> in terminal.
+                    <div class="alert warning" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>⚠️ <strong>gh CLI not authenticated</strong> — Run <code>gh auth login</code> in terminal.</span>
+                        <button class="btn" onclick="refreshSecrets()" style="padding: 0.25rem 0.5rem;" title="Refresh">🔄</button>
                     </div>
                 `;
             } else {
                 ghAlert.innerHTML = `
-                    <div class="alert success">
-                        ✅ <strong>gh CLI ready</strong> — ${ghSecrets.length} secrets in repo.
+                    <div class="alert success" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>✅ <strong>gh CLI ready</strong> — ${ghSecrets.length} secrets in repo.</span>
+                        <button class="btn" onclick="refreshSecrets()" style="padding: 0.25rem 0.5rem;" title="Refresh">🔄</button>
                     </div>
                 `;
             }
@@ -1511,11 +1524,22 @@
                 </div>
             `;
 
+            // Map categories to wizard steps for shortcut links
+            const categoryWizardMap = {
+                'Email (Resend)': 'email',
+                'SMS (Twilio)': 'sms',
+                'X (Twitter)': 'twitter',
+                'Reddit': 'reddit',
+            };
+
             for (const [category, names] of Object.entries(categories)) {
                 const secrets = names.map(name => appData.secrets.find(s => s.name === name)).filter(Boolean);
                 if (secrets.length === 0) continue;
 
-                html += `<div class="section-title">${category}</div>`;
+                const wizLink = categoryWizardMap[category]
+                    ? ` <a href="#wizard/${categoryWizardMap[category]}" onclick="goToWizardStep('${categoryWizardMap[category]}'); return false;" style="font-size: 0.75rem; color: var(--info); font-weight: normal; margin-left: 0.5rem;" title="Open guided setup in Wizard">🧙 Wizard →</a>`
+                    : '';
+                html += `<div class="section-title">${category}${wizLink}</div>`;
                 for (const secret of secrets) {
                     const isRequired = secret.required_for.length > 0;
                     const localSet = envData[secret.name] && envData[secret.name].length > 0;
@@ -1570,7 +1594,10 @@
                                 <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
                             </div>
                             <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
-                                <div title="GitHub Secrets">${ghSet ? '✅' : '❌'} GitHub</div>
+                                ${['GITHUB_TOKEN', 'GITHUB_REPOSITORY'].includes(secret.name)
+                            ? `<div title="Automatically provided by GitHub Actions at runtime" style="color: var(--text-dim);">🔄 Auto</div>`
+                            : `<div title="GitHub Secrets">${ghSet ? '✅' : '❌'} GitHub</div>`
+                        }
                             </div>
                         </div>
                     `;
@@ -1587,7 +1614,6 @@
                             <button type="button" class="target-btn" data-target="github" onclick="selectTarget('github')">GitHub Only</button>
                         </div>
                         <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
-                        <button class="btn" onclick="loadSecretsForm()">🔄</button>
                     </div>
                     <div style="margin-top: 0.75rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
@@ -1605,6 +1631,41 @@
             `;
 
             document.getElementById('secrets-form').innerHTML = html;
+
+            // Snapshot initial values for dirty tracking
+            secretsInitialValues = {};
+            document.querySelectorAll('#secrets-form [data-secret-name]').forEach(el => {
+                secretsInitialValues[el.dataset.secretName] = el.value;
+            });
+            secretsDirty = false;
+            secretsLoaded = true;
+
+            // Listen for changes
+            document.getElementById('secrets-form').addEventListener('input', checkSecretsDirty);
+            document.getElementById('secrets-form').addEventListener('change', checkSecretsDirty);
+        }
+
+        let secretsInitialValues = {};
+        let secretsDirty = false;
+        let secretsLoaded = false;
+
+        function checkSecretsDirty() {
+            const fields = document.querySelectorAll('#secrets-form [data-secret-name]');
+            secretsDirty = Array.from(fields).some(el => {
+                return el.value !== (secretsInitialValues[el.dataset.secretName] ?? '');
+            });
+        }
+
+        function refreshSecrets() {
+            if (secretsDirty) {
+                if (!confirm('You have unsaved secret changes. Refresh anyway?')) return;
+            }
+            // Show loading state (same as initial page load)
+            document.getElementById('secrets-form').innerHTML = '<div class="loading">Loading secrets</div>';
+            secretsLoaded = false;
+            // Force fresh data fetch
+            appData = null;
+            loadSecretsForm();
         }
 
         // Push secrets
