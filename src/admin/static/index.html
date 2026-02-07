@@ -1449,6 +1449,7 @@
         }
         // Secrets form
         let ghSecrets = [];  // List of secrets set in GitHub
+        let ghVariables = [];  // List of variables set in GitHub
         let currentTarget = 'both';  // Current save target
 
         function selectTarget(target) {
@@ -1465,16 +1466,45 @@
             }
         }
 
+        // Three-tier classification of .env values based on actual GitHub workflow usage
+        // Tier 1: Actual GitHub secrets (consumed via secrets.* in workflows, or via CONTINUITY_CONFIG)
+        const GITHUB_SECRETS = [
+            'CONTINUITY_CONFIG',  // Master JSON — overrides individual secrets
+            'RESEND_API_KEY', 'RESEND_FROM_EMAIL',
+            'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
+            'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET',
+            'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD',
+            'PERSISTENCE_API_URL', 'PERSISTENCE_API_KEY',
+            'RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN',
+            'OPERATOR_EMAIL', 'OPERATOR_SMS', 'PROJECT_NAME',
+        ];
+        // Tier 2: GitHub repository variables (consumed via vars.* in workflows — NOT secrets)
+        const GITHUB_VARS = ['ADAPTER_MOCK_MODE', 'ARCHIVE_ENABLED', 'ARCHIVE_URL'];
+        // Tier 3: Local-only config (.env only, never referenced in workflows)
+        const LOCAL_ONLY = ['DEPLOY_MODE', 'WEBHOOK_TIMEOUT'];
+        // Auto-provided by GitHub Actions runtime — can't be set/deleted via API
+        const AUTO_PROVIDED = ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'];
+        // Combined known secrets (for sync/clear operations)
+        const KNOWN_SECRETS = [...GITHUB_SECRETS, ...GITHUB_VARS, ...LOCAL_ONLY, ...AUTO_PROVIDED];
+
+        function getSecretTier(name) {
+            if (AUTO_PROVIDED.includes(name)) return 'auto';
+            if (GITHUB_SECRETS.includes(name)) return 'secret';
+            if (GITHUB_VARS.includes(name)) return 'var';
+            return 'local';
+        }
+
         async function loadSecretsForm() {
             if (!appData) {
                 const response = await fetch('/api/status');
                 appData = await response.json();
             }
 
-            // Fetch GitHub secrets list
+            // Fetch GitHub secrets + variables list
             const ghSecretsRes = await fetch('/api/gh/secrets');
             const ghSecretsData = await ghSecretsRes.json();
             ghSecrets = ghSecretsData.secrets || [];
+            ghVariables = ghSecretsData.variables || [];
 
             const ghTool = appData.tools.find(t => t.name === 'gh');
             const gitTool = appData.tools.find(t => t.name === 'git');
@@ -1508,21 +1538,17 @@
 
             // Group secrets by category
             const categories = {
-                'Core': ['PROJECT_NAME', 'OPERATOR_EMAIL', 'ADAPTER_MOCK_MODE'],
+                'Project': ['PROJECT_NAME', 'OPERATOR_EMAIL', 'OPERATOR_SMS'],
                 'Security': ['RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN'],
                 'Email (Resend)': ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
-                'SMS (Twilio)': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS'],
+                'SMS (Twilio)': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER'],
                 'GitHub': ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'],
                 'X (Twitter)': ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
                 'Reddit': ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
+                'Operational': ['ADAPTER_MOCK_MODE', 'ARCHIVE_ENABLED', 'ARCHIVE_URL'],
             };
 
-            let html = `
-                <div style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-dim);">
-                    <strong>Local (.env)</strong> = For local development &nbsp;|&nbsp; 
-                    <strong>GitHub</strong> = For CI/CD (Actions)
-                </div>
-            `;
+            let html = '';
 
             // Map categories to wizard steps for shortcut links
             const categoryWizardMap = {
@@ -1547,12 +1573,14 @@
                     const currentValue = envData[secret.name] || '';
 
                     // Boolean secrets use select dropdown
-                    const booleanSecrets = ['ADAPTER_MOCK_MODE'];
+                    const booleanSecrets = ['ADAPTER_MOCK_MODE', 'ARCHIVE_ENABLED'];
 
                     // Non-sensitive secrets can show as plain text
                     const nonSensitive = ['GITHUB_REPOSITORY', 'OPERATOR_EMAIL', 'RESEND_FROM_EMAIL',
                         'TWILIO_FROM_NUMBER', 'OPERATOR_SMS', 'PROJECT_NAME',
-                        'REDDIT_USERNAME', 'TWILIO_ACCOUNT_SID', 'REDDIT_CLIENT_ID'];
+                        'REDDIT_USERNAME', 'TWILIO_ACCOUNT_SID', 'REDDIT_CLIENT_ID',
+                        'ARCHIVE_URL', 'WEBHOOK_TIMEOUT', 'DEPLOY_MODE',
+                        'PERSISTENCE_API_URL'];
 
                     // Add action buttons for certain secrets
                     let actionBtn = '';
@@ -1580,8 +1608,32 @@
                                    data-secret-name="${secret.name}">`;
                     }
 
+                    const tier = getSecretTier(secret.name);
+                    // Delete from GitHub — for secrets or variables that are set
+                    const canDeleteSecret = tier === 'secret' && ghSet;
+                    const canDeleteVar = tier === 'var' && ghVariables.includes(secret.name);
+                    const canDeleteGh = canDeleteSecret || canDeleteVar;
+                    const deleteKind = tier === 'var' ? 'variable' : 'secret';
+
+                    // Tier-based GitHub column
+                    let ghColumn;
+                    switch (tier) {
+                        case 'auto':
+                            ghColumn = `<div title="Automatically provided by GitHub Actions at runtime" style="color: var(--text-dim);">🔄 Auto</div>`;
+                            break;
+                        case 'secret':
+                            ghColumn = `<div title="GitHub Secret (used by Actions)">${ghSet ? '✅' : '❌'} GitHub</div>`;
+                            break;
+                        case 'var':
+                            const varSet = ghVariables.includes(secret.name);
+                            ghColumn = `<div title="GitHub repo variable (vars.*). Pushed via gh variable set.">${varSet ? '✅' : '❌'} Var</div>`;
+                            break;
+                        default:
+                            ghColumn = `<div title="Local only — not used in GitHub workflows" style="color: var(--text-dim);">📁 Local only</div>`;
+                    }
+
                     html += `
-                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr auto 100px 100px; gap: 0.5rem; align-items: center;">
+                        <div class="secret-config-row" style="display: grid; grid-template-columns: 1fr 1.5fr auto 80px 95px 32px; gap: 0.5rem; align-items: center;">
                             <div class="secret-config-name">
                                 ${secret.name}
                                 ${isRequired ? '<span style="color: var(--danger);">*</span>' : ''}
@@ -1594,42 +1646,43 @@
                                 <div title="Local (.env)">${localSet ? '✅' : '❌'} Local</div>
                             </div>
                             <div class="secret-config-status" style="text-align: center; font-size: 0.8rem;">
-                                ${['GITHUB_TOKEN', 'GITHUB_REPOSITORY'].includes(secret.name)
-                            ? `<div title="Automatically provided by GitHub Actions at runtime" style="color: var(--text-dim);">🔄 Auto</div>`
-                            : `<div title="GitHub Secrets">${ghSet ? '✅' : '❌'} GitHub</div>`
-                        }
+                                ${ghColumn}
+                            </div>
+                            <div style="text-align: center;">
+                                ${canDeleteGh ? `<button class="btn" onclick="removeSecret('${secret.name}','github','${deleteKind}')" style="padding:0.15rem 0.35rem;font-size:0.7rem;" title="Remove ${secret.name} from GitHub">🗑️</button>` : ''}
                             </div>
                         </div>
                     `;
                 }
             }
 
-            // Detect CONTINUITY_CONFIG master secret
-            const masterSet = envData['CONTINUITY_CONFIG'] && envData['CONTINUITY_CONFIG'].length > 0;
+            // CONTINUITY_CONFIG master secret panel — always shown
             const ghMasterSet = ghSecrets.includes('CONTINUITY_CONFIG');
 
-            if (masterSet || ghMasterSet) {
-                html += `
-                    <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid var(--warning); border-radius: 8px; background: rgba(255,193,7,0.08);">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                            <strong style="font-size: 1rem;">🔑 Master Secret Detected: <code>CONTINUITY_CONFIG</code></strong>
-                        </div>
-                        <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
-                            This is a single JSON blob containing all adapter credentials. <strong>When present, it overrides individual secrets</strong>
-                            (individual env vars still fill gaps not covered by the master).<br>
-                            <em>Priority: CONTINUITY_CONFIG → individual env vars.</em>
-                        </div>
-                        <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
-                            <span>${masterSet ? '✅' : '❌'} Local</span>
-                            <span style="margin: 0 0.25rem;">|</span>
-                            <span>${ghMasterSet ? '✅' : '❌'} GitHub</span>
-                            <span style="flex: 1;"></span>
-                            ${masterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','local')" style="padding:0.2rem 0.5rem;font-size:0.75rem;" title="Remove from .env">🗑️ Clear Local</button>` : ''}
-                            ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.2rem 0.5rem;font-size:0.75rem;" title="Remove from GitHub">🗑️ Clear GitHub</button>` : ''}
-                        </div>
+            html += `
+                <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid ${ghMasterSet ? 'var(--warning)' : 'var(--border)'}; border-radius: 8px; background: ${ghMasterSet ? 'rgba(255,193,7,0.08)' : 'transparent'};">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <strong style="font-size: 1rem;">🔑 Master Secret: <code>CONTINUITY_CONFIG</code></strong>
+                        <span style="font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 4px; background: ${ghMasterSet ? 'var(--warning)' : 'var(--bg-input)'}; color: ${ghMasterSet ? '#000' : 'var(--text-dim)'};">
+                            ${ghMasterSet ? '✅ SET ON GITHUB' : 'NOT SET'}
+                        </span>
                     </div>
-                `;
-            }
+                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                        ${ghMasterSet
+                    ? `<strong style="color: var(--warning);">⚠️ Master secret is active on GitHub — it overrides individual secrets in CI.</strong><br>
+                               Individual env vars only fill gaps not covered by the master JSON.<br>
+                               <em>Changes to individual GitHub secrets may have no effect while this is set.</em>`
+                    : `A single JSON blob bundling all adapter credentials into one GitHub secret.<br>
+                               When set, it replaces the need for individual GitHub secrets. <em>Priority: CONTINUITY_CONFIG → individual env vars.</em>`
+                }
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
+                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;">📋 Generate from current config</button>
+                        <button class="btn primary" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;">☁️ Push to GitHub as master</button>
+                        ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.3rem 0.75rem;font-size:0.8rem;" title="Remove CONTINUITY_CONFIG from GitHub">🗑️ Remove from GitHub</button>` : ''}
+                    </div>
+                </div>
+            `;
 
             html += `
                 <!-- Save Section -->
@@ -1706,42 +1759,72 @@
             loadSecretsForm();
         }
 
-        // Push secrets
-        // Known secret names (mirrors SECRET_DEFINITIONS in system_status.py)
-        const KNOWN_SECRETS = [
-            'PROJECT_NAME', 'OPERATOR_EMAIL', 'ADAPTER_MOCK_MODE',
-            'RENEWAL_SECRET', 'RELEASE_SECRET', 'RENEWAL_TRIGGER_TOKEN',
-            'RESEND_API_KEY', 'RESEND_FROM_EMAIL',
-            'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS',
-            'GITHUB_TOKEN', 'GITHUB_REPOSITORY',
-            'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET',
-            'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD',
-            'ARCHIVE_ENABLED', 'ARCHIVE_URL',
-        ];
-        const AUTO_PROVIDED = ['GITHUB_TOKEN', 'GITHUB_REPOSITORY'];
-
-        async function syncEnvToGithub() {
-            if (!envData || Object.keys(envData).length === 0) {
-                alert('No local .env values found.');
-                return;
+        function buildMasterConfigJson() {
+            // Build the master config JSON from current .env values
+            // Mirrors the fields in loader.py's _parse_master_config
+            const fields = {
+                // Project / operator info (needed by tick but not passed individually in workflow)
+                project_name: envData['PROJECT_NAME'] || '',
+                operator_email: envData['OPERATOR_EMAIL'] || '',
+                operator_sms: envData['OPERATOR_SMS'] || '',
+                // Email (Resend)
+                resend_api_key: envData['RESEND_API_KEY'] || '',
+                resend_from_email: envData['RESEND_FROM_EMAIL'] || '',
+                // SMS (Twilio)
+                twilio_account_sid: envData['TWILIO_ACCOUNT_SID'] || '',
+                twilio_auth_token: envData['TWILIO_AUTH_TOKEN'] || '',
+                twilio_from_number: envData['TWILIO_FROM_NUMBER'] || '',
+                // X (Twitter)
+                x_api_key: envData['X_API_KEY'] || '',
+                x_api_secret: envData['X_API_SECRET'] || '',
+                x_access_token: envData['X_ACCESS_TOKEN'] || '',
+                x_access_secret: envData['X_ACCESS_SECRET'] || '',
+                // Reddit
+                reddit_client_id: envData['REDDIT_CLIENT_ID'] || '',
+                reddit_client_secret: envData['REDDIT_CLIENT_SECRET'] || '',
+                reddit_username: envData['REDDIT_USERNAME'] || '',
+                reddit_password: envData['REDDIT_PASSWORD'] || '',
+                // GitHub
+                github_token: envData['GITHUB_TOKEN'] || '',
+                github_repository: envData['GITHUB_REPOSITORY'] || '',
+                // Persistence
+                persistence_api_url: envData['PERSISTENCE_API_URL'] || '',
+                persistence_api_key: envData['PERSISTENCE_API_KEY'] || '',
+                // Renewal
+                renewal_secret: envData['RENEWAL_SECRET'] || '',
+            };
+            // Only include non-empty values
+            const clean = {};
+            for (const [k, v] of Object.entries(fields)) {
+                if (v) clean[k] = v;
             }
+            return clean;
+        }
 
-            // Only push known secrets that have values, skip auto-provided
-            const secrets = {};
-            for (const name of KNOWN_SECRETS) {
-                const val = envData[name];
-                if (val && !AUTO_PROVIDED.includes(name)) {
-                    secrets[name] = val;
-                }
-            }
+        function generateMasterSecret() {
+            const config = buildMasterConfigJson();
+            const json = JSON.stringify(config, null, 2);
+            const count = Object.keys(config).length;
 
-            const count = Object.keys(secrets).length;
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
+            output.style.display = 'block';
+            terminal.className = 'terminal';
+            terminal.textContent = `📋 CONTINUITY_CONFIG (${count} keys):\n\n${json}\n\nCopy this JSON and add it as a single GitHub secret named CONTINUITY_CONFIG.`;
+        }
+
+        async function pushMasterSecret() {
+            const config = buildMasterConfigJson();
+            const count = Object.keys(config).length;
+
             if (count === 0) {
-                alert('No known secrets with values in .env to sync.');
+                alert('No adapter credentials found in .env to bundle.');
                 return;
             }
 
-            if (!confirm(`Push ${count} known secrets from .env → GitHub?\n\nSecrets: ${Object.keys(secrets).join(', ')}\n\nThis will overwrite any existing GitHub secret values.`)) {
+            const json = JSON.stringify(config);
+
+            if (!confirm(`Push CONTINUITY_CONFIG to GitHub with ${count} keys?\n\nThis single secret will override individual secrets in CI.\nIndividual env vars will only fill gaps not in the master.`)) {
                 return;
             }
 
@@ -1749,7 +1832,92 @@
             const terminal = document.getElementById('secrets-terminal');
             output.style.display = 'block';
             terminal.className = 'terminal';
-            terminal.textContent = `☁️ Syncing ${count} known secret(s) from .env → GitHub...\n`;
+            terminal.textContent = `☁️ Pushing CONTINUITY_CONFIG (${count} keys) to GitHub...\n`;
+
+            try {
+                const response = await fetch('/api/secrets/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        secrets: { CONTINUITY_CONFIG: json },
+                        push_to_github: true,
+                        save_to_env: false,
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    terminal.className = 'terminal error';
+                    terminal.textContent += `❌ ${data.error}\n`;
+                    return;
+                }
+
+                const r = (data.results || [])[0];
+                if (r?.success) {
+                    terminal.textContent += `✅ CONTINUITY_CONFIG pushed to GitHub!\n\n${count} adapter credentials bundled into one secret.`;
+                } else {
+                    terminal.className = 'terminal error';
+                    terminal.textContent += `❌ Failed: ${r?.error || 'unknown'}\n`;
+                }
+
+                // Refresh to show master detected
+                secretsLoaded = false;
+                appData = null;
+                await loadSecretsForm();
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent += `❌ Error: ${error.message}`;
+            }
+        }
+
+
+
+        async function syncEnvToGithub() {
+            if (!envData || Object.keys(envData).length === 0) {
+                alert('No local .env values found.');
+                return;
+            }
+
+            // Collect tier-1 secrets (excluding CONTINUITY_CONFIG — handled separately)
+            const secrets = {};
+            for (const name of GITHUB_SECRETS) {
+                const val = envData[name];
+                if (val && name !== 'CONTINUITY_CONFIG') {
+                    secrets[name] = val;
+                }
+            }
+
+            // Collect tier-2 variables
+            const variables = {};
+            for (const name of GITHUB_VARS) {
+                const val = envData[name];
+                if (val) {
+                    variables[name] = val;
+                }
+            }
+
+            const secretCount = Object.keys(secrets).length;
+            const varCount = Object.keys(variables).length;
+            const totalCount = secretCount + varCount;
+            if (totalCount === 0) {
+                alert('No GitHub secrets or variables with values in .env to sync.');
+                return;
+            }
+
+            let confirmMsg = `Push ${totalCount} value(s) from .env → GitHub?\n\n`;
+            if (secretCount) confirmMsg += `Secrets (${secretCount}): ${Object.keys(secrets).join(', ')}\n`;
+            if (varCount) confirmMsg += `Variables (${varCount}): ${Object.keys(variables).join(', ')}\n`;
+            confirmMsg += `\nThis will overwrite any existing GitHub values.`;
+
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+
+            const output = document.getElementById('secrets-output');
+            const terminal = document.getElementById('secrets-terminal');
+            output.style.display = 'block';
+            terminal.className = 'terminal';
+            terminal.textContent = `☁️ Syncing ${totalCount} value(s) from .env → GitHub...\n`;
 
             try {
                 const response = await fetch('/api/secrets/push', {
@@ -1757,6 +1925,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         secrets,
+                        variables,
                         push_to_github: true,
                         save_to_env: false,
                     }),
@@ -1772,8 +1941,9 @@
                 let text = '';
                 let ok = 0, fail = 0;
                 for (const r of (data.results || [])) {
+                    const icon = r.kind === 'variable' ? '📋' : '☁️';
                     if (r.success) {
-                        text += `✅ ${r.name}\n`;
+                        text += `${icon} ${r.name}\n`;
                         ok++;
                     } else {
                         text += `❌ ${r.name}: ${r.error}\n`;
@@ -1787,14 +1957,14 @@
                 // Refresh to update GitHub column status
                 secretsLoaded = false;
                 appData = null;
-                loadSecretsForm();
+                await loadSecretsForm();
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `❌ Error: ${error.message}`;
             }
         }
 
-        async function removeSecret(name, target) {
+        async function removeSecret(name, target, kind = 'secret') {
             const label = target === 'local' ? 'local .env' : target === 'github' ? 'GitHub' : 'local & GitHub';
             if (!confirm(`Remove ${name} from ${label}?\n\nThis cannot be undone.`)) return;
 
@@ -1808,7 +1978,7 @@
                 const response = await fetch('/api/secret/remove', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, target }),
+                    body: JSON.stringify({ name, target, kind }),
                 });
                 const data = await response.json();
 
@@ -1820,7 +1990,7 @@
                 // Refresh
                 secretsLoaded = false;
                 appData = null;
-                loadSecretsForm();
+                await loadSecretsForm();
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `❌ Error: ${error.message}`;
@@ -1831,7 +2001,7 @@
             const label = target === 'local' ? 'local .env' : 'GitHub';
             const secretsToRemove = target === 'local'
                 ? KNOWN_SECRETS.filter(n => envData[n] && !AUTO_PROVIDED.includes(n))
-                : ghSecrets.filter(n => !AUTO_PROVIDED.includes(n));
+                : ghSecrets.filter(n => GITHUB_SECRETS.includes(n));
 
             if (secretsToRemove.length === 0) {
                 alert(`No secrets to clear from ${label}.`);
@@ -1880,18 +2050,49 @@
         }
         async function pushSecrets(target = 'both') {
             const inputs = document.querySelectorAll('[data-secret-name]');
-            const secrets = {};
             const gitSyncChecked = document.getElementById('secrets-git-sync')?.checked ?? false;
 
+            // Only collect fields that were actually changed
+            const secrets = {};
             inputs.forEach(input => {
-                if (input.value) {
-                    secrets[input.dataset.secretName] = input.value;
+                const name = input.dataset.secretName;
+                const initial = secretsInitialValues[name] ?? '';
+                if (input.value && input.value !== initial) {
+                    secrets[name] = input.value;
                 }
             });
 
+            // When saving to Both: also include GitHub secrets that exist locally but are missing from GitHub
+            if (target === 'both') {
+                for (const name of GITHUB_SECRETS) {
+                    if (secrets[name]) continue; // already changed
+                    if (AUTO_PROVIDED.includes(name)) continue;
+                    const localVal = envData[name];
+                    if (localVal && !ghSecrets.includes(name)) {
+                        secrets[name] = localVal;
+                    }
+                }
+            }
+
             if (Object.keys(secrets).length === 0) {
-                alert('No secrets entered. Fill in at least one field.');
+                alert('No changes detected and all local secrets are already on GitHub.');
                 return;
+            }
+
+            // Split changed values into secrets vs variables for the correct gh command
+            const ghPush = target === 'both' || target === 'github';
+            const secretsForGh = {};
+            const variablesForGh = {};
+            if (ghPush) {
+                for (const [k, v] of Object.entries(secrets)) {
+                    if (AUTO_PROVIDED.includes(k)) continue;
+                    if (GITHUB_VARS.includes(k)) {
+                        variablesForGh[k] = v;
+                    } else if (GITHUB_SECRETS.includes(k)) {
+                        secretsForGh[k] = v;
+                    }
+                    // LOCAL_ONLY values are not pushed to GitHub at all
+                }
             }
 
             const output = document.getElementById('secrets-output');
@@ -1900,16 +2101,18 @@
             const targetLabel = target === 'both' ? 'local & GitHub' : target;
             output.style.display = 'block';
             terminal.className = 'terminal';
-            terminal.textContent = `Saving ${Object.keys(secrets).length} secret(s) to ${targetLabel}...\n`;
+            terminal.textContent = `Saving ${Object.keys(secrets).length} value(s) to ${targetLabel}...\n`;
 
             try {
                 const response = await fetch('/api/secrets/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        secrets,
-                        push_to_github: target === 'both' || target === 'github',
+                        secrets: target === 'github' ? secretsForGh : secrets,
+                        variables: variablesForGh,
+                        push_to_github: ghPush,
                         save_to_env: target === 'both' || target === 'local',
+                        exclude_from_github: AUTO_PROVIDED,
                     }),
                 });
                 const data = await response.json();
@@ -1930,10 +2133,12 @@
                     output_text += `📁 Saved to .env: ${Object.keys(secrets).join(', ')}\n`;
                 }
 
-                // Show GitHub push results
+                // Show GitHub push results (secrets + variables)
                 for (const result of (data.results || [])) {
+                    const icon = result.kind === 'variable' ? '📋' : '☁️';
+                    const label = result.kind === 'variable' ? 'variable' : 'secret';
                     if (result.success) {
-                        output_text += `☁️ ${result.name}: pushed to GitHub\n`;
+                        output_text += `${icon} ${result.name}: pushed as GitHub ${label}\n`;
                     } else {
                         output_text += `❌ ${result.name}: ${result.error}\n`;
                     }

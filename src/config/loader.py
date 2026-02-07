@@ -64,6 +64,11 @@ class AdapterCredentials:
     # Renewal
     renewal_secret: Optional[str] = None
     
+    # Project config (not adapter credentials, but needed in CI via master secret)
+    project_name: Optional[str] = None
+    operator_email: Optional[str] = None
+    operator_sms: Optional[str] = None
+    
     def has_email(self) -> bool:
         return bool(self.resend_api_key)
     
@@ -117,6 +122,9 @@ class AdapterCredentials:
             "PERSISTENCE_API_URL": self.persistence_api_url,
             "PERSISTENCE_API_KEY": self.persistence_api_key,
             "RENEWAL_SECRET": self.renewal_secret,
+            "PROJECT_NAME": self.project_name,
+            "OPERATOR_EMAIL": self.operator_email,
+            "OPERATOR_SMS": self.operator_sms,
         }
         return {k: v for k, v in mapping.items() if v}
     
@@ -197,6 +205,11 @@ def _parse_master_config(data: Dict[str, Any]) -> AdapterCredentials:
         
         # Renewal
         renewal_secret=data.get("renewal_secret") or data.get("RENEWAL_SECRET"),
+        
+        # Project config
+        project_name=data.get("project_name") or data.get("PROJECT_NAME"),
+        operator_email=data.get("operator_email") or data.get("OPERATOR_EMAIL"),
+        operator_sms=data.get("operator_sms") or data.get("OPERATOR_SMS"),
     )
 
 
@@ -221,6 +234,9 @@ def _load_individual_vars(existing: AdapterCredentials) -> AdapterCredentials:
         persistence_api_url=existing.persistence_api_url or os.environ.get("PERSISTENCE_API_URL"),
         persistence_api_key=existing.persistence_api_key or os.environ.get("PERSISTENCE_API_KEY"),
         renewal_secret=existing.renewal_secret or os.environ.get("RENEWAL_SECRET"),
+        project_name=existing.project_name or os.environ.get("PROJECT_NAME"),
+        operator_email=existing.operator_email or os.environ.get("OPERATOR_EMAIL"),
+        operator_sms=existing.operator_sms or os.environ.get("OPERATOR_SMS"),
     )
 
 

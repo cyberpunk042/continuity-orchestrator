@@ -411,16 +411,28 @@ def create_app() -> Flask:
     
     @app.route("/api/secrets/push", methods=["POST"])
     def api_push_secrets():
-        """Push secrets to GitHub AND save to .env file."""
+        """Push secrets/variables to GitHub AND save to .env file.
+        
+        Request body:
+            secrets: dict of name->value for GitHub secrets (gh secret set)
+            variables: dict of name->value for GitHub variables (gh variable set)
+            push_to_github: bool
+            save_to_env: bool
+            exclude_from_github: list of names to skip for GitHub push
+        """
         data = request.json or {}
         secrets = data.get("secrets", {})
+        variables = data.get("variables", {})
         push_to_github = data.get("push_to_github", True)
         save_to_env = data.get("save_to_env", True)
+        exclude_from_github = set(data.get("exclude_from_github", []))
         
+        # Combine all values for .env saving
+        all_values = {**secrets, **variables}
         results = []
         
         # First, save to .env file
-        if save_to_env and secrets:
+        if save_to_env and all_values:
             env_file = project_root / ".env"
             existing = {}
             if env_file.exists():
@@ -431,7 +443,7 @@ def create_app() -> Flask:
                             key, _, value = line.partition("=")
                             existing[key.strip()] = value.strip()
             
-            for name, value in secrets.items():
+            for name, value in all_values.items():
                 if value:
                     existing[name] = f'"{value}"' if " " in value or "=" in value else value
             
@@ -461,8 +473,11 @@ def create_app() -> Flask:
                     "all_success": False,
                 })
             
+            # Push secrets via gh secret set
             for name, value in secrets.items():
                 if not value:
+                    continue
+                if name.startswith("GITHUB_") or name in exclude_from_github:
                     continue
                 try:
                     result = subprocess.run(
@@ -474,14 +489,40 @@ def create_app() -> Flask:
                     )
                     results.append({
                         "name": name,
+                        "kind": "secret",
                         "success": result.returncode == 0,
                         "error": result.stderr if result.returncode != 0 else None,
                     })
                 except Exception as e:
                     results.append({
+                        "name": name, "kind": "secret",
+                        "success": False, "error": str(e),
+                    })
+            
+            # Push variables via gh variable set
+            for name, value in variables.items():
+                if not value:
+                    continue
+                if name in exclude_from_github:
+                    continue
+                try:
+                    result = subprocess.run(
+                        ["gh", "variable", "set", name, "--body", value],
+                        cwd=str(project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    results.append({
                         "name": name,
-                        "success": False,
-                        "error": str(e),
+                        "kind": "variable",
+                        "success": result.returncode == 0,
+                        "error": result.stderr if result.returncode != 0 else None,
+                    })
+                except Exception as e:
+                    results.append({
+                        "name": name, "kind": "variable",
+                        "success": False, "error": str(e),
                     })
         
         return jsonify({
@@ -540,7 +581,7 @@ def create_app() -> Flask:
     
     @app.route("/api/gh/secrets")
     def api_gh_secrets():
-        """Get list of secrets set in GitHub repo."""
+        """Get list of secrets AND variables set in GitHub repo."""
         try:
             # Check if gh is installed and authenticated
             from ..config.system_status import check_tool
@@ -551,6 +592,7 @@ def create_app() -> Flask:
                     "available": False,
                     "reason": "gh CLI not installed",
                     "secrets": [],
+                    "variables": [],
                 })
             
             if not gh_status.authenticated:
@@ -558,6 +600,7 @@ def create_app() -> Flask:
                     "available": False,
                     "reason": "gh CLI not authenticated",
                     "secrets": [],
+                    "variables": [],
                 })
             
             # Get list of secrets from GitHub
@@ -569,24 +612,35 @@ def create_app() -> Flask:
                 timeout=15,
             )
             
-            if result.returncode != 0:
-                return jsonify({
-                    "available": False,
-                    "reason": result.stderr or "Failed to list secrets",
-                    "secrets": [],
-                })
-            
-            # Parse secret names from output (format: "NAME\tUpdated YYYY-MM-DD")
             secret_names = []
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    parts = line.split("\t")
-                    if parts:
-                        secret_names.append(parts[0])
+            if result.returncode == 0:
+                for line in result.stdout.strip().split("\n"):
+                    if line:
+                        parts = line.split("\t")
+                        if parts:
+                            secret_names.append(parts[0])
+            
+            # Get list of variables from GitHub
+            var_result = subprocess.run(
+                ["gh", "variable", "list"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            
+            variable_names = []
+            if var_result.returncode == 0:
+                for line in var_result.stdout.strip().split("\n"):
+                    if line:
+                        parts = line.split("\t")
+                        if parts:
+                            variable_names.append(parts[0])
             
             return jsonify({
                 "available": True,
                 "secrets": secret_names,
+                "variables": variable_names,
             })
         
         except Exception as e:
@@ -594,6 +648,7 @@ def create_app() -> Flask:
                 "available": False,
                 "reason": str(e),
                 "secrets": [],
+                "variables": [],
             })
     
     @app.route("/api/secret/set", methods=["POST"])
@@ -654,10 +709,11 @@ def create_app() -> Flask:
     
     @app.route("/api/secret/remove", methods=["POST"])
     def api_secret_remove():
-        """Remove a secret from .env and/or GitHub."""
+        """Remove a secret/variable from .env and/or GitHub."""
         data = request.json or {}
         name = data.get("name")
         target = data.get("target", "both")  # "local", "github", or "both"
+        kind = data.get("kind", "secret")    # "secret" or "variable"
         
         if not name:
             return jsonify({"error": "Secret name required"}), 400
@@ -684,9 +740,11 @@ def create_app() -> Flask:
         
         # Remove from GitHub
         if target in ("github", "both"):
+            # Use correct gh command based on kind
+            gh_cmd = "variable" if kind == "variable" else "secret"
             try:
                 result = subprocess.run(
-                    ["gh", "secret", "remove", name],
+                    ["gh", gh_cmd, "delete", name],
                     cwd=str(project_root),
                     capture_output=True,
                     text=True,
