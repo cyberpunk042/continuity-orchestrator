@@ -211,7 +211,6 @@ class SiteGenerator:
             is_pending = False
             if delay_minutes > 0 and execute_after_iso:
                 try:
-                    from datetime import datetime, timezone
                     execute_dt = datetime.fromisoformat(execute_after_iso.replace("Z", "+00:00"))
                     is_pending = datetime.now(timezone.utc) < execute_dt
                 except Exception:
