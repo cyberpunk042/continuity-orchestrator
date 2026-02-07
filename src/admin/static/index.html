@@ -2296,9 +2296,11 @@
             });
 
             // When saving to Both: also include secrets/vars that exist locally but are missing from GitHub
+            // Skip anything marked for deletion — those should NOT be pushed
             if (target === 'both') {
                 for (const name of GITHUB_SECRETS) {
                     if (secrets[name]) continue; // already changed
+                    if (deletions.includes(name)) continue; // marked for deletion
                     if (AUTO_PROVIDED.includes(name)) continue;
                     const localVal = envData[name];
                     if (localVal && !ghSecrets.includes(name)) {
@@ -2307,6 +2309,7 @@
                 }
                 for (const name of GITHUB_VARS) {
                     if (secrets[name]) continue;
+                    if (deletions.includes(name)) continue; // marked for deletion
                     const localVal = envData[name];
                     if (localVal && !ghVariables.includes(name)) {
                         secrets[name] = localVal;
