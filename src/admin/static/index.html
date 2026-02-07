@@ -1511,6 +1511,11 @@
                 appData = await response.json();
             }
 
+            // Re-fetch env data so we always have the latest .env values
+            const envRes = await fetch('/api/env/read');
+            const envResult = await envRes.json();
+            envData = envResult.values || {};
+
             // Fetch GitHub secrets + variables list
             const ghSecretsRes = await fetch('/api/gh/secrets');
             const ghSecretsData = await ghSecretsRes.json();
