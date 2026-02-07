@@ -3110,6 +3110,27 @@
         // MIRROR INTEGRATION
         // ========================================
 
+        /** Auto-extract owner/repo from any GitHub URL format. */
+        function normalizeMirrorRepo(input) {
+            let v = (input.value || '').trim();
+            if (!v) return;
+            // https://github.com/owner/repo(.git)
+            let m = v.match(/github\.com[/:]+([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
+            if (m) { input.value = m[1]; return; }
+            // git@github.com:owner/repo.git
+            m = v.match(/^git@github\.com:([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
+            if (m) { input.value = m[1]; return; }
+            // Strip trailing .git if bare owner/repo.git
+            if (v.endsWith('.git')) { input.value = v.slice(0, -4); }
+        }
+
+        // Also normalize the dynamically-created secrets-page input
+        document.addEventListener('focusout', (e) => {
+            if (e.target && e.target.id === 'secret-MIRROR_1_REPO') {
+                normalizeMirrorRepo(e.target);
+            }
+        });
+
         function mirrorTimeAgo(isoStr) {
             if (!isoStr) return 'never';
             try {
@@ -4049,7 +4070,7 @@
                                     <br><span style="font-size: 0.8rem; opacity: 0.7;">→ <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color: var(--info);">github.com/settings/tokens</a></span>
                                 </li>
                                 <li>Generate a token with <strong>repository access</strong> to the backup repo:
-                                    <br><span style="font-size: 0.8rem; opacity: 0.7;">Permissions needed: <code>Contents</code> (read/write), <code>Secrets</code> (read/write), <code>Variables</code> (read/write), <code>Workflows</code> (read/write), <code>Actions</code> (read/write)</span>
+                                    <br><span style="font-size: 0.8rem; opacity: 0.7;">Permissions (all read/write): <code>Contents</code>, <code>Actions</code>, <code>Workflows</code>, <code>Secrets</code>, <code>Variables</code>, <code>Pages</code>, <code>Environments</code>, <code>Deployments</code>, <code>Metadata</code> (read)</span>
                                 </li>
                                 <li>Paste the repo name and token below ↓</li>
                             </ol>
@@ -4068,10 +4089,11 @@
                             <div class="form-group">
                                 <label class="form-label">Backup Repository</label>
                                 <input type="text" class="form-input" id="wiz-mirror-repo"
-                                       placeholder="backup-user/repo-name"
-                                       value="${mirrorRepo}">
+                                       placeholder="backup-user/repo-name or paste full URL"
+                                       value="${mirrorRepo}"
+                                       onblur="normalizeMirrorRepo(this)">
                                 <div class="form-hint">
-                                    The empty repo you created on the backup account. Format: <code>owner/repo</code>
+                                    The empty repo you created on the backup account. Paste a URL or type <code>owner/repo</code>
                                 </div>
                             </div>
 

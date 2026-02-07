@@ -12,7 +12,7 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-07T04:17:23.729657+00:00",
+        "deadline_iso": "2026-02-09T17:55:23.624873+00:00",
         "grace_minutes": 0,
         "now_iso": "2026-02-07T17:53:42.681823Z",
         "time_to_deadline_minutes": 0,
