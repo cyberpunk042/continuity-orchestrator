@@ -1223,6 +1223,22 @@
             document.getElementById('theme-toggle').textContent = newTheme === 'light' ? '☀️' : '🌙';
         }
 
+        // ========================================
+        // GITHUB SHORTCUT MENU
+        // ========================================
+        function updateGhMenu() {
+            const repo = envData.GITHUB_REPOSITORY;
+            const menu = document.getElementById('gh-menu');
+            if (!repo || !menu) return;
+
+            const [owner, name] = repo.split('/');
+            if (!owner || !name) return;
+
+            document.getElementById('gh-link-repo').href = `https://github.com/${repo}`;
+            document.getElementById('gh-link-pages').href = `https://${owner}.github.io/${name}/`;
+            document.getElementById('gh-link-actions').href = `https://github.com/${repo}/actions`;
+            menu.classList.add('visible');
+        }
         // Restore theme on load
         (function initTheme() {
             const saved = localStorage.getItem('co-theme');
@@ -1401,6 +1417,7 @@
                 appData = await statusRes.json();
                 const envResult = await envRes.json();
                 envData = envResult.values || {};
+                updateGhMenu();
                 renderDashboard(appData);
             } catch (error) {
                 document.getElementById('dashboard').innerHTML = `
