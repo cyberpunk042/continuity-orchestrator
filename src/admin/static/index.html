@@ -1659,26 +1659,45 @@
             // CONTINUITY_CONFIG master secret panel — always shown
             const ghMasterSet = ghSecrets.includes('CONTINUITY_CONFIG');
 
+            // Compute pending sync counts for Save & Push badge
+            let pendingSecrets = 0;
+            let pendingVars = 0;
+            for (const name of GITHUB_SECRETS) {
+                if (AUTO_PROVIDED.includes(name) || name === 'CONTINUITY_CONFIG') continue;
+                const localVal = envData[name];
+                if (localVal && !ghSecrets.includes(name)) pendingSecrets++;
+            }
+            for (const name of GITHUB_VARS) {
+                const localVal = envData[name];
+                if (localVal && !ghVariables.includes(name)) pendingVars++;
+            }
+            const totalPending = pendingSecrets + pendingVars;
+
+            // Master config: count how many adapter credentials have values
+            const masterConfig = buildMasterConfigJson();
+            const masterKeyCount = Object.keys(masterConfig).length;
+
             html += `
                 <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid ${ghMasterSet ? 'var(--warning)' : 'var(--border)'}; border-radius: 8px; background: ${ghMasterSet ? 'rgba(255,193,7,0.08)' : 'transparent'};">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
                         <strong style="font-size: 1rem;">🔑 Master Secret: <code>CONTINUITY_CONFIG</code></strong>
                         <span style="font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 4px; background: ${ghMasterSet ? 'var(--warning)' : 'var(--bg-input)'}; color: ${ghMasterSet ? '#000' : 'var(--text-dim)'};">
                             ${ghMasterSet ? '✅ SET ON GITHUB' : 'NOT SET'}
                         </span>
+                        ${!ghMasterSet ? '<span style="font-size: 0.75rem; color: var(--text-dim); font-style: italic;">(optional — individual secrets work fine without it)</span>' : ''}
                     </div>
                     <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
                         ${ghMasterSet
-                    ? `<strong style="color: var(--warning);">⚠️ Master secret is active on GitHub — it overrides individual secrets in CI.</strong><br>
-                               Individual env vars only fill gaps not covered by the master JSON.<br>
-                               <em>Changes to individual GitHub secrets may have no effect while this is set.</em>`
-                    : `A single JSON blob bundling all adapter credentials into one GitHub secret.<br>
-                               When set, it replaces the need for individual GitHub secrets. <em>Priority: CONTINUITY_CONFIG → individual env vars.</em>`
+                    ? `<strong style="color: var(--warning);">⚠️ Active — overrides individual secrets in CI.</strong><br>
+                               If you changed secrets above, re-generate and push to update it.<br>
+                               <em>Individual env vars only fill gaps not covered by this JSON.</em>`
+                    : `Bundles all adapter credentials into a single GitHub secret. <strong>Not required</strong> — you can push secrets individually instead.<br>
+                               <em>Useful if you prefer one secret over many. Priority: CONTINUITY_CONFIG → individual env vars.</em>`
                 }
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
-                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;">📋 Generate from current config</button>
-                        <button class="btn primary" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;">☁️ Push to GitHub as master</button>
+                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials configured"' : `title="${masterKeyCount} credentials would be bundled"`}>📋 Preview JSON (${masterKeyCount} keys)</button>
+                        <button class="btn primary" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials to push"' : `title="Push ${masterKeyCount} credentials as CONTINUITY_CONFIG"`}>☁️ Push to GitHub</button>
                         ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.3rem 0.75rem;font-size:0.8rem;" title="Remove CONTINUITY_CONFIG from GitHub">🗑️ Remove from GitHub</button>` : ''}
                     </div>
                 </div>
@@ -1695,6 +1714,7 @@
                             <button type="button" class="target-btn" data-target="github" onclick="selectTarget('github')">GitHub Only</button>
                         </div>
                         <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
+                        ${totalPending > 0 ? `<span style="font-size: 0.8rem; color: var(--warning);" title="${pendingSecrets} secret(s) + ${pendingVars} variable(s) exist locally but not on GitHub">⚠️ ${totalPending} unsynced to GitHub</span>` : ''}
                     </div>
                     <div style="margin-top: 0.75rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
@@ -1709,7 +1729,7 @@
                 <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                     <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim); margin-bottom: 0.75rem;">🛠️ Manage</div>
                     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                        <button class="btn" onclick="syncEnvToGithub()" title="Force re-push all known .env secret values to GitHub">☁️ Sync .env → GitHub</button>
+                        <button class="btn" onclick="syncEnvToGithub()" title="Force re-push all .env values to GitHub (secrets + variables)">☁️ Sync .env → GitHub</button>
                         <button class="btn" onclick="clearSecretsPrompt('local')" title="Clear all local .env secret values" style="color: var(--warning);">🗑️ Clear Local Secrets</button>
                         <button class="btn" onclick="clearSecretsPrompt('github')" title="Remove all GitHub secrets" style="color: var(--danger);">🗑️ Clear GitHub Secrets</button>
                     </div>
@@ -2062,7 +2082,7 @@
                 }
             });
 
-            // When saving to Both: also include GitHub secrets that exist locally but are missing from GitHub
+            // When saving to Both: also include secrets/vars that exist locally but are missing from GitHub
             if (target === 'both') {
                 for (const name of GITHUB_SECRETS) {
                     if (secrets[name]) continue; // already changed
@@ -2072,10 +2092,17 @@
                         secrets[name] = localVal;
                     }
                 }
+                for (const name of GITHUB_VARS) {
+                    if (secrets[name]) continue;
+                    const localVal = envData[name];
+                    if (localVal && !ghVariables.includes(name)) {
+                        secrets[name] = localVal;
+                    }
+                }
             }
 
             if (Object.keys(secrets).length === 0) {
-                alert('No changes detected and all local secrets are already on GitHub.');
+                alert('Nothing to push — no changes and all local values are already synced to GitHub.');
                 return;
             }
 
