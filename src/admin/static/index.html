@@ -4234,6 +4234,10 @@
 
                     if (syncData.success) {
                         if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
+                        // Rebuild site + trigger deploy (fire-and-forget)
+                        apiRun('build-site');
+                        apiRun('deploy-site');
+                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
                     } else {
                         if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
                     }
