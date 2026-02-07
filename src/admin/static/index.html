@@ -1696,8 +1696,8 @@
                 }
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
-                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials configured"' : `title="${masterKeyCount} credentials would be bundled"`}>📋 Preview JSON (${masterKeyCount} keys)</button>
-                        <button class="btn primary" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials to push"' : `title="Push ${masterKeyCount} credentials as CONTINUITY_CONFIG"`}>☁️ Push to GitHub</button>
+                        <button class="btn" onclick="generateMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials configured"' : `title="${masterKeyCount} credentials would be bundled"`}>📋 Preview JSON (<span id="master-key-count">${masterKeyCount} keys</span>)</button>
+                        <button class="btn primary" id="master-push-btn" onclick="pushMasterSecret()" style="padding:0.3rem 0.75rem;font-size:0.8rem;" ${masterKeyCount === 0 ? 'disabled title="No credentials to push"' : `title="Push ${masterKeyCount} credentials as CONTINUITY_CONFIG — GitHub only, does not save to .env"`}>☁️ Push to GitHub</button>
                         ${ghMasterSet ? `<button class="btn" onclick="removeSecret('CONTINUITY_CONFIG','github')" style="padding:0.3rem 0.75rem;font-size:0.8rem;" title="Remove CONTINUITY_CONFIG from GitHub">🗑️ Remove from GitHub</button>` : ''}
                     </div>
                 </div>
@@ -1714,7 +1714,7 @@
                             <button type="button" class="target-btn" data-target="github" onclick="selectTarget('github')">GitHub Only</button>
                         </div>
                         <button class="btn primary" id="save-secrets-btn" onclick="pushSecrets(currentTarget)">💾 Save & Push</button>
-                        ${totalPending > 0 ? `<span style="font-size: 0.8rem; color: var(--warning);" title="${pendingSecrets} secret(s) + ${pendingVars} variable(s) exist locally but not on GitHub">⚠️ ${totalPending} unsynced to GitHub</span>` : ''}
+                        <span id="sync-pending-badge" style="font-size: 0.8rem; color: var(--warning); ${totalPending > 0 ? '' : 'display:none;'}" title="${pendingSecrets} secret(s) + ${pendingVars} variable(s) exist locally but not on GitHub">${totalPending > 0 ? `⚠️ ${totalPending} to sync` : ''}</span>
                     </div>
                     <div style="margin-top: 0.75rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
@@ -1762,9 +1762,64 @@
 
         function checkSecretsDirty() {
             const fields = document.querySelectorAll('#secrets-form [data-secret-name]');
-            secretsDirty = Array.from(fields).some(el => {
-                return el.value !== (secretsInitialValues[el.dataset.secretName] ?? '');
+            let changed = 0;
+            let changedNames = [];
+            fields.forEach(el => {
+                if (el.value !== (secretsInitialValues[el.dataset.secretName] ?? '')) {
+                    changed++;
+                    changedNames.push(el.dataset.secretName);
+                }
             });
+            secretsDirty = changed > 0;
+
+            // Live-update the pending badge next to Save & Push
+            const badge = document.getElementById('sync-pending-badge');
+            if (badge) {
+                // Recompute: pending unsynced + form changes
+                let pending = 0;
+                for (const name of GITHUB_SECRETS) {
+                    if (AUTO_PROVIDED.includes(name) || name === 'CONTINUITY_CONFIG') continue;
+                    const localVal = envData[name];
+                    if (localVal && !ghSecrets.includes(name)) pending++;
+                }
+                for (const name of GITHUB_VARS) {
+                    const localVal = envData[name];
+                    if (localVal && !ghVariables.includes(name)) pending++;
+                }
+                // Add form changes not already counted
+                for (const name of changedNames) {
+                    const tier = getSecretTier(name);
+                    if (tier === 'auto') continue;
+                    const alreadyCounted = (tier === 'secret' && !ghSecrets.includes(name) && envData[name])
+                        || (tier === 'var' && !ghVariables.includes(name) && envData[name]);
+                    if (!alreadyCounted) pending++;
+                }
+                if (pending > 0) {
+                    badge.textContent = `⚠️ ${pending} to sync`;
+                    badge.style.display = '';
+                } else if (changed > 0) {
+                    badge.textContent = `✏️ ${changed} changed`;
+                    badge.style.display = '';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+
+            // Live-update master secret key count
+            const masterBadge = document.getElementById('master-key-count');
+            if (masterBadge) {
+                // Merge current form values on top of envData for the count
+                const liveEnv = { ...envData };
+                fields.forEach(el => {
+                    if (el.value) liveEnv[el.dataset.secretName] = el.value;
+                });
+                const oldEnvData = envData;
+                envData = liveEnv;
+                const config = buildMasterConfigJson();
+                envData = oldEnvData;
+                const count = Object.keys(config).length;
+                masterBadge.textContent = `${count} keys`;
+            }
         }
 
         function refreshSecrets() {
@@ -1853,6 +1908,10 @@
             output.style.display = 'block';
             terminal.className = 'terminal';
             terminal.textContent = `☁️ Pushing CONTINUITY_CONFIG (${count} keys) to GitHub...\n`;
+
+            // Put master secret panel in loading state
+            const masterPanel = document.getElementById('master-push-btn');
+            if (masterPanel) { masterPanel.disabled = true; masterPanel.textContent = '⏳ Pushing...'; }
 
             try {
                 const response = await fetch('/api/secrets/push', {
@@ -1987,6 +2046,13 @@
         async function removeSecret(name, target, kind = 'secret') {
             const label = target === 'local' ? 'local .env' : target === 'github' ? 'GitHub' : 'local & GitHub';
             if (!confirm(`Remove ${name} from ${label}?\n\nThis cannot be undone.`)) return;
+
+            // Put affected row in loading state
+            const rowInput = document.querySelector(`[data-secret-name="${name}"]`);
+            if (rowInput) {
+                const rowEl = rowInput.closest('.secret-config-row');
+                if (rowEl) { rowEl.style.opacity = '0.5'; rowEl.style.pointerEvents = 'none'; }
+            }
 
             const output = document.getElementById('secrets-output');
             const terminal = document.getElementById('secrets-terminal');
@@ -2130,13 +2196,23 @@
             terminal.className = 'terminal';
             terminal.textContent = `Saving ${Object.keys(secrets).length} value(s) to ${targetLabel}...\n`;
 
+            // Put affected rows in loading state
+            for (const name of Object.keys(secrets)) {
+                const row = document.querySelector(`[data-secret-name="${name}"]`);
+                if (row) {
+                    const rowEl = row.closest('.secret-config-row');
+                    if (rowEl) { rowEl.style.opacity = '0.5'; rowEl.style.pointerEvents = 'none'; }
+                }
+            }
+
             try {
                 const response = await fetch('/api/secrets/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        secrets: target === 'github' ? secretsForGh : secrets,
+                        secrets: secretsForGh,
                         variables: variablesForGh,
+                        env_values: (target === 'both' || target === 'local') ? secrets : {},
                         push_to_github: ghPush,
                         save_to_env: target === 'both' || target === 'local',
                         exclude_from_github: AUTO_PROVIDED,

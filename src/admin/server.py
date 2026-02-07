@@ -416,6 +416,7 @@ def create_app() -> Flask:
         Request body:
             secrets: dict of name->value for GitHub secrets (gh secret set)
             variables: dict of name->value for GitHub variables (gh variable set)
+            env_values: dict of name->value for .env saving (all values)
             push_to_github: bool
             save_to_env: bool
             exclude_from_github: list of names to skip for GitHub push
@@ -423,12 +424,13 @@ def create_app() -> Flask:
         data = request.json or {}
         secrets = data.get("secrets", {})
         variables = data.get("variables", {})
+        env_values = data.get("env_values", {})
         push_to_github = data.get("push_to_github", True)
         save_to_env = data.get("save_to_env", True)
         exclude_from_github = set(data.get("exclude_from_github", []))
         
-        # Combine all values for .env saving
-        all_values = {**secrets, **variables}
+        # For .env saving: use env_values if provided, otherwise fall back to secrets+variables
+        all_values = env_values if env_values else {**secrets, **variables}
         results = []
         
         # First, save to .env file
