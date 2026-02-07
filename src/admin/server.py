@@ -63,6 +63,33 @@ def create_app() -> Flask:
                         env[key] = value
         return env
 
+    def _trigger_mirror_sync_bg(mode: str = "all") -> None:
+        """Fire mirror-sync in the background if mirroring is enabled.
+        
+        Called after git sync or secrets push so the mirror stays up to date.
+        Args:
+            mode: 'all', 'code-only', or 'secrets-only'
+        """
+        env = _fresh_env()
+        if env.get("MIRROR_ENABLED", "").lower() != "true":
+            return
+        cmd = ["python", "-m", "src.main", "mirror-sync"]
+        if mode == "code-only":
+            cmd.append("--code-only")
+        elif mode == "secrets-only":
+            cmd.append("--secrets-only")
+        logger.info("[mirror-bg] Triggering background mirror-sync (%s)", mode)
+        try:
+            subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            logger.warning("[mirror-bg] Failed to start mirror-sync: %s", e)
+
     def _gh_repo_flag() -> list:
         """Get -R repo flag for gh CLI commands.
         
@@ -669,12 +696,17 @@ def create_app() -> Flask:
                         "name": name, "kind": "variable",
                         "success": False, "error": str(e),
                     })
-        
+        all_ok = all(r["success"] for r in results) if results else True
+
+        # Auto-sync secrets to mirror if enabled and push succeeded
+        if push_to_github and all_ok and results:
+            _trigger_mirror_sync_bg("secrets-only")
+
         return jsonify({
             "env_saved": save_to_env,
             "deletions_applied": deletions_applied,
             "results": results,
-            "all_success": all(r["success"] for r in results) if results else True,
+            "all_success": all_ok,
         })
     
     @app.route("/api/gh/status")
@@ -1291,7 +1323,8 @@ read -p "Press Enter to close..."
 
             logger.info("[git-sync] ✓ Sync complete")
 
-
+            # Auto-sync code to mirror if enabled
+            _trigger_mirror_sync_bg("code-only")
 
             return jsonify({
                 "success": True,
