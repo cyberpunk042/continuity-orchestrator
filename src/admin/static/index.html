@@ -4190,10 +4190,15 @@
                     return;
                 }
 
-                if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--accent);">✅ State reset to OK</span>';
+                // Refresh dashboard immediately so it shows OK state
+                await loadStatus();
+
+                // Re-grab the status div (loadStatus re-renders the dashboard)
+                const statusDiv2 = document.getElementById('trigger-status');
+                if (statusDiv2) statusDiv2.innerHTML = '<span style="color: var(--accent);">✅ State reset to OK</span>';
 
                 // Git sync + build + deploy
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
+                if (statusDiv2) statusDiv2.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
                 const syncResp = await fetch('/api/git/sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -4201,18 +4206,17 @@
                 });
                 const syncData = await syncResp.json();
                 if (syncData.success) {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
+                    if (statusDiv2) statusDiv2.innerHTML += `<br><span style="color: var(--accent);">✅ Git synced</span>`;
                     // Rebuild site + trigger deploy (fire-and-forget)
                     apiRun('build-site').catch(() => { });
                     apiRun('deploy-site').catch(() => { });
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
+                    if (statusDiv2) statusDiv2.innerHTML += `<br><span style="color: var(--text-dim);">🏗️ Site rebuild + 🚀 deploy triggered (background)</span>`;
                 } else {
-                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
+                    if (statusDiv2) statusDiv2.innerHTML += `<br><span style="color: var(--danger);">⚠️ Git sync failed</span>`;
                 }
 
-                // Delay refresh so status messages stay visible
-                if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim); font-size: 0.8rem;">Dashboard refreshing in 5s...</span>`;
-                setTimeout(() => loadStatus(), 5000);
+                // Brief delay then final refresh
+                setTimeout(() => loadStatus(), 2000);
 
             } catch (error) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
