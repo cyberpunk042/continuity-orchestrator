@@ -66,6 +66,10 @@ class AdapterCredentials:
     release_secret: Optional[str] = None
     renewal_trigger_token: Optional[str] = None
     
+    # Mirror
+    mirror_1_token: Optional[str] = None
+    mirror_1_renewal_trigger_token: Optional[str] = None
+    
     # Project config (not adapter credentials, but needed in CI via master secret)
     project_name: Optional[str] = None
     operator_email: Optional[str] = None
@@ -126,6 +130,8 @@ class AdapterCredentials:
             "RENEWAL_SECRET": self.renewal_secret,
             "RELEASE_SECRET": self.release_secret,
             "RENEWAL_TRIGGER_TOKEN": self.renewal_trigger_token,
+            "MIRROR_1_TOKEN": self.mirror_1_token,
+            "MIRROR_1_RENEWAL_TRIGGER_TOKEN": self.mirror_1_renewal_trigger_token,
             "PROJECT_NAME": self.project_name,
             "OPERATOR_EMAIL": self.operator_email,
             "OPERATOR_SMS": self.operator_sms,
@@ -216,6 +222,10 @@ def _parse_master_config(data: Dict[str, Any]) -> AdapterCredentials:
         release_secret=data.get("release_secret") or data.get("RELEASE_SECRET"),
         renewal_trigger_token=data.get("renewal_trigger_token") or data.get("RENEWAL_TRIGGER_TOKEN"),
         
+        # Mirror
+        mirror_1_token=data.get("mirror_1_token") or data.get("MIRROR_1_TOKEN"),
+        mirror_1_renewal_trigger_token=data.get("mirror_1_renewal_trigger_token") or data.get("MIRROR_1_RENEWAL_TRIGGER_TOKEN"),
+        
         # Project config
         project_name=data.get("project_name") or data.get("PROJECT_NAME"),
         operator_email=data.get("operator_email") or data.get("OPERATOR_EMAIL"),
@@ -246,6 +256,8 @@ def _load_individual_vars(existing: AdapterCredentials) -> AdapterCredentials:
         renewal_secret=existing.renewal_secret or os.environ.get("RENEWAL_SECRET"),
         release_secret=existing.release_secret or os.environ.get("RELEASE_SECRET"),
         renewal_trigger_token=existing.renewal_trigger_token or os.environ.get("RENEWAL_TRIGGER_TOKEN"),
+        mirror_1_token=existing.mirror_1_token or os.environ.get("MIRROR_1_TOKEN"),
+        mirror_1_renewal_trigger_token=existing.mirror_1_renewal_trigger_token or os.environ.get("MIRROR_1_RENEWAL_TRIGGER_TOKEN"),
         project_name=existing.project_name or os.environ.get("PROJECT_NAME"),
         operator_email=existing.operator_email or os.environ.get("OPERATOR_EMAIL"),
         operator_sms=existing.operator_sms or os.environ.get("OPERATOR_SMS"),
@@ -255,6 +267,16 @@ def _load_individual_vars(existing: AdapterCredentials) -> AdapterCredentials:
 def generate_master_config_template() -> str:
     """Generate a template for CONTINUITY_CONFIG."""
     template = {
+        "# Project": "",
+        "project_name": "my-project",
+        "operator_email": "you@example.com",
+        "operator_sms": "+15551234567",
+
+        "# Security / Renewal": "",
+        "renewal_secret": "your-secret-renewal-code",
+        "release_secret": "your-secret-release-code",
+        "renewal_trigger_token": "ghp_xxxxx",
+
         "# Email (Resend) - https://resend.com/api-keys": "",
         "resend_api_key": "re_xxxxx",
         "resend_from_email": "noreply@yourdomain.com",
@@ -276,16 +298,13 @@ def generate_master_config_template() -> str:
         "reddit_username": "xxxxx",
         "reddit_password": "xxxxx",
         
-        "# GitHub - https://github.com/settings/tokens": "",
-        "github_token": "ghp_xxxxx",
-        "github_repository": "owner/repo",
-        
         "# Persistence API (optional)": "",
         "persistence_api_url": "",
         "persistence_api_key": "",
-        
-        "# Renewal": "",
-        "renewal_secret": "your-secret-renewal-code",
+
+        "# Mirror": "",
+        "mirror_1_token": "ghp_xxxxx",
+        "mirror_1_renewal_trigger_token": "github_pat_xxxxx",
     }
     
     # Clean template (remove comments for actual JSON)

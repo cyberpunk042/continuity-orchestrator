@@ -74,9 +74,6 @@ SYNCABLE_SECRETS = [
     # Persistence
     "PERSISTENCE_API_URL",
     "PERSISTENCE_API_KEY",
-
-    # Admin
-    "ADMIN_TOKEN",
 ]
 
 # Per-mirror secrets that are stored on the MASTER with a mirror-specific name

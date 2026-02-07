@@ -2320,6 +2320,9 @@
                 renewal_secret: envData['RENEWAL_SECRET'] || '',
                 release_secret: envData['RELEASE_SECRET'] || '',
                 renewal_trigger_token: envData['RENEWAL_TRIGGER_TOKEN'] || '',
+                // Mirror
+                mirror_1_token: envData['MIRROR_1_TOKEN'] || '',
+                mirror_1_renewal_trigger_token: envData['MIRROR_1_RENEWAL_TRIGGER_TOKEN'] || '',
             };
             // Only include non-empty values
             const clean = {};
