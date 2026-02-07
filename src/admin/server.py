@@ -40,6 +40,18 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     
+    # Initialize mirror manager
+    try:
+        from ..mirror.manager import MirrorManager
+        mirror_manager = MirrorManager.from_env()
+        if mirror_manager.enabled:
+            logger.info("[mirror] Mirror integration enabled with %d mirror(s)",
+                       len(mirror_manager.settings.mirrors))
+        app.config["MIRROR_MANAGER"] = mirror_manager
+    except Exception as e:
+        logger.warning("[mirror] Mirror integration not available: %s", e)
+        app.config["MIRROR_MANAGER"] = None
+    
     def _fresh_env() -> dict:
         """Build subprocess env with fresh .env values.
         
@@ -525,6 +537,12 @@ def create_app() -> Flask:
             for key, value in sorted(existing.items()):
                 f.write(f"{key}={value}\n")
         
+        # Mirror propagation: sync secrets to mirrors (non-blocking)
+        mm = app.config.get("MIRROR_MANAGER")
+        if mm and mm.enabled:
+            logger.info("[env-write] Propagating secrets to mirrors...")
+            mm.propagate_secrets()
+
         return jsonify({
             "success": True,
             "updated": list(secrets.keys()),
@@ -1273,6 +1291,14 @@ read -p "Press Enter to close..."
                 })
 
             logger.info("[git-sync] ✓ Sync complete")
+
+            # Mirror propagation: push code to all mirrors (non-blocking)
+            mm = app.config.get("MIRROR_MANAGER")
+            if mm and mm.enabled:
+                logger.info("[git-sync] Propagating to mirrors...")
+                mm.propagate_code_sync(project_root)
+                steps.append({"step": "mirror propagate", "ok": True, "output": "queued"})
+
             return jsonify({
                 "success": True,
                 "message": "Committed and pushed successfully",
@@ -1288,6 +1314,58 @@ read -p "Press Enter to close..."
         except Exception as e:
             logger.exception("[git-sync] Unexpected error")
             return jsonify({"success": False, "error": str(e), "steps": steps}), 500
+
+    # ─── Mirror API Endpoints ─────────────────────────────────────
+
+    @app.route("/api/mirror/status", methods=["GET"])
+    def api_mirror_status():
+        """Get mirror sync status for the integrations tab."""
+        mm = app.config.get("MIRROR_MANAGER")
+        if not mm:
+            return jsonify({"enabled": False, "mirrors": {"slaves": []}})
+        return jsonify(mm.get_status())
+
+    @app.route("/api/mirror/sync", methods=["POST"])
+    def api_mirror_sync():
+        """Force sync all mirrors (code + secrets + variables)."""
+        mm = app.config.get("MIRROR_MANAGER")
+        if not mm or not mm.enabled:
+            return jsonify({"success": False, "error": "Mirror integration not enabled"})
+
+        data = request.json or {}
+        blocking = data.get("blocking", False)
+        master_repo = os.environ.get("GITHUB_REPOSITORY")
+
+        mm.propagate_all(
+            project_root,
+            master_repo=master_repo,
+            blocking=blocking,
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Full mirror sync " + ("complete" if blocking else "queued"),
+        })
+
+    @app.route("/api/mirror/sync/code", methods=["POST"])
+    def api_mirror_sync_code():
+        """Force sync code to all mirrors."""
+        mm = app.config.get("MIRROR_MANAGER")
+        if not mm or not mm.enabled:
+            return jsonify({"success": False, "error": "Mirror integration not enabled"})
+
+        mm.propagate_code_sync(project_root)
+        return jsonify({"success": True, "message": "Code sync queued"})
+
+    @app.route("/api/mirror/sync/secrets", methods=["POST"])
+    def api_mirror_sync_secrets():
+        """Force sync secrets to all GitHub mirrors."""
+        mm = app.config.get("MIRROR_MANAGER")
+        if not mm or not mm.enabled:
+            return jsonify({"success": False, "error": "Mirror integration not enabled"})
+
+        mm.propagate_secrets()
+        return jsonify({"success": True, "message": "Secrets sync queued"})
 
     return app
 

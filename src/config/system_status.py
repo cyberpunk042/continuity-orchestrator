@@ -191,6 +191,11 @@ SECRET_DEFINITIONS = {
     # Archive (Internet Archive / Wayback Machine)
     "ARCHIVE_ENABLED": {"required_for": [], "guidance": "Enable auto-archiving to archive.org after publish"},
     "ARCHIVE_URL": {"required_for": [], "guidance": "Custom URL for Docker/Cloudflare (optional, defaults to GitHub Pages)"},
+    
+    # Repo Mirror
+    "MIRROR_ENABLED": {"required_for": [], "guidance": "Set to 'true' to enable repo mirroring"},
+    "MIRROR_1_REPO": {"required_for": [], "guidance": "Backup repo: backup-user/repo-name"},
+    "MIRROR_1_TOKEN": {"required_for": ["mirror"], "guidance": "PAT from backup GitHub account (repo + workflow scopes)"},
 }
 
 

@@ -1,0 +1,265 @@
+name: Sentinel — Watch Master
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch: {}       # Manual trigger for testing
+
+permissions:
+  contents: read
+  actions: write        # Needed to enable/disable workflows
+  
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      MASTER_REPO: ${{ vars.MASTER_REPO }}
+      MIRROR_ROLE: ${{ vars.MIRROR_ROLE || 'SLAVE' }}
+      SENTINEL_FAILURES: ${{ vars.SENTINEL_FAILURES || '0' }}
+      FAILURE_THRESHOLD: ${{ vars.SENTINEL_THRESHOLD || '3' }}
+      STALENESS_SECONDS: 7200  # 2 hours — if no push for this long, master is down
+
+    steps:
+      - name: Skip if already promoted
+        if: env.MIRROR_ROLE == 'TEMPORARY_MASTER' || env.MIRROR_ROLE == 'MASTER'
+        run: |
+          echo "ℹ️ This repo is role=${{ env.MIRROR_ROLE }}, not SLAVE — skipping health check"
+          echo "To demote back to SLAVE, set MIRROR_ROLE variable to SLAVE"
+
+      - uses: actions/checkout@v4
+        if: env.MIRROR_ROLE == 'SLAVE'
+
+      - name: Check master heartbeat (platform-agnostic)
+        if: env.MIRROR_ROLE == 'SLAVE'
+        id: heartbeat
+        run: |
+          echo "🔍 Checking master heartbeat..."
+          
+          # Primary signal: freshness of our own state/current.json
+          # This file is updated by the master's git push to us.
+          # If it stops being updated, the master stopped pushing.
+          if [ ! -f "state/current.json" ]; then
+            echo "⚠️ state/current.json not found"
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            echo "reason=state file missing" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Read the updated_at_iso timestamp
+          UPDATED_AT=$(python3 -c "
+          import json, sys
+          try:
+              with open('state/current.json') as f:
+                  state = json.load(f)
+              print(state.get('meta', {}).get('updated_at_iso', ''))
+          except Exception as e:
+              print('', file=sys.stderr)
+              print('')
+          ")
+          
+          if [ -z "$UPDATED_AT" ]; then
+            echo "⚠️ Could not read updated_at_iso from state"
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            echo "reason=cannot parse state timestamp" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "📅 Last master update: $UPDATED_AT"
+          
+          # Calculate age in seconds
+          AGE=$(python3 -c "
+          from datetime import datetime, timezone
+          import sys
+          try:
+              ts = '$UPDATED_AT'.replace('+00:00', 'Z').rstrip('Z')
+              # Handle both formats
+              for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S'):
+                  try:
+                      dt = datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+                      break
+                  except ValueError:
+                      continue
+              else:
+                  print(-1)
+                  sys.exit(0)
+              now = datetime.now(timezone.utc)
+              print(int((now - dt).total_seconds()))
+          except Exception as e:
+              print(-1, file=sys.stderr)
+              print(-1)
+          ")
+          
+          echo "⏱️ State age: ${AGE}s (threshold: ${{ env.STALENESS_SECONDS }}s)"
+          
+          if [ "$AGE" -lt 0 ]; then
+            echo "⚠️ Could not calculate age"
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            echo "reason=age calculation failed" >> $GITHUB_OUTPUT
+          elif [ "$AGE" -lt "${{ env.STALENESS_SECONDS }}" ]; then
+            echo "✅ Master is alive (last push ${AGE}s ago)"
+            echo "healthy=true" >> $GITHUB_OUTPUT
+            echo "age=$AGE" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Master is STALE (last push ${AGE}s ago, threshold ${{ env.STALENESS_SECONDS }}s)"
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            echo "reason=stale (${AGE}s)" >> $GITHUB_OUTPUT
+            echo "age=$AGE" >> $GITHUB_OUTPUT
+          fi
+
+      # --- Secondary check: GitHub API (if MASTER_REPO is set) ---
+      - name: Check master via GitHub API
+        if: env.MIRROR_ROLE == 'SLAVE' && steps.heartbeat.outputs.healthy == 'false' && env.MASTER_REPO != ''
+        id: api_check
+        run: |
+          echo "🔍 Secondary check: GitHub API for ${{ env.MASTER_REPO }}"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.MASTER_TOKEN }}" \
+            "https://api.github.com/repos/${{ env.MASTER_REPO }}" 2>/dev/null || echo "000")
+          
+          echo "HTTP response: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "📡 Master repo is reachable via API (may be stale but not deleted)"
+            echo "reachable=true" >> $GITHUB_OUTPUT
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "🚨 Master repo is GONE (404)"
+            echo "reachable=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Master repo unreachable (HTTP $HTTP_CODE)"
+            echo "reachable=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.MASTER_TOKEN }}
+
+      # --- Track consecutive failures ---
+      - name: Update failure counter
+        if: env.MIRROR_ROLE == 'SLAVE'
+        id: counter
+        run: |
+          if [ "${{ steps.heartbeat.outputs.healthy }}" = "true" ]; then
+            echo "✅ Resetting failure counter"
+            gh variable set SENTINEL_FAILURES --body "0" || true
+            echo "failures=0" >> $GITHUB_OUTPUT
+          else
+            NEW_COUNT=$(( ${{ env.SENTINEL_FAILURES }} + 1 ))
+            echo "⚠️ Failure count: $NEW_COUNT / ${{ env.FAILURE_THRESHOLD }}"
+            gh variable set SENTINEL_FAILURES --body "$NEW_COUNT" || true
+            echo "failures=$NEW_COUNT" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Self-promote if threshold reached ---
+      - name: Self-promote to TEMPORARY_MASTER
+        if: >
+          env.MIRROR_ROLE == 'SLAVE' && 
+          steps.heartbeat.outputs.healthy == 'false' &&
+          steps.counter.outputs.failures >= env.FAILURE_THRESHOLD
+        run: |
+          echo "🚨 ═══════════════════════════════════════════════"
+          echo "🚨 MASTER DOWN — SELF-PROMOTING TO TEMPORARY_MASTER"
+          echo "🚨 ═══════════════════════════════════════════════"
+          echo ""
+          echo "Consecutive failures: ${{ steps.counter.outputs.failures }}"
+          echo "Threshold: ${{ env.FAILURE_THRESHOLD }}"
+          echo ""
+          
+          # Enable operational workflows
+          echo "📋 Enabling cron.yml..."
+          gh workflow enable cron.yml || echo "⚠️ Could not enable cron.yml"
+          
+          echo "📋 Enabling deploy-site.yml..."
+          gh workflow enable deploy-site.yml || echo "⚠️ Could not enable deploy-site.yml"
+          
+          # Update role marker
+          echo "📋 Setting MIRROR_ROLE=TEMPORARY_MASTER..."
+          gh variable set MIRROR_ROLE --body "TEMPORARY_MASTER"
+          
+          echo ""
+          echo "✅ Self-promotion complete. This repo is now TEMPORARY_MASTER."
+          echo "   Operational workflows are enabled."
+          echo "   Sentinel will continue monitoring for master recovery."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Check for master recovery (when TEMPORARY_MASTER) ---
+      # This runs if we are NOT a SLAVE — i.e., we're a promoted TEMPORARY_MASTER
+      # We check if the master has recovered and if so, auto-demote
+      - uses: actions/checkout@v4
+        if: env.MIRROR_ROLE == 'TEMPORARY_MASTER'
+        
+      - name: Check for master recovery
+        if: env.MIRROR_ROLE == 'TEMPORARY_MASTER'
+        run: |
+          echo "🔍 Checking if master has recovered..."
+          
+          if [ -z "${{ env.MASTER_REPO }}" ]; then
+            echo "⚠️ MASTER_REPO not set, cannot check recovery"
+            exit 0
+          fi
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.MASTER_TOKEN }}" \
+            "https://api.github.com/repos/${{ env.MASTER_REPO }}/commits/main" 2>/dev/null || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Master appears to be back! Checking freshness..."
+            
+            # Check if master's state is fresh
+            STATE_B64=$(curl -s \
+              -H "Authorization: token ${{ secrets.MASTER_TOKEN }}" \
+              "https://api.github.com/repos/${{ env.MASTER_REPO }}/contents/state/current.json" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('content',''))" 2>/dev/null)
+            
+            if [ -n "$STATE_B64" ]; then
+              MASTER_UPDATE=$(echo "$STATE_B64" | base64 -d | python3 -c "
+              import json,sys
+              try:
+                  d = json.load(sys.stdin)
+                  print(d.get('meta',{}).get('updated_at_iso',''))
+              except: print('')
+              ")
+              echo "Master last updated: $MASTER_UPDATE"
+              
+              # If master updated within the last hour, it's recovered
+              AGE=$(python3 -c "
+              from datetime import datetime, timezone
+              ts='$MASTER_UPDATE'.replace('+00:00','Z').rstrip('Z')
+              for fmt in ('%Y-%m-%dT%H:%M:%S.%f','%Y-%m-%dT%H:%M:%S'):
+                  try:
+                      dt=datetime.strptime(ts,fmt).replace(tzinfo=timezone.utc)
+                      print(int((datetime.now(timezone.utc)-dt).total_seconds()))
+                      break
+                  except: continue
+              else: print(99999)
+              ")
+              
+              if [ "$AGE" -lt 3600 ]; then
+                echo "✅ Master is RECOVERED (updated ${AGE}s ago)"
+                echo ""
+                echo "🔄 Auto-demoting to SLAVE..."
+                
+                # Disable operational workflows
+                gh workflow disable cron.yml || true
+                gh workflow disable deploy-site.yml || true
+                
+                # Reset role
+                gh variable set MIRROR_ROLE --body "SLAVE"
+                gh variable set SENTINEL_FAILURES --body "0"
+
+                # Pull latest from master to re-sync
+                git remote add master "https://x-access-token:${{ secrets.MASTER_TOKEN }}@github.com/${{ env.MASTER_REPO }}.git" 2>/dev/null || true
+                git pull master main --ff-only || echo "⚠️ Could not auto-pull from master"
+                git push origin main || echo "⚠️ Could not push re-synced state"
+                
+                echo "✅ Demoted to SLAVE. Master is primary again."
+              else
+                echo "⚠️ Master repo exists but state is stale (${AGE}s ago). Staying TEMPORARY_MASTER."
+              fi
+            fi
+          else
+            echo "⚠️ Master still unreachable (HTTP $HTTP_CODE). Staying TEMPORARY_MASTER."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
