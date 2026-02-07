@@ -85,34 +85,65 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
       
-      # Archive step - only if enabled and not rate-limited recently
+      # Archive step - archive all key pages if enabled
       - name: Archive to Wayback Machine
         if: vars.ARCHIVE_ENABLED == 'true'
         env:
           ARCHIVE_URL: ${{ vars.ARCHIVE_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          # Determine URL to archive
+          # Determine base URL
           if [ -n "$ARCHIVE_URL" ]; then
-            URL="$ARCHIVE_URL"
+            BASE_URL="${ARCHIVE_URL%/}"
           else
             OWNER="${GITHUB_REPOSITORY%/*}"
             REPO="${GITHUB_REPOSITORY#*/}"
-            URL="https://${OWNER}.github.io/${REPO}/"
+            BASE_URL="https://${OWNER}.github.io/${REPO}"
           fi
           
-          echo "📦 Archiving $URL to archive.org..."
+          echo "📦 Archiving site to archive.org..."
           
           # Wait for GitHub Pages propagation
-          sleep 5
+          sleep 10
           
-          # Submit to Wayback Machine (best effort, don't fail workflow)
-          RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
-            -H "User-Agent: Mozilla/5.0" \
-            "https://web.archive.org/save/$URL" 2>/dev/null || echo "timeout")
+          # Collect URLs to archive from sitemap or fallback list
+          URLS=()
+          SITEMAP_URL="${BASE_URL}/sitemap.xml"
+          SITEMAP=$(curl -s --max-time 10 "$SITEMAP_URL" 2>/dev/null || true)
           
-          if [ "$RESULT" = "200" ] || [ "$RESULT" = "302" ]; then
-            echo "✅ Archived to archive.org"
+          if echo "$SITEMAP" | grep -q '<loc>'; then
+            # Extract URLs from sitemap
+            while IFS= read -r loc; do
+              URLS+=("$loc")
+            done < <(echo "$SITEMAP" | grep -oP '(?<=<loc>)[^<]+')
+            echo "  Found ${#URLS[@]} URL(s) from sitemap.xml"
           else
-            echo "ℹ️ Archive returned: $RESULT (non-blocking)"
+            # Fallback: just the index
+            URLS=("${BASE_URL}/")
+            echo "  No sitemap found, archiving index only"
           fi
+          
+          # Submit each URL (best effort, don't fail workflow)
+          SUCCESS=0
+          TOTAL=${#URLS[@]}
+          for URL in "${URLS[@]}"; do
+            LABEL="${URL#$BASE_URL/}"
+            [ -z "$LABEL" ] && LABEL="index"
+            printf "  [%d/%d] %s..." "$((SUCCESS + 1))" "$TOTAL" "$LABEL"
+            
+            RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+              -H "User-Agent: Mozilla/5.0" \
+              "https://web.archive.org/save/$URL" 2>/dev/null || echo "timeout")
+            
+            if [ "$RESULT" = "200" ] || [ "$RESULT" = "302" ]; then
+              echo " ✓"
+              SUCCESS=$((SUCCESS + 1))
+            else
+              echo " ($RESULT)"
+            fi
+            
+            # Rate limit: ~3/min for anonymous
+            sleep 5
+          done
+          
+          echo "  📦 Archived $SUCCESS/$TOTAL pages"

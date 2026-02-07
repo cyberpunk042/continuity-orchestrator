@@ -101,6 +101,11 @@ class SiteGenerator:
                 files_generated.append(archive_path)
             logger.debug(f"Generated {min(len(audit_entries), 10)} archive entries")
         
+        # Generate sitemap.xml
+        sitemap_path = self._generate_sitemap(context)
+        if sitemap_path:
+            files_generated.append(sitemap_path)
+        
         build_ms = int((time.time() - build_start) * 1000)
         logger.info(f"Site built: {len(files_generated)} files in {build_ms}ms")
         
@@ -436,3 +441,76 @@ class SiteGenerator:
         files_generated.append(index_path)
         
         return files_generated
+    
+    def _generate_sitemap(self, context: Dict[str, Any]) -> Optional[Path]:
+        """Generate sitemap.xml for search engines and Wayback Machine."""
+        github_repo = context.get("github_repository", "")
+        if not github_repo or "/" not in github_repo or github_repo == "OWNER/REPO":
+            logger.debug("Skipping sitemap — no valid GITHUB_REPOSITORY")
+            return None
+        
+        owner, repo = github_repo.split("/", 1)
+        base_url = f"https://{owner}.github.io/{repo}"
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        
+        # Core pages
+        pages = [
+            ("", "1.0", "hourly"),        # index
+            ("countdown.html", "0.8", "hourly"),
+            ("timeline.html", "0.7", "daily"),
+            ("status.html", "0.6", "hourly"),
+        ]
+        
+        # Articles
+        visible_articles = context.get("visible_articles", [])
+        if visible_articles:
+            pages.append(("articles/", "0.9", "daily"))
+            for article_meta in visible_articles:
+                slug = getattr(article_meta, "slug", "")
+                if slug:
+                    pages.append((f"articles/{slug}.html", "0.9", "weekly"))
+        
+        # Build XML
+        urls_xml = ""
+        for path, priority, changefreq in pages:
+            loc = f"{base_url}/{path}" if path else f"{base_url}/"
+            urls_xml += f"""  <url>
+    <loc>{loc}</loc>
+    <lastmod>{now_iso}</lastmod>
+    <changefreq>{changefreq}</changefreq>
+    <priority>{priority}</priority>
+  </url>
+"""
+        
+        sitemap = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{urls_xml}</urlset>
+"""
+        
+        output_path = self.output_dir / "sitemap.xml"
+        output_path.write_text(sitemap)
+        return output_path
+    
+    @staticmethod
+    def get_archivable_paths(output_dir: Path) -> List[str]:
+        """Return relative paths of key pages for multi-URL archiving.
+        
+        Used by the archive adapter to archive all important pages,
+        not just the index.
+        """
+        paths = [""]  # root index
+        
+        # Core pages
+        for page in ["countdown.html", "timeline.html", "status.html"]:
+            if (Path(output_dir) / page).exists():
+                paths.append(page)
+        
+        # Articles
+        articles_dir = Path(output_dir) / "articles"
+        if articles_dir.exists():
+            paths.append("articles/")
+            for article_file in sorted(articles_dir.glob("*.html")):
+                if article_file.name != "index.html":
+                    paths.append(f"articles/{article_file.name}")
+        
+        return paths

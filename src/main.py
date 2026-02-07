@@ -571,23 +571,44 @@ def build_site(ctx: click.Context, output: str, clean: bool, archive: bool) -> N
         try:
             from .adapters.internet_archive import archive_url_now
             
-            # Determine URL
-            archive_url = os.environ.get("ARCHIVE_URL")
-            if not archive_url:
+            # Determine base URL
+            archive_base = os.environ.get("ARCHIVE_URL")
+            if not archive_base:
                 repo = os.environ.get("GITHUB_REPOSITORY")
                 if repo:
                     parts = repo.split("/")
-                    archive_url = f"https://{parts[0]}.github.io/{parts[1]}/"
+                    archive_base = f"https://{parts[0]}.github.io/{parts[1]}"
                 else:
                     click.secho("  ⚠ No ARCHIVE_URL or GITHUB_REPOSITORY set, skipping archive", fg="yellow")
                     return
             
-            archive_result = archive_url_now(archive_url)
+            # Strip trailing slash for clean joining
+            archive_base = archive_base.rstrip("/")
             
-            if archive_result.get("success"):
-                click.secho(f"  ✓ Archived: {archive_result.get('archive_url')}", fg="green")
-            else:
-                click.secho(f"  ✗ Archive failed: {archive_result.get('error')}", fg="red")
+            # Get all archivable pages
+            archivable_paths = SiteGenerator.get_archivable_paths(root / output)
+            click.echo(f"  Found {len(archivable_paths)} page(s) to archive")
+            
+            success_count = 0
+            for i, path in enumerate(archivable_paths):
+                page_url = f"{archive_base}/{path}" if path else f"{archive_base}/"
+                label = path or "index"
+                click.echo(f"  [{i+1}/{len(archivable_paths)}] {label}...", nl=False)
+                
+                archive_result = archive_url_now(page_url)
+                
+                if archive_result.get("success"):
+                    click.secho(f" ✓", fg="green")
+                    success_count += 1
+                else:
+                    click.secho(f" ✗ {archive_result.get('error', '?')}", fg="red")
+                
+                # Rate limit: archive.org allows ~3/min anonymous
+                if i < len(archivable_paths) - 1:
+                    import time as time_mod
+                    time_mod.sleep(5)
+            
+            click.secho(f"  Archived {success_count}/{len(archivable_paths)} pages", fg="green" if success_count == len(archivable_paths) else "yellow")
         except Exception as e:
             click.secho(f"  ✗ Archive error: {e}", fg="red")
 

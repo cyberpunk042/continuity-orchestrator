@@ -217,8 +217,8 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
             
             # archive.org Save Page Now can take up to 2+ minutes
             # Use a long timeout to allow the archive to complete
-            logger.debug("Opening connection to archive.org (timeout=180s)")
-            with urllib.request.urlopen(request, timeout=180) as response:
+            logger.debug("Opening connection to archive.org (timeout=120s)")
+            with urllib.request.urlopen(request, timeout=120) as response:
                 response_url = response.geturl()
                 response_code = response.status
                 logger.info(f"Archive response: code={response_code}, url={response_url[:100]}")

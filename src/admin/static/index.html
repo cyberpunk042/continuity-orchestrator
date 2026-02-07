@@ -1023,12 +1023,26 @@
                         placeholder="Custom URL (or leave empty for GitHub Pages)">
                 </div>
                 <div class="actions" style="flex-direction: column;">
-                    <button class="btn primary" onclick="archiveNow()" style="width: 100%;">
-                        📦 Archive Now
-                    </button>
-                    <button class="btn" onclick="checkArchive()" style="width: 100%;">
-                        🔍 Check Existing
-                    </button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn primary" onclick="archiveNow(true)" style="flex: 1;"
+                            title="Archives all pages — may take several minutes">
+                            📦 Archive All Pages
+                        </button>
+                        <button class="btn" onclick="archiveNow(false)" style="flex-shrink: 0;"
+                            title="Archive only the index page">
+                            📄 Index Only
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" onclick="checkArchive(true)" style="flex: 1;"
+                            title="Check all pages on archive.org">
+                            🔍 Check All Pages
+                        </button>
+                        <button class="btn" onclick="checkArchive(false)" style="flex-shrink: 0;"
+                            title="Check index only">
+                            🔍 Index
+                        </button>
+                    </div>
                 </div>
                 <div id="archive-status" style="margin-top: 0.75rem; font-size: 0.85rem;"></div>
             </div>
@@ -2868,22 +2882,42 @@
         }
 
         // Archive functions
-        async function archiveNow() {
+        async function archiveNow(allPages = false) {
             const statusDiv = document.getElementById('archive-status');
             const urlInput = document.getElementById('archive-url');
             const customUrl = urlInput?.value?.trim();
 
-            statusDiv.innerHTML = '<span style="color: var(--info);">📦 Archiving to archive.org...</span>';
+            const label = allPages ? 'all pages' : 'index';
+            statusDiv.innerHTML = `<span style="color: var(--info);">📦 Archiving ${label} to archive.org... This may take a few minutes.</span>`;
 
             try {
                 const response = await fetch('/api/archive', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: customUrl || undefined }),
+                    body: JSON.stringify({
+                        url: customUrl || undefined,
+                        all_pages: allPages,
+                    }),
                 });
                 const data = await response.json();
 
-                if (data.success) {
+                if (data.results) {
+                    // Multi-page results
+                    const rows = data.results.map(r => {
+                        const icon = r.success ? '✅' : '❌';
+                        const link = r.archive_url
+                            ? `<a href="${r.archive_url}" target="_blank" style="color: var(--info);">${r.page}</a>`
+                            : `<span>${r.page}</span>`;
+                        const err = r.error ? ` — <span style="color: var(--danger); font-size: 0.8rem;">${r.error}</span>` : '';
+                        return `<div>${icon} ${link}${err}</div>`;
+                    }).join('');
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent); margin-bottom: 0.5rem;">
+                            📦 Archived ${data.archived}/${data.total} pages
+                        </div>
+                        <div style="line-height: 1.8;">${rows}</div>
+                    `;
+                } else if (data.success) {
                     statusDiv.innerHTML = `
                         <div style="color: var(--accent);">✅ Archived successfully!</div>
                         <div style="margin-top: 0.5rem;">
@@ -2900,13 +2934,13 @@
             }
         }
 
-        async function checkArchive() {
+        async function checkArchive(allPages = false) {
             const statusDiv = document.getElementById('archive-status');
             const urlInput = document.getElementById('archive-url');
             let url = urlInput?.value?.trim();
 
             // If no custom URL, try to build GitHub Pages URL
-            if (!url) {
+            if (!url && !allPages) {
                 const repo = envData.GITHUB_REPOSITORY;
                 if (repo) {
                     const parts = repo.split('/');
@@ -2917,17 +2951,36 @@
                 }
             }
 
-            statusDiv.innerHTML = '<span style="color: var(--info);">🔍 Checking archive.org...</span>';
+            const label = allPages ? 'all pages' : 'index';
+            statusDiv.innerHTML = `<span style="color: var(--info);">🔍 Checking ${label} on archive.org...</span>`;
 
             try {
                 const response = await fetch('/api/archive/check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url }),
+                    body: JSON.stringify({
+                        url: url || undefined,
+                        all_pages: allPages,
+                    }),
                 });
                 const data = await response.json();
 
-                if (data.archived && data.snapshot) {
+                if (data.results) {
+                    // Multi-page results
+                    const rows = data.results.map(r => {
+                        const icon = r.archived ? '✅' : '❌';
+                        const info = r.archived && r.snapshot
+                            ? `<a href="${r.snapshot.url}" target="_blank" style="color: var(--info);">${r.page}</a> <span style="color: var(--text-dim); font-size: 0.8rem;">(${r.snapshot.timestamp || ''})</span>`
+                            : `<span style="color: var(--text-dim);">${r.page}</span> — not archived`;
+                        return `<div>${icon} ${info}</div>`;
+                    }).join('');
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent); margin-bottom: 0.5rem;">
+                            🔍 ${data.archived_count}/${data.total} pages archived
+                        </div>
+                        <div style="line-height: 1.8;">${rows}</div>
+                    `;
+                } else if (data.archived && data.snapshot) {
                     statusDiv.innerHTML = `
                         <div style="color: var(--accent);">✅ Found in archive!</div>
                         <div style="margin-top: 0.5rem;">
@@ -2937,7 +2990,7 @@
                         </div>
                     `;
                 } else {
-                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Not yet archived. Click "Archive Now" to create a snapshot.</span>';
+                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Not yet archived. Click "Archive All Pages" to create snapshots.</span>';
                 }
             } catch (error) {
                 statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
