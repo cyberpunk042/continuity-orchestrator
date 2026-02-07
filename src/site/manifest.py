@@ -170,15 +170,36 @@ class ContentManifest:
                 meta=meta,
             ))
         
-        defaults_data = data.get("defaults", {})
+        defaults_data = data.get("defaults", {}).get("visibility", data.get("defaults", {}))
         defaults = DefaultVisibility(
             min_stage=defaults_data.get("min_stage", "FULL"),
             include_in_nav=defaults_data.get("include_in_nav", False),
             pin_to_top=defaults_data.get("pin_to_top", False),
         )
         
+        # Auto-discover articles from content/articles/ directory
+        known_slugs = {a.slug for a in articles}
+        articles_dir = cls._default_path().parent / "articles"
+        if articles_dir.exists():
+            for json_file in sorted(articles_dir.glob("*.json")):
+                slug = json_file.stem
+                if slug not in known_slugs:
+                    # Title from slug: "full_disclosure" -> "Full Disclosure"
+                    title = slug.replace("_", " ").replace("-", " ").title()
+                    articles.append(ArticleEntry(
+                        slug=slug,
+                        title=title,
+                        visibility=ArticleVisibility(
+                            min_stage=defaults.min_stage,
+                            include_in_nav=True,
+                            pin_to_top=False,
+                        ),
+                        meta=ArticleMeta(),
+                    ))
+                    logger.info(f"Auto-discovered article: {slug} (min_stage={defaults.min_stage})")
+        
         site_behavior = {}
-        for stage, behavior_data in data.get("site_behavior", {}).items():
+        for stage, behavior_data in data.get("stages", data.get("site_behavior", {})).items():
             site_behavior[stage] = StageBehavior(
                 show_countdown=behavior_data.get("show_countdown", True),
                 show_articles=behavior_data.get("show_articles", False),
