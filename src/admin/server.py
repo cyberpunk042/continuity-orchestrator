@@ -40,6 +40,29 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     
+    def _fresh_env() -> dict:
+        """Build subprocess env with fresh .env values.
+        
+        The server process's os.environ is stale — it was loaded at startup.
+        This reads the current .env file on each call so test commands
+        (email, SMS, etc.) use the latest values.
+        """
+        env = {**os.environ, "TERM": "dumb"}
+        env_file = project_root / ".env"
+        if env_file.exists():
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip()
+                        # Strip surrounding quotes
+                        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                            value = value[1:-1]
+                        env[key] = value
+        return env
+    
     # ---------------------------------------------------------------------------
     # REQUEST LOGGING — log all API requests with timing
     # ---------------------------------------------------------------------------
@@ -124,7 +147,7 @@ def create_app() -> Flask:
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env={**os.environ, "TERM": "dumb"},  # Disable ANSI codes
+                env=_fresh_env(),  # Disable ANSI codes
             )
             return jsonify({
                 "success": result.returncode == 0,
@@ -155,7 +178,7 @@ def create_app() -> Flask:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env={**os.environ, "TERM": "dumb"},
+                env=_fresh_env(),
             )
             return jsonify({
                 "success": result.returncode == 0,
@@ -183,7 +206,7 @@ def create_app() -> Flask:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env={**os.environ, "TERM": "dumb"},
+                env=_fresh_env(),
             )
             return jsonify({
                 "success": result.returncode == 0,
