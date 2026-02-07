@@ -1297,6 +1297,8 @@ read -p "Press Enter to close..."
                         "hint": "Check authentication: gh auth status",
                         "steps": steps,
                     })
+                # Auto-sync code to mirror if enabled
+                _trigger_mirror_sync_bg("code-only")
                 return jsonify({
                     "success": True,
                     "message": msg,
