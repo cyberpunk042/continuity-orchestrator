@@ -70,7 +70,10 @@ class ResendEmailAdapter(Adapter):
             logger.warning("RESEND_API_KEY not set, email adapter disabled")
             return False
         
-        return context.integrations.enabled_adapters.email
+        try:
+            return context.state.integrations.enabled_adapters.email
+        except AttributeError:
+            return True
     
     def validate(self, context: ExecutionContext) -> tuple:
         """Validate email can be sent."""

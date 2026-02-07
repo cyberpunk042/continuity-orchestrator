@@ -83,7 +83,10 @@ class GitHubSurfaceAdapter(Adapter):
             logger.warning("GITHUB_TOKEN not set, GitHub adapter disabled")
             return False
         
-        return context.integrations.enabled_adapters.github_surface
+        try:
+            return context.state.integrations.enabled_adapters.github_surface
+        except AttributeError:
+            return True  # If integrations config missing, allow (token/repo checks above suffice)
     
     def validate(self, context: ExecutionContext) -> tuple:
         """Validate GitHub action can execute."""

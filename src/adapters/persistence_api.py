@@ -76,7 +76,10 @@ class PersistenceAPIAdapter(Adapter):
             logger.debug("PERSISTENCE_API_URL not set, persistence API disabled")
             return False
         
-        return context.integrations.enabled_adapters.persistence_api
+        try:
+            return context.state.integrations.enabled_adapters.persistence_api
+        except AttributeError:
+            return True
     
     def validate(self, context: ExecutionContext) -> tuple:
         """Validate API configuration."""

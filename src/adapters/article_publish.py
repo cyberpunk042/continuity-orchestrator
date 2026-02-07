@@ -61,7 +61,10 @@ class ArticlePublishAdapter(Adapter):
     
     def is_enabled(self, context: ExecutionContext) -> bool:
         """Always enabled when in a publishable stage."""
-        return context.integrations.enabled_adapters.article_publish
+        try:
+            return context.state.integrations.enabled_adapters.article_publish
+        except AttributeError:
+            return True
     
     def validate(self, context: ExecutionContext) -> tuple:
         """Validate we can build the site."""
