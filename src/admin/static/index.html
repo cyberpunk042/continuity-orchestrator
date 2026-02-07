@@ -2169,6 +2169,7 @@
                 secretsLoaded = false;
                 appData = null;
                 await loadSecretsForm();
+                selectTarget(currentTarget);
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `❌ Error: ${error.message}`;
@@ -2214,6 +2215,7 @@
                 secretsLoaded = false;
                 appData = null;
                 await loadSecretsForm();
+                selectTarget(currentTarget);
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent = `❌ Error: ${error.message}`;
@@ -2417,14 +2419,23 @@
                     }
                 }
 
-                // Clear inputs on success
+                // Smooth refresh: show loading overlay, then rebuild form with fresh data
                 if (data.all_success !== false) {
-                    inputs.forEach(input => input.value = '');
-                    // Refresh status and secrets list
-                    setTimeout(async () => {
-                        await loadStatus();
-                        await loadSecretsForm();
-                    }, 500);
+                    // Show loading overlay on the form (no input clearing = no flash)
+                    const formEl = document.getElementById('secrets-form');
+                    formEl.style.position = 'relative';
+                    const overlay = document.createElement('div');
+                    overlay.id = 'secrets-loading-overlay';
+                    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;border-radius:8px;z-index:10;';
+                    overlay.innerHTML = '<div style="color:#fff;font-size:1rem;">🔄 Refreshing…</div>';
+                    formEl.appendChild(overlay);
+
+                    // Invalidate data and rebuild immediately
+                    secretsLoaded = false;
+                    appData = null;
+                    await loadSecretsForm();
+                    // Re-apply target selection so button state persists
+                    selectTarget(currentTarget);
                 }
             } catch (error) {
                 terminal.className = 'terminal error';
