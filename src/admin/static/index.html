@@ -1704,12 +1704,15 @@
                     </div>
                     <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
                         ${ghMasterSet
-                    ? `<strong style="color: var(--warning);">⚠️ Active — overrides individual secrets in CI.</strong>
-                               Bundles secrets only — does not include GitHub Variables (${GITHUB_VARS.join(', ')}).<br>
-                               <em>If you modify secrets above, re-generate and push to keep the master in sync.</em>`
-                    : `Bundles all adapter credentials (secrets only, not variables) into a single GitHub secret.<br>
+                    ? `<strong style="color: var(--warning);">⚠️ Active — complete override, not a merge.</strong>
+                               Only secrets present in your local <code>.env</code> are included.
+                               If a secret is missing locally, it will be <strong>absent from CI</strong> — even if it was pushed individually before.<br>
+                               Does not include GitHub Variables (${GITHUB_VARS.join(', ')}).<br>
+                               <em>After modifying secrets above, re-generate and push to keep the master in sync.</em>`
+                    : `Bundles your local <code>.env</code> secrets into a single GitHub secret.<br>
+                               <strong>⚠️ Complete override</strong> — only secrets present locally are included. Missing secrets = absent from CI.<br>
                                <strong>Not required</strong> — you can push secrets individually instead.
-                               <em>Useful if you prefer one secret over many. Priority: CONTINUITY_CONFIG → individual env vars.</em>`
+                               <em>Useful if you prefer one secret over many.</em>`
                 }
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
@@ -2026,19 +2029,41 @@
         }
 
         async function pushMasterSecret() {
+            // Merge live form values on top of envData so unsaved inputs are included
+            const liveEnv = { ...envData };
+            const fields = document.querySelectorAll('#secrets-form [data-secret-name]');
+            const unsavedNames = [];
+            fields.forEach(el => {
+                const name = el.dataset.secretName;
+                if (el.value && el.value !== (secretsInitialValues[name] ?? '')) {
+                    liveEnv[name] = el.value;
+                    unsavedNames.push(name);
+                }
+            });
+
+            // Build config with live values
+            const oldEnvData = envData;
+            envData = liveEnv;
             const config = buildMasterConfigJson();
+            envData = oldEnvData; // restore
             const count = Object.keys(config).length;
 
             if (count === 0) {
-                alert('No adapter credentials found in .env to bundle.');
+                alert('No adapter credentials found to bundle.\n\nSet some secrets above first.');
                 return;
             }
 
             const json = JSON.stringify(config);
 
-            if (!confirm(`Push CONTINUITY_CONFIG to GitHub with ${count} keys?\n\nThis single secret will override individual secrets in CI.\nIndividual env vars will only fill gaps not in the master.`)) {
-                return;
+            // Warn about unsaved form values being included
+            let confirmMsg = `Push CONTINUITY_CONFIG to GitHub with ${count} keys?\n`;
+            confirmMsg += `\n⚠️ This is a COMPLETE OVERRIDE — only secrets present here will exist in CI.`;
+            confirmMsg += `\nMissing secrets will be absent, even if pushed individually before.`;
+            if (unsavedNames.length > 0) {
+                confirmMsg += `\n\n📝 Including ${unsavedNames.length} unsaved form value(s): ${unsavedNames.join(', ')}`;
+                confirmMsg += `\n⚠️ These are NOT saved to .env yet — click Save & Push after this to persist them locally.`;
             }
+            if (!confirm(confirmMsg)) return;
 
             const output = document.getElementById('secrets-output');
             const terminal = document.getElementById('secrets-terminal');
@@ -2047,8 +2072,8 @@
             terminal.textContent = `☁️ Pushing CONTINUITY_CONFIG (${count} keys) to GitHub...\n`;
 
             // Put master secret panel in loading state
-            const masterPanel = document.getElementById('master-push-btn');
-            if (masterPanel) { masterPanel.disabled = true; masterPanel.textContent = '⏳ Pushing...'; }
+            const masterBtn = document.getElementById('master-push-btn');
+            if (masterBtn) { masterBtn.disabled = true; masterBtn.textContent = '⏳ Pushing...'; }
 
             try {
                 const response = await fetch('/api/secrets/push', {
@@ -2065,24 +2090,37 @@
                 if (data.error) {
                     terminal.className = 'terminal error';
                     terminal.textContent += `❌ ${data.error}\n`;
+                    // Restore button
+                    if (masterBtn) { masterBtn.disabled = false; masterBtn.textContent = '☁️ Push to GitHub'; }
                     return;
                 }
 
                 const r = (data.results || [])[0];
                 if (r?.success) {
                     terminal.textContent += `✅ CONTINUITY_CONFIG pushed to GitHub!\n\n${count} adapter credentials bundled into one secret.`;
+                    if (unsavedNames.length > 0) {
+                        terminal.textContent += `\n\n⚠️ Remember: ${unsavedNames.join(', ')} are in the master but NOT saved to .env yet.`;
+                        terminal.textContent += `\nClick Save & Push to persist them locally and push individually.`;
+                    }
                 } else {
                     terminal.className = 'terminal error';
                     terminal.textContent += `❌ Failed: ${r?.error || 'unknown'}\n`;
                 }
 
-                // Refresh to show master detected
-                secretsLoaded = false;
-                appData = null;
-                await loadSecretsForm();
+                // Only refresh the master panel status (not the whole form, to preserve unsaved inputs)
+                // Update ghSecrets to include CONTINUITY_CONFIG
+                if (r?.success && !ghSecrets.includes('CONTINUITY_CONFIG')) {
+                    ghSecrets.push('CONTINUITY_CONFIG');
+                }
+                // Restore button state
+                if (masterBtn) { masterBtn.disabled = false; masterBtn.textContent = '☁️ Push to GitHub'; }
+                // Update the master status badge
+                const masterStatusBadge = document.getElementById('master-status-badge');
+                if (masterStatusBadge) masterStatusBadge.style.display = 'none';
             } catch (error) {
                 terminal.className = 'terminal error';
                 terminal.textContent += `❌ Error: ${error.message}`;
+                if (masterBtn) { masterBtn.disabled = false; masterBtn.textContent = '☁️ Push to GitHub'; }
             }
         }
 
