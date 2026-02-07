@@ -1958,6 +1958,9 @@
                         </div>`;
                 }
 
+                // Last test result (persisted in localStorage)
+                html += getLastTestHtml(integ.id);
+
                 el.innerHTML = html;
             }
         }
@@ -1982,16 +1985,60 @@
                 });
                 const data = await response.json();
 
+                const testResult = {
+                    success: !!data.success,
+                    message: data.success
+                        ? (data.output || 'Completed successfully')
+                        : (data.error || data.output || 'Unknown error'),
+                    timestamp: Date.now(),
+                    to: to || '(default)',
+                };
+                localStorage.setItem(`test-result-${integId}`, JSON.stringify(testResult));
+
                 if (data.success) {
-                    terminal.textContent = `✅ ${label} test result:\n\n${data.output || 'Completed successfully'}`;
+                    terminal.textContent = `✅ ${label} test result:\n\n${testResult.message}`;
                 } else {
-                    terminal.textContent = `❌ ${label} test failed:\n\n${data.error || data.output || 'Unknown error'}`;
+                    terminal.textContent = `❌ ${label} test failed:\n\n${testResult.message}`;
                     terminal.className = 'terminal error';
                 }
+
+                // Refresh card to show new status
+                loadIntegrations();
             } catch (error) {
+                const testResult = {
+                    success: false,
+                    message: error.message,
+                    timestamp: Date.now(),
+                    to: to || '(default)',
+                };
+                localStorage.setItem(`test-result-${integId}`, JSON.stringify(testResult));
+
                 terminal.className = 'terminal error';
                 terminal.textContent = `❌ Error: ${error.message}`;
+                loadIntegrations();
             }
+        }
+
+        function getLastTestHtml(integId) {
+            try {
+                const raw = localStorage.getItem(`test-result-${integId}`);
+                if (!raw) return '';
+                const r = JSON.parse(raw);
+                const ago = formatTimeAgo(r.timestamp);
+                const icon = r.success ? '✅' : '❌';
+                const color = r.success ? 'var(--accent)' : 'var(--danger)';
+                const msg = r.message.length > 60 ? r.message.slice(0, 57) + '…' : r.message;
+                return `<div style="font-size: 0.78rem; color: ${color}; margin-top: 0.35rem;"
+                    title="${r.message.replace(/"/g, '&quot;')}">${icon} Last test ${ago}: ${msg}</div>`;
+            } catch { return ''; }
+        }
+
+        function formatTimeAgo(ts) {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
         }
 
         // Archive functions
@@ -2282,26 +2329,37 @@
                 title: 'Email',
                 content: () => `
                     <h2 style="margin-bottom: 1rem;">📧 Email Configuration</h2>
-                    <p style="color: var(--text-dim); margin-bottom: 1.5rem;">
+                    <p style="color: var(--text-dim); margin-bottom: 1rem;">
                         Configure email notifications using <a href="https://resend.com" target="_blank" style="color: var(--info);">Resend</a>.
+                        Free tier supports 100 emails/day.
                     </p>
+                    <details style="margin-bottom: 1.25rem;">
+                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide (3 steps)</summary>
+                        <ol style="color: var(--text-dim); line-height: 2; margin: 0.75rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Create a free account at <a href="https://resend.com/signup" target="_blank" style="color: var(--info);">resend.com/signup</a></li>
+                            <li>Go to <a href="https://resend.com/api-keys" target="_blank" style="color: var(--info);">API Keys</a> → click <strong>"Create API Key"</strong> → give it a name → copy the key (starts with <code>re_</code>)</li>
+                            <li>If you own a domain, <a href="https://resend.com/domains" target="_blank" style="color: var(--info);">verify it</a> to send from your own address. Otherwise the default <code>onboarding@resend.dev</code> works for testing.</li>
+                        </ol>
+                    </details>
                     <div class="form-group">
                         <label class="form-label">Resend API Key *</label>
-                        <input type="password" class="form-input" id="wiz-resend-key" 
-                               placeholder="re_xxxxxxxxxx">
+                        <input type="password" class="form-input" id="wiz-resend-key"
+                               placeholder="re_xxxxxxxxxx"
+                               title="Your Resend API key. Find it at resend.com → API Keys. Starts with re_">
                         <div class="form-hint">
-                            Get from <a href="https://resend.com/api-keys" target="_blank" style="color: var(--info);">resend.com/api-keys</a>
+                            Paste from <a href="https://resend.com/api-keys" target="_blank" style="color: var(--info);">resend.com/api-keys</a>
                             ${appData?.secrets?.find(s => s.name === 'RESEND_API_KEY')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                         </div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">From Email</label>
-                        <input type="email" class="form-input" id="wiz-resend-from" 
-                               placeholder="noreply@yourdomain.com" value="${getSecretValue('RESEND_FROM_EMAIL')}">
-                        <div class="form-hint">Sender email (must be verified in Resend)</div>
+                        <input type="email" class="form-input" id="wiz-resend-from"
+                               placeholder="noreply@yourdomain.com" value="${getSecretValue('RESEND_FROM_EMAIL')}"
+                               title="Sender address shown in the From field. Must be a verified domain in Resend, or use the default onboarding@resend.dev for testing.">
+                        <div class="form-hint">Leave blank to use the default <code>onboarding@resend.dev</code> (works for testing)</div>
                     </div>
                     <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
-                        💡 After setup, test this from the <strong>Integrations</strong> tab.
+                        💡 After setup, test this from the <a href="#integrations" onclick="switchTab('integrations'); return false;" style="color: var(--info); font-weight: 600;">Integrations</a> tab.
                     </div>
                 `,
                 validate: () => true,
@@ -2319,41 +2377,51 @@
                 title: 'SMS',
                 content: () => `
                     <h2 style="margin-bottom: 1rem;">📱 SMS Notifications (Twilio)</h2>
-                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
+                    <p style="color: var(--text-dim); margin-bottom: 1rem;">
                         <em>Optional</em> — Send SMS alerts using <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: var(--info);">Twilio</a>.
                     </p>
-                    <div class="alert info" style="margin-bottom: 1rem; padding: 0.75rem;">
-                        💡 Twilio offers a free trial with credits. <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: var(--info);">Sign up here</a>
-                    </div>
+                    <details style="margin-bottom: 1.25rem;">
+                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide (4 steps)</summary>
+                        <ol style="color: var(--text-dim); line-height: 2; margin: 0.75rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Sign up for a free trial at <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: var(--info);">twilio.com/try-twilio</a> (includes free credits)</li>
+                            <li>Once logged in, your <strong>Account SID</strong> and <strong>Auth Token</strong> are shown right on the <a href="https://console.twilio.com/" target="_blank" style="color: var(--info);">Console dashboard</a></li>
+                            <li>Get a free phone number: <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" style="color: var(--info);">Phone Numbers → Manage → Buy a Number</a> (trial gives you one for free)</li>
+                            <li>On trial accounts, you must <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/verified" target="_blank" style="color: var(--info);">verify your personal number</a> as a Verified Caller ID before sending</li>
+                        </ol>
+                    </details>
                     <div class="form-group">
                         <label class="form-label">Account SID</label>
-                        <input type="text" class="form-input" id="wiz-twilio-sid" 
-                               placeholder="ACxxxxxxxxxx" value="${getSecretValue('TWILIO_ACCOUNT_SID')}">
-                        <div class="form-hint">From Twilio Console dashboard</div>
+                        <input type="text" class="form-input" id="wiz-twilio-sid"
+                               placeholder="ACxxxxxxxxxx" value="${getSecretValue('TWILIO_ACCOUNT_SID')}"
+                               title="Your Account SID. Found at the top of console.twilio.com. Starts with AC.">
+                        <div class="form-hint">Starts with <code>AC</code> — visible on your <a href="https://console.twilio.com/" target="_blank" style="color: var(--info);">Console dashboard</a></div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Auth Token</label>
-                        <input type="password" class="form-input" id="wiz-twilio-token" 
-                               placeholder="xxxxxxxxxx">
+                        <input type="password" class="form-input" id="wiz-twilio-token"
+                               placeholder="xxxxxxxxxx"
+                               title="Your Auth Token. Found on console.twilio.com next to your Account SID. Click 'Show' to reveal it.">
                         <div class="form-hint">
-                            From Twilio Console
+                            Click "Show" next to Auth Token on console.twilio.com
                             ${appData?.secrets?.find(s => s.name === 'TWILIO_AUTH_TOKEN')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                         </div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Twilio Phone Number</label>
-                        <input type="text" class="form-input" id="wiz-twilio-from" 
-                               placeholder="+1234567890" value="${getSecretValue('TWILIO_FROM_NUMBER')}">
-                        <div class="form-hint">Your Twilio number (get free one in trial)</div>
+                        <input type="text" class="form-input" id="wiz-twilio-from"
+                               placeholder="+1234567890" value="${getSecretValue('TWILIO_FROM_NUMBER')}"
+                               title="The Twilio number that sends SMS. Format: +1XXXXXXXXXX. Get one free with trial at Phone Numbers → Buy a Number.">
+                        <div class="form-hint">Format: <code>+1XXXXXXXXXX</code> — your Twilio-assigned number</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Your Phone Number</label>
-                        <input type="text" class="form-input" id="wiz-operator-sms" 
-                               placeholder="+1234567890" value="${getSecretValue('OPERATOR_SMS')}">
-                        <div class="form-hint">Where to send SMS alerts</div>
+                        <input type="text" class="form-input" id="wiz-operator-sms"
+                               placeholder="+1234567890" value="${getSecretValue('OPERATOR_SMS')}"
+                               title="Your personal phone number where you want to receive alerts. Must be verified as a Caller ID during Twilio trial.">
+                        <div class="form-hint">Where to send SMS alerts (must be <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/verified" target="_blank" style="color: var(--info);">verified</a> on trial accounts)</div>
                     </div>
                     <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
-                        💡 After setup, test this from the <strong>Integrations</strong> tab.
+                        💡 After setup, test this from the <a href="#integrations" onclick="switchTab('integrations'); return false;" style="color: var(--info); font-weight: 600;">Integrations</a> tab.
                     </div>
                 `,
                 validate: () => true,
@@ -2375,41 +2443,45 @@
                 title: 'X',
                 content: () => `
                     <h2 style="margin-bottom: 1rem;">🐦 X/Twitter Integration</h2>
-                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
-                        <em>Optional</em> — Post automated updates to X (Twitter).
+                    <p style="color: var(--text-dim); margin-bottom: 1rem;">
+                        <em>Optional</em> — Post automated updates to X (Twitter). Free tier: 1,500 posts/month.
                     </p>
-                    <div class="alert info" style="margin-bottom: 1rem; padding: 0.75rem;">
-                        💡 Requires X Developer account. <a href="https://developer.twitter.com/en/portal/dashboard" target="_blank" style="color: var(--info);">Apply here</a> (free tier: 1,500 tweets/month)
-                    </div>
-                    <details style="margin-bottom: 1rem;">
-                        <summary style="cursor: pointer; color: var(--info);">📖 Setup Guide</summary>
-                        <ol style="color: var(--text-dim); line-height: 1.8; margin: 1rem 0 0 1.5rem; font-size: 0.9rem;">
-                            <li>Go to <a href="https://developer.twitter.com/en/portal/dashboard" target="_blank" style="color: var(--info);">developer.twitter.com</a></li>
-                            <li>Create a Project and App</li>
-                            <li>Set App permissions to <strong>Read and Write</strong></li>
-                            <li>Generate Access Token and Secret</li>
-                            <li>Copy all 4 keys below</li>
+                    <details style="margin-bottom: 1.25rem;">
+                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide (5 steps)</summary>
+                        <ol style="color: var(--text-dim); line-height: 2; margin: 0.75rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Sign up for a developer account at <a href="https://developer.x.com/en/portal/petition/essential/basic-info" target="_blank" style="color: var(--info);">developer.x.com</a></li>
+                            <li>In the <a href="https://developer.x.com/en/portal/dashboard" target="_blank" style="color: var(--info);">Developer Portal</a>, create a <strong>Project</strong>, then create an <strong>App</strong> inside it</li>
+                            <li>Go to your App → <strong>Settings</strong> → <strong>User authentication</strong> → set App permissions to <strong>Read and Write</strong></li>
+                            <li>Go to <strong>Keys and Tokens</strong> tab → under "Consumer Keys" find your <strong>API Key</strong> and <strong>API Secret</strong> (regenerate if needed)</li>
+                            <li>On the same page → under "Authentication Tokens" → click <strong>Generate</strong> for <strong>Access Token</strong> and <strong>Access Token Secret</strong></li>
                         </ol>
                     </details>
                     <div class="form-group">
                         <label class="form-label">API Key</label>
-                        <input type="password" class="form-input" id="wiz-x-api-key" placeholder="xxxxxxxxxx">
-                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'X_API_KEY')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                        <input type="password" class="form-input" id="wiz-x-api-key" placeholder="xxxxxxxxxx"
+                               title="Also called 'Consumer Key'. Found in Developer Portal → App → Keys and Tokens → Consumer Keys.">
+                        <div class="form-hint">Also called Consumer Key ${appData?.secrets?.find(s => s.name === 'X_API_KEY')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">API Secret</label>
-                        <input type="password" class="form-input" id="wiz-x-api-secret" placeholder="xxxxxxxxxx">
+                        <input type="password" class="form-input" id="wiz-x-api-secret" placeholder="xxxxxxxxxx"
+                               title="Also called 'Consumer Secret'. Shown only once when generated — save it immediately.">
+                        <div class="form-hint">Also called Consumer Secret — shown once at generation</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Access Token</label>
-                        <input type="password" class="form-input" id="wiz-x-access-token" placeholder="xxxxxxxxxx">
+                        <input type="password" class="form-input" id="wiz-x-access-token" placeholder="xxxxxxxxxx"
+                               title="Your account's access token. Found under 'Authentication Tokens' in the Keys and Tokens tab.">
+                        <div class="form-hint">Under "Authentication Tokens" — click Generate</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Access Secret</label>
-                        <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx">
+                        <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx"
+                               title="Your account's access token secret. Shown only once when generated — save it immediately.">
+                        <div class="form-hint">Paired with Access Token — shown once at generation</div>
                     </div>
                     <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
-                        💡 After setup, check status from the <strong>Integrations</strong> tab.
+                        💡 After setup, check status from the <a href="#integrations" onclick="switchTab('integrations'); return false;" style="color: var(--info); font-weight: 600;">Integrations</a> tab.
                     </div>
                 `,
                 validate: () => true,
@@ -2431,42 +2503,48 @@
                 title: 'Reddit',
                 content: () => `
                     <h2 style="margin-bottom: 1rem;">🤖 Reddit Integration</h2>
-                    <p style="color: var(--text-dim); margin-bottom: 0.5rem;">
-                        <em>Optional</em> — Post automated updates to Reddit.
+                    <p style="color: var(--text-dim); margin-bottom: 1rem;">
+                        <em>Optional</em> — Post automated updates to Reddit via a "script" app.
                     </p>
-                    <details style="margin-bottom: 1rem;" open>
-                        <summary style="cursor: pointer; color: var(--info);">📖 Setup Guide</summary>
-                        <ol style="color: var(--text-dim); line-height: 1.8; margin: 1rem 0 0 1.5rem; font-size: 0.9rem;">
-                            <li>Go to <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color: var(--info);">reddit.com/prefs/apps</a></li>
-                            <li>Click "Create App" or "Create Another App"</li>
-                            <li>Select <strong>"script"</strong> as the app type</li>
-                            <li>Set redirect URI to <code>http://localhost:8080</code></li>
-                            <li>After creation, note the Client ID (under app name) and Secret</li>
+                    <details style="margin-bottom: 1.25rem;">
+                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide (6 steps)</summary>
+                        <ol style="color: var(--text-dim); line-height: 2; margin: 0.75rem 0 0 1.5rem; font-size: 0.9rem;">
+                            <li>Go to <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color: var(--info);">reddit.com/prefs/apps</a> (log in with the account that will post)</li>
+                            <li>Scroll down and click <strong>"create another app…"</strong></li>
+                            <li>Fill in: <strong>name</strong> (anything), select <strong>"script"</strong>, and set <strong>redirect URI</strong> to <code>http://localhost</code></li>
+                            <li style="font-size: 0.85rem; color: var(--text-dim);"><em>ℹ️ The redirect URI is required by Reddit but never actually used for script apps — any valid URL works</em></li>
+                            <li>Click <strong>"create app"</strong> — you'll see the <strong>Client ID</strong> (short string under the app name) and <strong>secret</strong> (labeled "secret")</li>
+                            <li>Enter your Reddit login credentials below — script apps authenticate directly with username/password</li>
                         </ol>
                     </details>
                     <div class="form-group">
                         <label class="form-label">Client ID</label>
-                        <input type="text" class="form-input" id="wiz-reddit-client-id" 
-                               placeholder="xxxxxxxxxx" value="${getSecretValue('REDDIT_CLIENT_ID')}">
-                        <div class="form-hint">The ID under your app name</div>
+                        <input type="text" class="form-input" id="wiz-reddit-client-id"
+                               placeholder="xxxxxxxxxx" value="${getSecretValue('REDDIT_CLIENT_ID')}"
+                               title="A short string shown directly under your app name on reddit.com/prefs/apps. It's NOT the app name itself.">
+                        <div class="form-hint">Short string under your app name (not the app name itself)</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Client Secret</label>
-                        <input type="password" class="form-input" id="wiz-reddit-client-secret" placeholder="xxxxxxxxxx">
-                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'REDDIT_CLIENT_SECRET')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                        <input type="password" class="form-input" id="wiz-reddit-client-secret" placeholder="xxxxxxxxxx"
+                               title="Labeled 'secret' on your app page at reddit.com/prefs/apps.">
+                        <div class="form-hint">Labeled "secret" on the app page ${appData?.secrets?.find(s => s.name === 'REDDIT_CLIENT_SECRET')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Reddit Username</label>
-                        <input type="text" class="form-input" id="wiz-reddit-username" 
-                               placeholder="your_username" value="${getSecretValue('REDDIT_USERNAME')}">
+                        <input type="text" class="form-input" id="wiz-reddit-username"
+                               placeholder="your_username" value="${getSecretValue('REDDIT_USERNAME')}"
+                               title="The Reddit account username that created the script app. Posts will be made from this account.">
+                        <div class="form-hint">The account that will post — must match the app owner</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Reddit Password</label>
-                        <input type="password" class="form-input" id="wiz-reddit-password" placeholder="xxxxxxxxxx">
-                        <div class="form-hint">${appData?.secrets?.find(s => s.name === 'REDDIT_PASSWORD')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                        <input type="password" class="form-input" id="wiz-reddit-password" placeholder="xxxxxxxxxx"
+                               title="The Reddit account password. Required for script app authentication. If you use 2FA, you may need an app-specific password.">
+                        <div class="form-hint">If you use 2FA, you'll need an app-specific password ${appData?.secrets?.find(s => s.name === 'REDDIT_PASSWORD')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
-                        💡 After setup, check status from the <strong>Integrations</strong> tab.
+                        💡 After setup, check status from the <a href="#integrations" onclick="switchTab('integrations'); return false;" style="color: var(--info); font-weight: 600;">Integrations</a> tab.
                     </div>
                 `,
                 validate: () => true,
