@@ -71,6 +71,52 @@ def _id_prefix_for_mime(mime_type: str) -> str:
     return "media"
 
 
+# Release tag used for large media file backup
+MEDIA_RELEASE_TAG = "media-vault"
+
+
+def _upload_to_release_bg(media_id: str, enc_path: Path) -> None:
+    """Upload a large .enc file to a GitHub Release in the background.
+
+    Uses the `gh` CLI to attach the file as a release asset to the
+    'media-vault' release. Creates the release if it doesn't exist.
+    Runs as a background subprocess so it doesn't block the API response.
+    """
+    import subprocess
+    import shutil
+
+    if not shutil.which("gh"):
+        logger.warning("[media-release] gh CLI not found — skipping release upload")
+        return
+
+    project_root = current_app.config["PROJECT_ROOT"]
+
+    # Shell script: create release if missing, then upload asset
+    # --clobber overwrites if the asset already exists (re-upload)
+    script = (
+        f'gh release view {MEDIA_RELEASE_TAG} > /dev/null 2>&1 || '
+        f'gh release create {MEDIA_RELEASE_TAG} '
+        f'--title "Media Vault" '
+        f'--notes "Encrypted media files (large). Auto-managed by admin panel." '
+        f'--latest=false; '
+        f'gh release upload {MEDIA_RELEASE_TAG} '
+        f'"{enc_path}" --clobber '
+        f'&& echo "[media-release] Uploaded {media_id}" '
+        f'|| echo "[media-release] Failed to upload {media_id}"'
+    )
+
+    logger.info(f"[media-release] Queueing background upload: {media_id}")
+    try:
+        subprocess.Popen(
+            ["bash", "-c", script],
+            cwd=str(project_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        logger.warning(f"[media-release] Failed to start upload: {e}")
+
+
 # ── Routes ───────────────────────────────────────────────────────
 
 
@@ -406,50 +452,79 @@ def api_editor_upload():
             "size_bytes": len(file_data),
         })
 
-    # ── Large file → encrypt via media vault ──
+    # ── Larger file → optimize if needed, encrypt, store ──
     from ..content.crypto import encrypt_file
+    from ..content.media_optimize import (
+        should_optimize, optimize_image, classify_storage,
+        LARGE_THRESHOLD_BYTES,
+    )
 
     key = _get_encryption_key()
     if not key:
         return jsonify({
             "success": 0,
-            "error": "CONTENT_ENCRYPTION_KEY not set — cannot encrypt large images",
+            "error": "CONTENT_ENCRYPTION_KEY not set — cannot encrypt images",
         }), 400
 
-    sha256 = hashlib.sha256(file_data).hexdigest()
+    # Auto-optimize large images (resize + convert to WebP)
+    store_data = file_data
+    store_mime = mime_type
+    optimized = False
+    if should_optimize(len(file_data), mime_type):
+        store_data, store_mime, _ext = optimize_image(file_data, mime_type)
+        optimized = len(store_data) < len(file_data)
+        if optimized:
+            logger.info(
+                f"Editor upload: optimized {original_name} "
+                f"{len(file_data):,} → {len(store_data):,} bytes "
+                f"({store_mime})"
+            )
+
+    # Determine storage tier based on (possibly optimized) size
+    storage_tier = classify_storage(len(store_data))
+    # Files that came through optimization are at least 100KB,
+    # so tier will be "git" or "large" (never "inline")
+
+    sha256 = hashlib.sha256(store_data).hexdigest()
     manifest = _load_manifest()
-    id_prefix = _id_prefix_for_mime(mime_type)
+    id_prefix = _id_prefix_for_mime(store_mime)
     media_id = manifest.next_id(id_prefix)
 
     try:
-        encrypted_data = encrypt_file(file_data, original_name, mime_type, key)
+        encrypted_data = encrypt_file(store_data, original_name, store_mime, key)
     except Exception as e:
         logger.error(f"Editor upload encryption failed: {e}")
         return jsonify({"success": 0, "error": f"Encryption failed: {e}"}), 500
 
-    # Write encrypted file
-    enc_path = manifest.enc_path(media_id)
-    enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(encrypted_data)
-
-    # Register in manifest
+    # Register in manifest FIRST (so enc_path resolves correctly)
     from ..content.media import MediaEntry
     entry = MediaEntry(
         id=media_id,
         original_name=original_name,
-        mime_type=mime_type,
-        size_bytes=len(file_data),
+        mime_type=store_mime,
+        size_bytes=len(store_data),
         sha256=sha256,
         min_stage=request.form.get("min_stage", "FULL").upper(),
         caption="",
+        storage=storage_tier,
     )
     manifest.add_entry(entry)
+
+    # Write encrypted file to the correct location
+    enc_path = manifest.enc_path(media_id)
+    enc_path.parent.mkdir(parents=True, exist_ok=True)
+    enc_path.write_bytes(encrypted_data)
     manifest.save()
 
     logger.info(
-        f"Editor upload (vault): {media_id} ({original_name}, "
-        f"{len(file_data)} bytes → encrypted)"
+        f"Editor upload ({storage_tier}): {media_id} ({original_name}, "
+        f"{len(store_data):,} bytes → {len(encrypted_data):,} enc, "
+        f"optimized={optimized})"
     )
+
+    # If stored in large/, trigger GitHub Release upload in background
+    if storage_tier == "large":
+        _upload_to_release_bg(media_id, enc_path)
 
     return jsonify({
         "success": 1,
@@ -459,7 +534,10 @@ def api_editor_upload():
         "inline": False,
         "media_id": media_id,
         "media_uri": f"media://{media_id}",
-        "size_bytes": len(file_data),
+        "size_bytes": len(store_data),
+        "original_size_bytes": len(file_data),
+        "optimized": optimized,
+        "storage": storage_tier,
     })
 
 

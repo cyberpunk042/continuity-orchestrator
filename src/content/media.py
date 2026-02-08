@@ -67,6 +67,7 @@ class MediaEntry:
     referenced_by: List[str] = field(default_factory=list)
     uploaded_at: str = ""
     caption: str = ""
+    storage: str = "git"  # "git" (tracked) or "large" (gitignored, release artifact)
 
     def __post_init__(self):
         if not self.uploaded_at:
@@ -273,7 +274,15 @@ class MediaManifest:
         return self._path.parent
 
     def enc_path(self, media_id: str) -> Path:
-        """Get the full path to an encrypted media file."""
+        """Get the full path to an encrypted media file.
+        
+        Checks the entry's storage field to determine the path:
+        - "git"   → content/media/{id}.enc (tracked in git)
+        - "large" → content/media/large/{id}.enc (gitignored)
+        """
+        entry = self.get(media_id)
+        if entry and entry.storage == "large":
+            return self.media_dir / "large" / f"{media_id}.enc"
         return self.media_dir / f"{media_id}.enc"
 
     def list_orphaned_files(self) -> List[Path]:
@@ -281,9 +290,13 @@ class MediaManifest:
         known_ids = set(self._by_id.keys())
         orphaned = []
 
-        for enc_file in self.media_dir.glob("*.enc"):
-            file_id = enc_file.stem
-            if file_id not in known_ids:
-                orphaned.append(enc_file)
+        # Check both root and large/ subdirectory
+        for search_dir in [self.media_dir, self.media_dir / "large"]:
+            if not search_dir.exists():
+                continue
+            for enc_file in search_dir.glob("*.enc"):
+                file_id = enc_file.stem
+                if file_id not in known_ids:
+                    orphaned.append(enc_file)
 
         return orphaned

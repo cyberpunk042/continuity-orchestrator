@@ -46,9 +46,12 @@ temp/
 state/.mirror_sync_lock
 .env.vault
 
-# Media — only encrypted files and manifest are tracked
+# Media — encrypted files and manifest are tracked in git
 # Plaintext media (images, PDFs, videos) must NEVER be committed
 content/media/*
 !content/media/*.enc
 !content/media/manifest.json
 !content/media/README.md
+# Large media files (> 2MB) go to large/ — backed up via GitHub Releases
+!content/media/large/
+content/media/large/*

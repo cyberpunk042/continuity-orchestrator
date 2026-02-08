@@ -337,7 +337,7 @@ def api_git_sync():
         if result.returncode == 0:
             # Nothing new to commit — but we may still have unpushed commits
             logger.info("[git-sync] Nothing new to stage — checking if push needed")
-            result = _run(["git", "push"], "git push", timeout=30)
+            result = _run(["git", "push"], "git push", timeout=120)
             if result.returncode == 0:
                 pushed = result.stderr.strip() or result.stdout.strip()
                 if "Everything up-to-date" in pushed:
@@ -371,7 +371,7 @@ def api_git_sync():
             })
 
         # Step 6: Push (should be clean since we just pulled)
-        result = _run(["git", "push"], "git push", timeout=30)
+        result = _run(["git", "push"], "git push", timeout=120)
         if result.returncode != 0:
             return jsonify({
                 "success": False,

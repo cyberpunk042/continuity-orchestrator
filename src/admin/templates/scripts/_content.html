@@ -254,7 +254,11 @@ toolConfig.image = {
                     if (data.inline) {
                         contentLog(`🖼️ Image inlined (${formatMediaSize(data.size_bytes)})`);
                     } else {
-                        contentLog(`🖼️ Image → vault: ${data.media_id} (${formatMediaSize(data.size_bytes)})`);
+                        const opt = data.optimized
+                            ? ` · optimized ${formatMediaSize(data.original_size_bytes)} → ${formatMediaSize(data.size_bytes)}`
+                            : '';
+                        const tier = data.storage === 'large' ? ' [release]' : '';
+                        contentLog(`🖼️ Image → vault: ${data.media_id} (${formatMediaSize(data.size_bytes)}${opt}${tier})`);
                     }
                 } else {
                     contentLog(`❌ Image upload failed: ${data.error}`, true);
