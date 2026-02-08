@@ -115,6 +115,11 @@ def generate_key() -> str:
     return secrets.token_urlsafe(GENERATED_KEY_LENGTH)
 
 
+def _env_file_path() -> Path:
+    """Resolve the .env file path (relative to project root)."""
+    return Path(__file__).resolve().parents[2] / ".env"
+
+
 def get_encryption_key() -> Optional[str]:
     """
     Read CONTENT_ENCRYPTION_KEY from environment or .env file.
@@ -132,7 +137,7 @@ def get_encryption_key() -> Optional[str]:
         return key.strip()
 
     # 2. Fall back to reading .env directly (may have been updated at runtime)
-    env_file = Path(__file__).resolve().parents[2] / ".env"
+    env_file = _env_file_path()
     if env_file.exists():
         try:
             for line in env_file.read_text(encoding="utf-8").splitlines():

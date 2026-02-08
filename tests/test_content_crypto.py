@@ -283,19 +283,22 @@ class TestGetEncryptionKey:
         with mock.patch.dict(os.environ, {ENV_VAR: "my-secret-key"}):
             assert get_encryption_key() == "my-secret-key"
 
-    def test_key_not_set(self):
+    def test_key_not_set(self, tmp_path):
         """Should return None when env var is not set."""
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             assert get_encryption_key() is None
 
-    def test_key_empty_string(self):
+    def test_key_empty_string(self, tmp_path):
         """Empty string should return None (not an empty key)."""
-        with mock.patch.dict(os.environ, {ENV_VAR: ""}):
+        with mock.patch.dict(os.environ, {ENV_VAR: ""}), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             assert get_encryption_key() is None
 
-    def test_key_whitespace_only(self):
+    def test_key_whitespace_only(self, tmp_path):
         """Whitespace-only should return None."""
-        with mock.patch.dict(os.environ, {ENV_VAR: "   "}):
+        with mock.patch.dict(os.environ, {ENV_VAR: "   "}), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             assert get_encryption_key() is None
 
     def test_key_is_trimmed(self):
@@ -455,7 +458,8 @@ class TestLoadArticle:
         envelope = encrypt_content(SAMPLE_CONTENT, PASSPHRASE)
         path.write_text(json.dumps(envelope))
 
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             with pytest.raises(ValueError, match="CONTENT_ENCRYPTION_KEY"):
                 load_article(path)
 
@@ -502,7 +506,8 @@ class TestSaveArticle:
     def test_save_encrypted_no_key_raises(self, tmp_path: Path):
         """Saving encrypted without key should raise ValueError."""
         path = tmp_path / "test.json"
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             with pytest.raises(ValueError, match="CONTENT_ENCRYPTION_KEY"):
                 save_article(path, SAMPLE_CONTENT, encrypt=True)
 

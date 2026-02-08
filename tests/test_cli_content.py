@@ -142,7 +142,10 @@ class TestContentStatus:
     def test_shows_key_not_set(self, tmp_path: Path):
         """Should indicate when the encryption key is not configured."""
         root = _setup_project(tmp_path)
-        result = _run(["content-status"], root, env={})
+        env_patch = {k: v for k, v in os.environ.items() if k != ENV_VAR}
+        with mock.patch.dict(os.environ, env_patch, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
+            result = _run(["content-status"], root, env={})
 
         assert result.exit_code == 0
         assert "Not set" in result.output
@@ -228,11 +231,14 @@ class TestContentEncrypt:
     def test_encrypt_no_key_fails(self, tmp_path: Path):
         """Should fail if encryption key is not set."""
         root = _setup_project(tmp_path)
-        result = _run(
-            ["content-encrypt", "--slug", "disclosure"],
-            root,
-            env={},
-        )
+        env_patch = {k: v for k, v in os.environ.items() if k != ENV_VAR}
+        with mock.patch.dict(os.environ, env_patch, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
+            result = _run(
+                ["content-encrypt", "--slug", "disclosure"],
+                root,
+                env={},
+            )
 
         assert result.exit_code != 0
 
@@ -343,10 +349,13 @@ class TestContentDecrypt:
     def test_decrypt_no_key_fails(self, tmp_path: Path):
         """Should fail if encryption key is not set."""
         root = _setup_project(tmp_path)
-        result = _run(
-            ["content-decrypt", "--slug", "disclosure"],
-            root,
-            env={},
-        )
+        env_patch = {k: v for k, v in os.environ.items() if k != ENV_VAR}
+        with mock.patch.dict(os.environ, env_patch, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
+            result = _run(
+                ["content-decrypt", "--slug", "disclosure"],
+                root,
+                env={},
+            )
 
-        assert result.exit_code != 0
+            assert result.exit_code != 0

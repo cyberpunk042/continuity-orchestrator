@@ -39,7 +39,7 @@ class SiteGenerator:
         
         # Setup Jinja2 environment
         self.jinja_env = Environment(
-            loader=FileSystemLoader(self.template_dir / "html"),
+            loader=FileSystemLoader(str(self.template_dir / "html")),
             autoescape=True,
         )
     

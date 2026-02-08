@@ -408,40 +408,53 @@ class TestManifestMutations:
 
 
 class TestIdGeneration:
-    """Verify sequential ID generation."""
+    """Verify date-based ID generation."""
 
     def test_first_id(self, tmp_path: Path):
-        """First ID should be prefix_001."""
+        """First ID should follow format prefix_YYYYMMDD_hex4."""
         manifest = MediaManifest(entries=[], path=tmp_path / "m.json")
-        assert manifest.next_id("img") == "img_001"
+        new_id = manifest.next_id("img")
+        assert new_id.startswith("img_")
+        # Format: img_YYYYMMDD_XXXX
+        parts = new_id.split("_")
+        assert len(parts) == 3
+        assert len(parts[1]) == 8  # YYYYMMDD
+        assert len(parts[2]) == 4  # hex4 suffix
+        assert parts[1].isdigit()
 
-    def test_sequential_ids(self, tmp_path: Path):
-        """IDs should increment sequentially."""
+    def test_sequential_ids_are_unique(self, tmp_path: Path):
+        """Two generated IDs should be different (random suffix)."""
         manifest = MediaManifest(entries=[], path=tmp_path / "m.json")
-        manifest.add_entry(_make_entry(id="img_001"))
-        manifest.add_entry(_make_entry(id="img_002"))
-        assert manifest.next_id("img") == "img_003"
+        id1 = manifest.next_id("img")
+        manifest.add_entry(_make_entry(id=id1))
+        id2 = manifest.next_id("img")
+        assert id1 != id2
 
-    def test_gap_in_sequence(self, tmp_path: Path):
-        """Should use max + 1, even with gaps."""
+    def test_collision_avoidance(self, tmp_path: Path):
+        """Should not generate an ID that already exists in the manifest."""
         manifest = MediaManifest(entries=[], path=tmp_path / "m.json")
-        manifest.add_entry(_make_entry(id="img_001"))
-        manifest.add_entry(_make_entry(id="img_005"))
-        assert manifest.next_id("img") == "img_006"
+        id1 = manifest.next_id("img")
+        manifest.add_entry(_make_entry(id=id1))
+        # The next ID should be different (collision avoided)
+        id2 = manifest.next_id("img")
+        assert id2 != id1
+        assert id2.startswith("img_")
 
     def test_different_prefixes(self, tmp_path: Path):
-        """Different prefixes should have independent sequences."""
+        """Different prefixes should produce IDs with those prefixes."""
         manifest = MediaManifest(entries=[], path=tmp_path / "m.json")
-        manifest.add_entry(_make_entry(id="img_001"))
-        manifest.add_entry(_make_entry(id="doc_003"))
-        assert manifest.next_id("img") == "img_002"
-        assert manifest.next_id("doc") == "doc_004"
-        assert manifest.next_id("vid") == "vid_001"
+        img_id = manifest.next_id("img")
+        doc_id = manifest.next_id("doc")
+        vid_id = manifest.next_id("vid")
+        assert img_id.startswith("img_")
+        assert doc_id.startswith("doc_")
+        assert vid_id.startswith("vid_")
 
     def test_default_prefix(self, tmp_path: Path):
         """Default prefix should be 'media'."""
         manifest = MediaManifest(entries=[], path=tmp_path / "m.json")
-        assert manifest.next_id() == "media_001"
+        new_id = manifest.next_id()
+        assert new_id.startswith("media_")
 
 
 # -- File paths ----------------------------------------------------------------

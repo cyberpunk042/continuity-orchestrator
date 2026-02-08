@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("flask")
+
 
 @pytest.fixture
 def app(tmp_path):

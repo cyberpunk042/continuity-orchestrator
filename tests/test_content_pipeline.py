@@ -201,7 +201,8 @@ class TestGetArticle:
         articles_dir = _setup_content_dir(tmp_path)
         manager = ContentManager(content_dir=articles_dir)
 
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("src.content.crypto._env_file_path", return_value=tmp_path / ".env"):
             with pytest.raises(ValueError, match="CONTENT_ENCRYPTION_KEY"):
                 manager.get_article("disclosure")
 

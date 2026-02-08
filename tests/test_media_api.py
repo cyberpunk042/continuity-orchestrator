@@ -20,6 +20,8 @@ from unittest import mock
 
 import pytest
 
+pytest.importorskip("flask")
+
 from src.admin.server import create_app
 from src.content.crypto import encrypt_file
 from src.content.media import MediaEntry, MediaManifest

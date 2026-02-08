@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("flask")
+
 from src.admin.server import create_app
 from src.site.editorjs import EditorJSRenderer
 
