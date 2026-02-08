@@ -17,7 +17,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run the demo
-./scripts/demo_escalation.sh
+./demo.sh
 ```
 
 ## Requirements
@@ -46,12 +46,24 @@ pip install -e ".[dev]"
 continuity-orchestrator/
 ├── src/                   # Python source code
 │   ├── __init__.py       # Package root
-│   ├── main.py           # CLI entry point
-│   ├── adapters/         # External service integrations
+│   ├── main.py           # CLI entry point (thin, delegates to cli/)
+│   ├── cli/              # CLI command modules
+│   │   ├── core.py       # tick, status, reset, renew, set-deadline
+│   │   ├── mirror.py     # mirror-status, mirror-sync, mirror-clean
+│   │   ├── test.py       # test email/sms/webhook/github/all
+│   │   └── ...           # config, deploy, health, init, release, site
+│   ├── admin/            # Web admin dashboard (Flask)
+│   │   ├── server.py     # App factory
+│   │   ├── helpers.py    # Shared utilities
+│   │   ├── routes_*.py   # API route blueprints
+│   │   ├── templates/    # Jinja2 HTML + JS partials
+│   │   └── static/css/   # Stylesheet
+│   ├── adapters/         # External service integrations (10 adapters)
 │   ├── engine/           # Core tick lifecycle
 │   ├── models/           # Pydantic schemas
 │   ├── persistence/      # State and audit storage
 │   ├── policy/           # Policy loading
+│   ├── site/             # Static site generator
 │   └── templates/        # Template resolution
 ├── policy/               # YAML configuration
 │   ├── states.yaml       # Escalation state machine
@@ -278,10 +290,10 @@ if not mock_mode:
 | `RESEND_API_KEY` | Email API key | — |
 | `TWILIO_*` | SMS credentials | — |
 
-## Testing (Future)
+## Testing
 
 ```bash
-# Run all tests
+# Run all tests (255 tests)
 pytest
 
 # Run with coverage

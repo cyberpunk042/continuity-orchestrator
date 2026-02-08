@@ -283,5 +283,4 @@ Check `content/manifest.yaml` - the article's `min_stage` may be higher than cur
 ## 📚 Related Documentation
 
 - [Content Authoring Guide](AUTHORING.md)
-- [Implementation Plan](IMPLEMENTATION_PLAN.md)
 - [Roadmap](ROADMAP.md)

@@ -388,4 +388,3 @@ for a in manifest.get_visible_articles(state.escalation.state):
 
 - [Configuration Guide](CONFIGURATION.md)
 - [Content README](../content/README.md)
-- [Implementation Plan](IMPLEMENTATION_PLAN.md)

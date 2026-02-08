@@ -8,8 +8,11 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         CLI / API                                │
-│                    (main.py, commands)                          │
+│                      Entry Points                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │ CLI (click)  │  │ Admin Web UI │  │ GitHub Actions       │   │
+│  │ src/cli/*    │  │ src/admin/*  │  │ .github/workflows/   │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │                        Engine Layer                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
@@ -24,9 +27,12 @@
 │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
 │                       Adapter Layer                              │
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────────┐   │
-│  │ Email  │ │ SMS    │ │Webhook │ │ GitHub │ │ Article/Site │   │
-│  └────────┘ └────────┘ └────────┘ └────────┘ └──────────────┘   │
+│  ┌───────┐ ┌─────┐ ┌───────┐ ┌────────┐ ┌──────┐ ┌──────────┐  │
+│  │ Email │ │ SMS │ │ X/Twt │ │ Reddit │ │ Hook │ │ GitHub   │  │
+│  └───────┘ └─────┘ └───────┘ └────────┘ └──────┘ └──────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
+│  │ Archive (IA) │  │ Persistence  │  │ Article Publish       │  │
+│  └──────────────┘  └──────────────┘  └───────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
 │                     Persistence Layer                            │
 │  ┌─────────────────────────┐  ┌──────────────────────────────┐  │
@@ -113,6 +119,20 @@ Every tick writes to an append-only NDJSON ledger with:
 
 ## Module Reference
 
+### CLI (`src/cli/`)
+
+| Module | Purpose |
+|--------|---------|
+| `core.py` | tick, status, set-deadline, reset, renew |
+| `release.py` | trigger-release |
+| `config.py` | check-config, config-status, generate-config |
+| `health.py` | health, metrics, retry-queue, circuit-breakers |
+| `mirror.py` | mirror-status, mirror-sync, mirror-clean |
+| `init.py` | Project scaffolding wizard |
+| `test.py` | Adapter integration tests |
+| `deploy.py` | export-secrets, explain-stages, simulate-timeline |
+| `site.py` | build-site |
+
 ### Engine (`src/engine/`)
 
 | Module | Purpose |
@@ -121,6 +141,37 @@ Every tick writes to an append-only NDJSON ledger with:
 | `time_eval.py` | Deadline and time calculations |
 | `rules.py` | Rule matching and condition evaluation |
 | `state.py` | State mutations (set, clear) |
+
+### Admin Dashboard (`src/admin/`)
+
+| Module | Purpose |
+|--------|---------|
+| `server.py` | Flask app factory, startup |
+| `helpers.py` | Shared utilities (_fresh_env, _gh_repo_flag) |
+| `routes_core.py` | Dashboard, run command, status API |
+| `routes_env.py` | .env read/write API |
+| `routes_secrets.py` | GitHub secrets/variables sync |
+| `routes_git.py` | Git status, sync, fetch |
+| `routes_mirror.py` | Mirror sync/clean with streaming |
+| `routes_archive.py` | Internet Archive (Wayback) |
+| `templates/` | Jinja2 partials (8 HTML + 12 JS scripts) |
+
+### Adapters (`src/adapters/`)
+
+| Module | Purpose |
+|--------|---------|
+| `base.py` | Abstract adapter interface |
+| `registry.py` | Adapter lookup and execution |
+| `mock.py` | Mock implementations for testing |
+| `email_resend.py` | Email notifications (Resend API) |
+| `sms_twilio.py` | SMS alerts (Twilio) |
+| `x_adapter.py` | X/Twitter posts (OAuth 1.0a) |
+| `reddit.py` | Reddit posts (PRAW) |
+| `webhook.py` | Generic HTTP POST webhooks |
+| `github_surface.py` | GitHub file/gist/release operations |
+| `internet_archive.py` | Wayback Machine archival |
+| `persistence_api.py` | Remote state sync |
+| `article_publish.py` | Stage-based content publishing |
 
 ### Models (`src/models/`)
 
@@ -135,17 +186,6 @@ Every tick writes to an append-only NDJSON ledger with:
 |--------|---------|
 | `loader.py` | YAML policy file loading |
 | `models.py` | Pydantic models for policy schemas |
-
-### Adapters (`src/adapters/`)
-
-| Module | Purpose |
-|--------|---------|
-| `base.py` | Abstract adapter interface |
-| `registry.py` | Adapter lookup and execution |
-| `mock.py` | Mock implementations for testing |
-| `webhook.py` | Real webhook adapter (httpx) |
-| `email_resend.py` | Real email adapter (Resend) |
-| `github_surface.py` | GitHub file/gist/release adapter |
 
 ### Persistence (`src/persistence/`)
 
@@ -319,4 +359,4 @@ python -m src.main status
 
 ---
 
-*Last Updated: 2026-02-04*
+*Last Updated: 2026-02-07*
