@@ -181,9 +181,10 @@ document.getElementById('content-meta-nav').checked = me.include_in_nav !== fals
 document.getElementById('content-meta-pin').checked = !!me.pin_to_top;
 }
 
-// Initialize Editor.js
+// Initialize Editor.js — rewrite media:// URIs for preview
 contentOriginalData = data.content;
-await initContentEditor(data.content);
+const editorData = contentRewriteMediaUrls(data.content, 'toPreview');
+await initContentEditor(editorData);
 
 } catch (error) {
 document.getElementById('content-editorjs').innerHTML =
@@ -228,13 +229,52 @@ const toolConfig = {};
 // Conditionally add tools based on what's available
 if (typeof Header !== 'undefined') toolConfig.header = { class: Header, config: { levels: [1, 2, 3, 4], defaultLevel: 2
 } };
-if (typeof NestedList !== 'undefined') toolConfig.list = { class: NestedList };
-else if (typeof List !== 'undefined') toolConfig.list = { class: List };
+if (typeof List !== 'undefined') toolConfig.list = { class: List };
 if (typeof Quote !== 'undefined') toolConfig.quote = { class: Quote };
 if (typeof CodeTool !== 'undefined') toolConfig.code = { class: CodeTool };
 if (typeof Table !== 'undefined') toolConfig.table = { class: Table };
 if (typeof Warning !== 'undefined') toolConfig.warning = { class: Warning };
 if (typeof Delimiter !== 'undefined') toolConfig.delimiter = { class: Delimiter };
+
+// Image tool with hybrid upload (inline <100KB, vault ≥100KB)
+if (typeof ImageTool !== 'undefined') {
+toolConfig.image = {
+    class: ImageTool,
+    config: {
+        uploader: {
+            async uploadByFile(file) {
+                const formData = new FormData();
+                formData.append('image', file);
+                const resp = await fetch('/api/content/media/editor-upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (data.inline) {
+                        contentLog(`🖼️ Image inlined (${formatMediaSize(data.size_bytes)})`);
+                    } else {
+                        contentLog(`🖼️ Image → vault: ${data.media_id} (${formatMediaSize(data.size_bytes)})`);
+                    }
+                } else {
+                    contentLog(`❌ Image upload failed: ${data.error}`, true);
+                }
+                return data;
+            },
+            async uploadByUrl(url) {
+                const resp = await fetch('/api/content/media/editor-fetch-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                return await resp.json();
+            },
+        },
+        // In admin preview, resolve media:// URIs to preview endpoint
+        actions: [],
+    },
+};
+}
 
 contentEditor = new EditorJS({
 holder: 'content-editorjs',
@@ -275,7 +315,8 @@ await loadScript(`${cdn}/@editorjs/editorjs@2.30/dist/editorjs.umd.min.js`);
 await Promise.allSettled([
 loadScript(`${cdn}/@editorjs/header@2.8/dist/header.umd.min.js`),
 loadScript(`${cdn}/@editorjs/list@1.9/dist/list.umd.min.js`),
-loadScript(`${cdn}/@editorjs/nested-list@1.4/dist/nested-list.umd.min.js`),
+loadScript(`${cdn}/@editorjs/image@2.9/dist/image.umd.min.js`),
+
 loadScript(`${cdn}/@editorjs/quote@2.7/dist/quote.umd.min.js`),
 loadScript(`${cdn}/@editorjs/code@2.9/dist/code.umd.min.js`),
 loadScript(`${cdn}/@editorjs/table@2.4/dist/table.umd.min.js`),
@@ -298,7 +339,8 @@ saveBtn.disabled = true;
 saveBtn.textContent = '⏳ Saving...';
 
 try {
-const outputData = await contentEditor.save();
+const rawOutputData = await contentEditor.save();
+const outputData = contentRewriteMediaUrls(rawOutputData, 'toMedia');
 const encrypt = document.getElementById('content-encrypt-toggle').checked;
 
 if (encrypt && !contentEncryptionAvailable) {
@@ -508,4 +550,58 @@ terminal.className = 'terminal error';
 terminal.className = 'terminal';
 }
 terminal.textContent = `[${timestamp}] ${message}`;
+}
+
+// ── Media URL rewriting for Editor.js ───────────────────
+
+const MEDIA_URI_PREFIX = 'media://';
+const MEDIA_PREVIEW_PREFIX = '/api/content/media/';
+
+/**
+ * Rewrite media:// URIs ↔ preview endpoint URLs in Editor.js data.
+ *
+ * @param {Object} editorData - Editor.js output data (with blocks array)
+ * @param {string} direction - 'toPreview' or 'toMedia'
+ * @returns {Object} Deep clone with rewritten URLs
+ */
+function contentRewriteMediaUrls(editorData, direction) {
+    if (!editorData || !editorData.blocks) return editorData;
+    
+    // Deep clone so we don't mutate the original
+    const clone = JSON.parse(JSON.stringify(editorData));
+    
+    for (const block of clone.blocks) {
+        if (block.type !== 'image') continue;
+        
+        const fileObj = block.data && block.data.file;
+        if (!fileObj || !fileObj.url) continue;
+        
+        const url = fileObj.url;
+        
+        if (direction === 'toPreview' && url.startsWith(MEDIA_URI_PREFIX)) {
+            // media://img_001 → /api/content/media/img_001/preview
+            const mediaId = url.slice(MEDIA_URI_PREFIX.length);
+            fileObj.url = `${MEDIA_PREVIEW_PREFIX}${mediaId}/preview`;
+        } else if (direction === 'toMedia' && url.startsWith(MEDIA_PREVIEW_PREFIX)) {
+            // /api/content/media/img_001/preview → media://img_001
+            const match = url.match(/^\/api\/content\/media\/([^/]+)\/preview$/);
+            if (match) {
+                fileObj.url = `${MEDIA_URI_PREFIX}${match[1]}`;
+            }
+        }
+        // data: and https:// URLs pass through unchanged
+    }
+    
+    return clone;
+}
+
+// formatMediaSize is used by both _content.html and _media.html
+if (typeof formatMediaSize === 'undefined') {
+function formatMediaSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const val = (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1);
+    return `${val} ${units[i]}`;
+}
 }

@@ -314,8 +314,20 @@ class EditorJSRenderer:
         )
     
     def _render_image(self, data: Dict) -> str:
-        """Render image block with media:// resolution support."""
-        raw_url = data.get("url", "")
+        """Render image block with media:// resolution support.
+        
+        Handles three URL sources:
+        - data.file.url — standard @editorjs/image format
+        - data.url — legacy flat format
+        - Supports media://, data:, https://, http:// schemes
+        """
+        # Editor.js image tool stores URL in data.file.url
+        file_obj = data.get("file", {})
+        raw_url = file_obj.get("url", "") if isinstance(file_obj, dict) else ""
+        # Fall back to legacy flat format
+        if not raw_url:
+            raw_url = data.get("url", "")
+        
         caption = data.get("caption", "")
         alt = self._escape(caption or "Image")
         
@@ -326,6 +338,9 @@ class EditorJSRenderer:
             if resolved is None:
                 return self._render_media_placeholder(media_id, "image")
             url = self._escape(resolved)
+        elif raw_url.startswith("data:"):
+            # Base64 data URI — pass through as-is (no escaping needed)
+            url = raw_url
         else:
             url = self._escape(raw_url)
         

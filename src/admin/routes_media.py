@@ -26,8 +26,8 @@ media_bp = Blueprint("media", __name__)
 
 logger = logging.getLogger(__name__)
 
-# Maximum upload size: 10 MB
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+# Maximum upload size: 50 MB
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 # MIME type prefix → media ID prefix mapping
 MIME_PREFIX_MAP = {
@@ -346,3 +346,149 @@ def api_update_media(media_id: str):
         **updated.to_dict(),
         "media_uri": f"media://{media_id}",
     })
+
+
+# ── Editor.js integration ────────────────────────────────────────
+
+# Threshold: images under this size are inlined as base64 data URIs
+INLINE_THRESHOLD_BYTES = 100 * 1024  # 100 KB
+
+
+@media_bp.route("/editor-upload", methods=["POST"])
+def api_editor_upload():
+    """
+    Upload an image from Editor.js.
+
+    Uses a hybrid strategy:
+    - Files < 100 KB → returned as base64 data URI (inlined in article JSON)
+    - Files ≥ 100 KB → encrypted via media vault → returns media:// URI
+
+    Returns the Editor.js Image tool expected format:
+        {success: 1, file: {url: "..."}}
+    """
+    import base64
+
+    if "image" not in request.files:
+        return jsonify({"success": 0, "error": "No image provided"}), 400
+
+    file = request.files["image"]
+    if not file.filename:
+        return jsonify({"success": 0, "error": "Empty filename"}), 400
+
+    file_data = file.read()
+    if not file_data:
+        return jsonify({"success": 0, "error": "Empty file"}), 400
+
+    if len(file_data) > MAX_UPLOAD_BYTES:
+        return jsonify({"success": 0, "error": "File too large (max 10 MB)"}), 413
+
+    original_name = file.filename
+    mime_type = (
+        file.content_type
+        or mimetypes.guess_type(original_name)[0]
+        or "application/octet-stream"
+    )
+
+    # ── Small file → inline as base64 data URI ──
+    if len(file_data) < INLINE_THRESHOLD_BYTES:
+        b64 = base64.b64encode(file_data).decode("ascii")
+        data_uri = f"data:{mime_type};base64,{b64}"
+
+        logger.info(
+            f"Editor upload (inline): {original_name} "
+            f"({len(file_data)} bytes, {mime_type})"
+        )
+
+        return jsonify({
+            "success": 1,
+            "file": {"url": data_uri},
+            "inline": True,
+            "size_bytes": len(file_data),
+        })
+
+    # ── Large file → encrypt via media vault ──
+    from ..content.crypto import encrypt_file
+
+    key = _get_encryption_key()
+    if not key:
+        return jsonify({
+            "success": 0,
+            "error": "CONTENT_ENCRYPTION_KEY not set — cannot encrypt large images",
+        }), 400
+
+    sha256 = hashlib.sha256(file_data).hexdigest()
+    manifest = _load_manifest()
+    id_prefix = _id_prefix_for_mime(mime_type)
+    media_id = manifest.next_id(id_prefix)
+
+    try:
+        encrypted_data = encrypt_file(file_data, original_name, mime_type, key)
+    except Exception as e:
+        logger.error(f"Editor upload encryption failed: {e}")
+        return jsonify({"success": 0, "error": f"Encryption failed: {e}"}), 500
+
+    # Write encrypted file
+    enc_path = manifest.enc_path(media_id)
+    enc_path.parent.mkdir(parents=True, exist_ok=True)
+    enc_path.write_bytes(encrypted_data)
+
+    # Register in manifest
+    from ..content.media import MediaEntry
+    entry = MediaEntry(
+        id=media_id,
+        original_name=original_name,
+        mime_type=mime_type,
+        size_bytes=len(file_data),
+        sha256=sha256,
+        min_stage=request.form.get("min_stage", "FULL").upper(),
+        caption="",
+    )
+    manifest.add_entry(entry)
+    manifest.save()
+
+    logger.info(
+        f"Editor upload (vault): {media_id} ({original_name}, "
+        f"{len(file_data)} bytes → encrypted)"
+    )
+
+    return jsonify({
+        "success": 1,
+        # Return preview URL for editor display; the JS save-hook
+        # rewrites it back to media:// for storage.
+        "file": {"url": f"/api/content/media/{media_id}/preview"},
+        "inline": False,
+        "media_id": media_id,
+        "media_uri": f"media://{media_id}",
+        "size_bytes": len(file_data),
+    })
+
+
+@media_bp.route("/editor-fetch-url", methods=["POST"])
+def api_editor_fetch_url():
+    """
+    Validate a URL for the Editor.js Image tool "by URL" mode.
+
+    Accepts: {url: "..."}
+    Returns: {success: 1, file: {url: "..."}}
+
+    Passes through media://, https://, and data: URIs as-is.
+    """
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+
+    if not url:
+        return jsonify({"success": 0, "error": "No URL provided"}), 400
+
+    # Accept media://, https://, http://, and data: URIs
+    allowed_prefixes = ("media://", "https://", "http://", "data:")
+    if not any(url.startswith(p) for p in allowed_prefixes):
+        return jsonify({
+            "success": 0,
+            "error": "URL must start with https://, http://, media://, or data:",
+        }), 400
+
+    return jsonify({
+        "success": 1,
+        "file": {"url": url},
+    })
+

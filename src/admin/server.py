@@ -52,8 +52,8 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-    # Max upload size: 16 MB (Flask rejects larger requests with 413)
-    app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+    # Max upload size: 50 MB (Flask rejects larger requests with 413)
+    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
     # ── Register Blueprints ───────────────────────────────────────
     app.register_blueprint(core_bp)                                     # / + /api/*
@@ -65,6 +65,18 @@ def create_app() -> Flask:
     app.register_blueprint(content_bp, url_prefix="/api/content")       # /api/content/*
     app.register_blueprint(media_bp, url_prefix="/api/content/media")   # /api/content/media/*
     app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
+
+    # ── Error Handlers ────────────────────────────────────────────
+
+    @app.errorhandler(413)
+    def request_entity_too_large(e):
+        """Return JSON for 413 so API clients (Editor.js) get a parseable response."""
+        from flask import jsonify as _jsonify
+        max_mb = app.config.get("MAX_CONTENT_LENGTH", 0) / (1024 * 1024)
+        return _jsonify({
+            "success": 0,
+            "error": f"File too large (max {max_mb:.0f} MB)",
+        }), 413
 
     # ── Request Logging ───────────────────────────────────────────
 
