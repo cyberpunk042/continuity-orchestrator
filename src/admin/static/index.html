@@ -2023,17 +2023,16 @@
                     let msg = `✅ ${data.message}`;
                     if (data.mirror_sync_triggered) {
                         msg += ' · 🪞 Mirror sync in progress…';
-                        // Refresh mirror panel after a short delay to pick up syncing state
                         setTimeout(loadMirrorStatus, 2000);
-                        // And again after sync likely completes
                         setTimeout(loadMirrorStatus, 15000);
                     }
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">${msg}</span>`;
                 } else {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ ${data.error || 'Failed'}</span>`;
                 }
-                // Refresh git status
-                setTimeout(loadGitStatus, 1500);
+                // Immediately refresh git status + fetch notice
+                loadGitStatus();
+                autoFetch();
             } catch (e) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
             }
@@ -4336,8 +4335,30 @@
             }
         });
 
-        // Auto-refresh every 30 seconds
-        setInterval(loadStatus, 30000);
+        // ── Resettable polling timers ─────────────────────────────
+        // When an action triggers a manual refresh, the timer resets
+        // so we don't get a redundant refresh 2s later.
+        let _statusTimer = null;
+        let _fetchTimer = null;
+
+        function scheduleStatus(delayMs = 30000) {
+            clearTimeout(_statusTimer);
+            _statusTimer = setTimeout(() => { loadStatus(); scheduleStatus(); }, delayMs);
+        }
+        function scheduleFetch(delayMs = 60000) {
+            clearTimeout(_fetchTimer);
+            _fetchTimer = setTimeout(() => { autoFetch(); scheduleFetch(); }, delayMs);
+        }
+
+        // Wrap loadStatus to reset its timer
+        const _origLoadStatus = loadStatus;
+        loadStatus = async function () {
+            scheduleStatus();  // Reset the 30s countdown
+            return _origLoadStatus();
+        };
+
+        // Start polling
+        scheduleStatus();
 
         // ── Auto-fetch: keep repo in sync with remote ──────────────
         // Runs every 60s. Fetches from remote and fast-forward pulls
@@ -4371,6 +4392,7 @@
         }
 
         async function autoFetch() {
+            scheduleFetch();  // Reset the 60s countdown
             try {
                 const resp = await fetch('/api/git/fetch', { method: 'POST' });
                 const data = await resp.json();
@@ -4383,8 +4405,6 @@
 
         // First fetch after a short delay (let the page load first)
         setTimeout(autoFetch, 5000);
-        // Then every 60 seconds
-        setInterval(autoFetch, 60000);
     </script>
 
     <!-- Google Translate -->
