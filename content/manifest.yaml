@@ -1,41 +1,16 @@
 version: 1
 articles:
 - slug: about
-  title: About my-deadman
+  title: How It Works
   visibility:
     min_stage: OK
     include_in_nav: true
     pin_to_top: false
   meta:
     description: Project overview and objectives
-    author: Operator
+    author: System
     tags:
     - info
-- slug: testing
-  visibility:
-    min_stage: FULL
-    include_in_nav: true
-    pin_to_top: false
-- slug: testing_large
-  visibility:
-    min_stage: FULL
-    include_in_nav: true
-    pin_to_top: false
-- slug: testing_external
-  visibility:
-    min_stage: FULL
-    include_in_nav: true
-    pin_to_top: false
-- slug: testing_2
-  visibility:
-    min_stage: FULL
-    include_in_nav: true
-    pin_to_top: false
-- slug: testing_large_2
-  visibility:
-    min_stage: FULL
-    include_in_nav: true
-    pin_to_top: false
 - slug: full_disclosure
   title: Full Disclosure Statement
   visibility:

@@ -2,8 +2,8 @@
     "meta": {
         "schema_version": 1,
         "project": "my-deadman",
-        "state_id": "S-INIT-20260205",
-        "updated_at_iso": "2026-02-08T20:30:32.456166Z",
+        "state_id": "S-INIT-20260208",
+        "updated_at_iso": "2026-02-08T20:49:40.172031+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,16 +12,16 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-09T20:26:28.984410+00:00",
+        "deadline_iso": "2026-02-10T20:49:40.172031+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-08T20:30:32.455521Z",
-        "time_to_deadline_minutes": 1435,
+        "now_iso": "2026-02-08T20:49:40.172031+00:00",
+        "time_to_deadline_minutes": 2880,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-07T03:09:01.387758+00:00",
+        "last_renewal_iso": "2026-02-08T20:49:40.172031+00:00",
         "renewed_this_tick": false,
-        "renewal_count": 12
+        "renewal_count": 0
     },
     "security": {
         "failed_attempts": 0,
@@ -32,8 +32,8 @@
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-08T19:28:25.150967+00:00",
-        "last_transition_rule_id": "MANUAL_RESET",
+        "state_entered_at_iso": "2026-02-08T20:49:40.172031+00:00",
+        "last_transition_rule_id": null,
         "monotonic_enforced": true
     },
     "actions": {
@@ -42,26 +42,26 @@
     },
     "release": {
         "triggered": false,
-        "trigger_time_iso": "2026-02-07T05:18:40.432790+00:00",
-        "target_stage": "FULL",
-        "delay_minutes": 60,
+        "trigger_time_iso": null,
+        "target_stage": null,
+        "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-07T06:18:40.432790+00:00",
+        "execute_after_iso": null,
         "client_token": null
     },
     "integrations": {
         "enabled_adapters": {
             "email": true,
-            "sms": false,
-            "x": false,
-            "reddit": false,
+            "sms": true,
+            "x": true,
+            "reddit": true,
             "webhook": true,
             "github_surface": true,
             "article_publish": true,
-            "persistence_api": false
+            "persistence_api": true
         },
         "routing": {
-            "github_repository": "cyberpunk042/continuity-orchestrator",
+            "github_repository": null,
             "operator_email": "jfm.devops.expert@gmail.com",
             "operator_sms": null,
             "custodian_emails": [],
@@ -72,7 +72,7 @@
     },
     "pointers": {
         "persistence": {
-            "primary_backend": "file",
+            "primary_backend": "persistence_api",
             "last_persist_iso": null
         },
         "github_surface": {
