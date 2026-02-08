@@ -21,21 +21,53 @@
     </div>
 
     <div class="grid" style="grid-template-columns: 340px 1fr;">
-        <!-- Article list sidebar -->
+        <!-- ═══ LEFT SIDEBAR ═══ -->
         <div class="card" id="content-list-card" style="align-self: start;">
-            <h2 style="display: flex; align-items: center; justify-content: space-between;">
-                <span><span class="icon">📄</span> Articles</span>
-                <button class="btn" onclick="contentNewArticle()" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
-                    title="Create new article">
-                    ➕ New
+            <!-- Sidebar mode toggle: Articles / Media -->
+            <div class="content-mode-toggle" style="display: flex; gap: 2px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 1rem;">
+                <button id="content-mode-articles" class="content-mode-btn active"
+                    onclick="contentSwitchMode('articles')" title="Manage articles">
+                    📄 Articles
                 </button>
-            </h2>
-            <div id="content-article-list">
-                <div class="loading">Loading articles</div>
+                <button id="content-mode-media" class="content-mode-btn"
+                    onclick="contentSwitchMode('media')" title="Manage media files">
+                    🖼️ Media
+                </button>
+            </div>
+
+            <!-- ── Articles list (default) ── -->
+            <div id="content-sidebar-articles">
+                <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                    <span><span class="icon">📄</span> Articles</span>
+                    <button class="btn" onclick="contentNewArticle()" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
+                        title="Create new article">
+                        ➕ New
+                    </button>
+                </h2>
+                <div id="content-article-list">
+                    <div class="loading">Loading articles</div>
+                </div>
+            </div>
+
+            <!-- ── Media gallery (hidden by default) ── -->
+            <div id="content-sidebar-media" style="display: none;">
+                <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                    <span><span class="icon">🖼️</span> Media</span>
+                    <button class="btn" onclick="mediaUploadPrompt()" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
+                        title="Upload media file">
+                        📤 Upload
+                    </button>
+                </h2>
+                <div id="media-summary" style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.75rem;"></div>
+                <div id="media-gallery-list">
+                    <div class="loading">Loading media</div>
+                </div>
             </div>
         </div>
 
-        <!-- Editor panel -->
+        <!-- ═══ RIGHT PANEL ═══ -->
+
+        <!-- ── Article editor (default) ── -->
         <div class="card" id="content-editor-card" style="display: flex; flex-direction: column; min-height: 500px;">
             <h2 id="content-editor-title" style="display: flex; align-items: center; justify-content: space-between;">
                 <span><span class="icon">✏️</span> <span id="content-editor-slug">Select an article</span></span>
@@ -124,6 +156,120 @@
                         </div>
                     </div>
                 </details>
+            </div>
+        </div>
+
+        <!-- ── Media panel (hidden by default) ── -->
+        <div class="card" id="media-panel-card" style="display: none; flex-direction: column; min-height: 500px;">
+            <h2 id="media-panel-title" style="display: flex; align-items: center; justify-content: space-between;">
+                <span><span class="icon">🖼️</span> <span id="media-panel-name">Upload or select media</span></span>
+                <div id="media-panel-badges" style="display: flex; gap: 0.35rem;"></div>
+            </h2>
+
+            <!-- No media selected — upload dropzone -->
+            <div id="media-upload-zone"
+                style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                <div id="media-dropzone" class="media-dropzone">
+                    <div style="text-align: center;">
+                        <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.4;">📤</div>
+                        <p style="font-size: 0.95rem; margin-bottom: 0.5rem;">Drop a file here, or click to upload</p>
+                        <p style="font-size: 0.78rem; color: var(--text-dim);">
+                            Images, PDFs, video, audio — max 10 MB
+                        </p>
+                        <input type="file" id="media-file-input" style="display: none;"
+                            accept="image/*,video/*,audio/*,application/pdf" onchange="mediaFileSelected(event)">
+                        <button class="btn" onclick="document.getElementById('media-file-input').click()"
+                            style="margin-top: 1rem; padding: 0.5rem 1.5rem;">
+                            📁 Choose File
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload options (shown after file selected, before upload) -->
+            <div id="media-upload-options" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label class="form-label" style="font-size: 0.78rem;">Minimum Stage</label>
+                        <select class="form-input" id="media-upload-stage" style="padding: 0.45rem;">
+                            <option value="OK">OK (always visible)</option>
+                            <option value="REMIND_1">REMIND_1</option>
+                            <option value="REMIND_2">REMIND_2</option>
+                            <option value="PRE_RELEASE">PRE_RELEASE</option>
+                            <option value="PARTIAL">PARTIAL</option>
+                            <option value="FULL" selected>FULL (disclosure only)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 0.78rem;">Caption (optional)</label>
+                        <input class="form-input" id="media-upload-caption" type="text" placeholder="Describe this media"
+                            style="padding: 0.45rem;">
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
+                    <div id="media-upload-file-info" style="font-size: 0.82rem; color: var(--text-dim);"></div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" onclick="mediaCancelUpload()" style="padding: 0.45rem 0.9rem;">
+                            ✕ Cancel
+                        </button>
+                        <button class="btn primary" id="media-upload-btn" onclick="mediaDoUpload()"
+                            style="padding: 0.45rem 0.9rem;">
+                            📤 Encrypt & Upload
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Media detail view (shown when media selected from gallery) -->
+            <div id="media-detail-view" style="display: none; flex: 1; flex-direction: column;">
+                <!-- Preview area -->
+                <div id="media-detail-preview"
+                    style="flex: 1; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); min-height: 250px; overflow: hidden;">
+                </div>
+                <!-- Media info + actions -->
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.85rem;">
+                        <div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.2rem;">Media URI</div>
+                            <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                <code id="media-detail-uri" style="font-size: 0.82rem; color: var(--accent);"></code>
+                                <button class="btn" onclick="mediaCopyUri()" title="Copy media URI"
+                                    style="padding: 0.15rem 0.4rem; font-size: 0.72rem;">📋</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.2rem;">Details</div>
+                            <div id="media-detail-info" style="font-size: 0.82rem;"></div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+                        <div>
+                            <label class="form-label" style="font-size: 0.78rem;">Minimum Stage</label>
+                            <select class="form-input" id="media-detail-stage" style="padding: 0.45rem;"
+                                onchange="mediaUpdateField('min_stage', this.value)">
+                                <option value="OK">OK</option>
+                                <option value="REMIND_1">REMIND_1</option>
+                                <option value="REMIND_2">REMIND_2</option>
+                                <option value="PRE_RELEASE">PRE_RELEASE</option>
+                                <option value="PARTIAL">PARTIAL</option>
+                                <option value="FULL">FULL</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 0.78rem;">Caption</label>
+                            <input class="form-input" id="media-detail-caption" type="text"
+                                style="padding: 0.45rem;" placeholder="Add a caption"
+                                onblur="mediaUpdateField('caption', this.value)">
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
+                        <div id="media-detail-refs" style="font-size: 0.78rem; color: var(--text-dim);"></div>
+                        <button class="btn" onclick="mediaDeleteSelected()"
+                            style="padding: 0.4rem 0.8rem; color: var(--danger); font-size: 0.82rem;">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

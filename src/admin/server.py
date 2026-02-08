@@ -25,6 +25,7 @@ from .routes_git import git_bp
 from .routes_mirror import mirror_bp
 from .routes_secrets import secrets_bp
 from .routes_content import content_bp
+from .routes_media import media_bp
 from .routes_vault import vault_bp
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
+    # Max upload size: 16 MB (Flask rejects larger requests with 413)
+    app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
     # ── Register Blueprints ───────────────────────────────────────
     app.register_blueprint(core_bp)                                     # / + /api/*
     app.register_blueprint(archive_bp, url_prefix="/api/archive")       # /api/archive/*
@@ -59,6 +63,7 @@ def create_app() -> Flask:
     app.register_blueprint(mirror_bp, url_prefix="/api/mirror")         # /api/mirror/*
     app.register_blueprint(secrets_bp, url_prefix="/api")               # /api/gh/*, /api/secret/*
     app.register_blueprint(content_bp, url_prefix="/api/content")       # /api/content/*
+    app.register_blueprint(media_bp, url_prefix="/api/content/media")   # /api/content/media/*
     app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
 
     # ── Request Logging ───────────────────────────────────────────

@@ -45,3 +45,10 @@ temp/
 # Runtime state (not tracked)
 state/.mirror_sync_lock
 .env.vault
+
+# Media — only encrypted files and manifest are tracked
+# Plaintext media (images, PDFs, videos) must NEVER be committed
+content/media/*
+!content/media/*.enc
+!content/media/manifest.json
+!content/media/README.md

@@ -1,0 +1,424 @@
+
+// ========================================
+// MEDIA MANAGEMENT (Content Tab — Media Mode)
+// ========================================
+
+let mediaLoaded = false;
+let mediaEntries = [];
+let mediaSelectedId = null;
+let mediaPendingFile = null;
+let contentCurrentMode = 'articles'; // 'articles' or 'media'
+
+// ── Mode switching ─────────────────────────────────────
+
+function contentSwitchMode(mode) {
+    if (mode === contentCurrentMode) return;
+
+    // Warn if article editor is dirty
+    if (contentCurrentMode === 'articles' && contentDirty) {
+        if (!confirm('You have unsaved changes. Switch to Media anyway?')) return;
+    }
+
+    contentCurrentMode = mode;
+
+    // Toggle sidebar sections
+    document.getElementById('content-sidebar-articles').style.display = mode === 'articles' ? '' : 'none';
+    document.getElementById('content-sidebar-media').style.display = mode === 'media' ? '' : 'none';
+
+    // Toggle right panels
+    document.getElementById('content-editor-card').style.display = mode === 'articles' ? 'flex' : 'none';
+    document.getElementById('media-panel-card').style.display = mode === 'media' ? 'flex' : 'none';
+
+    // Toggle button active state
+    document.getElementById('content-mode-articles').classList.toggle('active', mode === 'articles');
+    document.getElementById('content-mode-media').classList.toggle('active', mode === 'media');
+
+    // Load media data on first switch
+    if (mode === 'media' && !mediaLoaded) {
+        loadMedia();
+    }
+}
+
+// ── Load media data ────────────────────────────────────
+
+async function loadMedia() {
+    try {
+        const resp = await fetch('/api/content/media');
+        const data = await resp.json();
+        mediaEntries = data.media || [];
+
+        // Summary bar
+        const summary = document.getElementById('media-summary');
+        if (mediaEntries.length === 0) {
+            summary.textContent = 'No media files uploaded yet';
+        } else {
+            const totalSize = formatMediaSize(data.total_size_bytes || 0);
+            summary.textContent = `${mediaEntries.length} file${mediaEntries.length !== 1 ? 's' : ''} · ${totalSize} total`;
+        }
+
+        renderMediaGallery();
+        mediaLoaded = true;
+    } catch (error) {
+        document.getElementById('media-gallery-list').innerHTML =
+            `<div style="color: var(--danger); font-size: 0.85rem;">❌ Failed to load: ${error.message}</div>`;
+    }
+}
+
+// ── Render media gallery ───────────────────────────────
+
+function renderMediaGallery() {
+    const el = document.getElementById('media-gallery-list');
+
+    if (mediaEntries.length === 0) {
+        el.innerHTML = `
+            <div style="text-align: center; padding: 1.5rem 0; color: var(--text-dim);">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.3;">🖼️</div>
+                <p style="font-size: 0.85rem;">No media files yet</p>
+                <button class="btn primary" onclick="mediaUploadPrompt()" style="margin-top: 0.75rem; font-size: 0.82rem;">
+                    📤 Upload your first file
+                </button>
+            </div>`;
+        return;
+    }
+
+    let html = '<div class="media-gallery-grid">';
+    for (const item of mediaEntries) {
+        const isSelected = item.id === mediaSelectedId;
+        const icon = getMediaIcon(item.mime_type);
+        const stageColor = getStageColor(item.min_stage);
+        const isImage = item.mime_type?.startsWith('image/');
+        const thumbSrc = isImage ? `/api/content/media/${item.id}/preview` : '';
+
+        html += `
+        <div onclick="mediaSelectItem('${item.id}')"
+            class="media-gallery-item ${isSelected ? 'selected' : ''}"
+            title="${item.original_name}\n${item.mime_type} · ${formatMediaSize(item.size_bytes)}">
+            <div class="media-gallery-thumb">
+                ${isImage
+                    ? `<img src="${thumbSrc}" alt="${item.original_name}" loading="lazy"
+                        style="width: 100%; height: 100%; object-fit: cover;"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                       <div style="display: none; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 1.5rem; opacity: 0.4;">🔒</div>`
+                    : `<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 1.8rem; opacity: 0.5;">${icon}</div>`
+                }
+            </div>
+            <div class="media-gallery-label">
+                <span class="media-gallery-name">${item.original_name}</span>
+                <span class="media-gallery-meta">
+                    <span style="background: ${stageColor}22; color: ${stageColor}; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.62rem; font-weight: 600;">${item.min_stage}</span>
+                </span>
+            </div>
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+// ── Select media item ──────────────────────────────────
+
+async function mediaSelectItem(mediaId) {
+    mediaSelectedId = mediaId;
+    renderMediaGallery();
+
+    const item = mediaEntries.find(m => m.id === mediaId);
+    if (!item) return;
+
+    // Show detail view, hide upload zone
+    document.getElementById('media-upload-zone').style.display = 'none';
+    document.getElementById('media-upload-options').style.display = 'none';
+    document.getElementById('media-detail-view').style.display = 'flex';
+
+    // Update panel title
+    document.getElementById('media-panel-name').textContent = item.original_name;
+
+    // Badges
+    const badges = document.getElementById('media-panel-badges');
+    badges.innerHTML = `
+        <span class="badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(74, 222, 128, 0.15); color: var(--accent);">
+            🔒 Encrypted
+        </span>`;
+
+    // URI
+    document.getElementById('media-detail-uri').textContent = `media://${mediaId}`;
+
+    // Info
+    document.getElementById('media-detail-info').innerHTML = `
+        ${item.mime_type} · ${formatMediaSize(item.size_bytes)}
+        ${item.enc_file_exists ? '' : '<br><span style="color: var(--danger);">⚠️ .enc file missing</span>'}`;
+
+    // Stage selector
+    document.getElementById('media-detail-stage').value = item.min_stage;
+
+    // Caption
+    document.getElementById('media-detail-caption').value = item.caption || '';
+
+    // References
+    const refs = item.referenced_by || [];
+    document.getElementById('media-detail-refs').textContent = refs.length > 0
+        ? `Referenced by: ${refs.join(', ')}`
+        : 'Not referenced by any article';
+
+    // Preview
+    const previewEl = document.getElementById('media-detail-preview');
+    const isImage = item.mime_type?.startsWith('image/');
+    const isVideo = item.mime_type?.startsWith('video/');
+    const isAudio = item.mime_type?.startsWith('audio/');
+    const previewUrl = `/api/content/media/${mediaId}/preview`;
+
+    if (isImage) {
+        previewEl.innerHTML = `<img src="${previewUrl}" alt="${item.original_name}"
+            style="max-width: 100%; max-height: 350px; object-fit: contain; border-radius: 4px;"
+            onerror="this.outerHTML='<div style=\\'text-align: center; color: var(--text-dim);\\'>🔒 Preview unavailable<br><span style=\\'font-size: 0.78rem;\\'>Encryption key may not be set</span></div>'">`;
+    } else if (isVideo) {
+        previewEl.innerHTML = `<video controls style="max-width: 100%; max-height: 350px; border-radius: 4px;">
+            <source src="${previewUrl}" type="${item.mime_type}">
+        </video>`;
+    } else if (isAudio) {
+        previewEl.innerHTML = `
+            <div style="text-align: center; width: 100%; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.4;">🎵</div>
+                <audio controls style="width: 100%; max-width: 400px;">
+                    <source src="${previewUrl}" type="${item.mime_type}">
+                </audio>
+            </div>`;
+    } else {
+        const icon = getMediaIcon(item.mime_type);
+        previewEl.innerHTML = `
+            <div style="text-align: center; color: var(--text-dim);">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.4;">${icon}</div>
+                <p>${item.original_name}</p>
+                <a href="${previewUrl}" target="_blank" class="btn" style="margin-top: 0.75rem; padding: 0.4rem 1rem; font-size: 0.82rem;">
+                    📥 Download preview
+                </a>
+            </div>`;
+    }
+}
+
+// ── Upload flow ────────────────────────────────────────
+
+function mediaUploadPrompt() {
+    // Reset to upload view
+    mediaSelectedId = null;
+    mediaPendingFile = null;
+    renderMediaGallery();
+
+    document.getElementById('media-panel-name').textContent = 'Upload media';
+    document.getElementById('media-panel-badges').innerHTML = '';
+    document.getElementById('media-detail-view').style.display = 'none';
+    document.getElementById('media-upload-zone').style.display = 'flex';
+    document.getElementById('media-upload-options').style.display = 'none';
+    document.getElementById('media-file-input').value = '';
+}
+
+function mediaFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    mediaPendingFile = file;
+
+    // Show upload options
+    document.getElementById('media-upload-options').style.display = '';
+    document.getElementById('media-upload-file-info').textContent =
+        `${file.name} · ${formatMediaSize(file.size)}`;
+
+    // Update dropzone text
+    const dropzone = document.getElementById('media-dropzone');
+    dropzone.innerHTML = `
+        <div style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.6;">${getMediaIcon(file.type)}</div>
+            <p style="font-size: 0.95rem; margin-bottom: 0.25rem; font-weight: 500;">${file.name}</p>
+            <p style="font-size: 0.78rem; color: var(--text-dim);">${file.type || 'Unknown type'} · ${formatMediaSize(file.size)}</p>
+        </div>`;
+}
+
+function mediaCancelUpload() {
+    mediaPendingFile = null;
+    mediaUploadPrompt();
+}
+
+async function mediaDoUpload() {
+    if (!mediaPendingFile) return;
+
+    const btn = document.getElementById('media-upload-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Encrypting...';
+
+    const formData = new FormData();
+    formData.append('file', mediaPendingFile);
+    formData.append('min_stage', document.getElementById('media-upload-stage').value);
+    formData.append('caption', document.getElementById('media-upload-caption').value);
+
+    try {
+        const resp = await fetch('/api/content/media/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            contentLog(`✅ Media uploaded: ${data.id} (${data.original_name}, ${formatMediaSize(data.size_bytes)})`);
+            mediaPendingFile = null;
+            mediaLoaded = false;
+            await loadMedia();
+            mediaSelectItem(data.id);
+        } else {
+            contentLog(`❌ Upload failed: ${data.error}`, true);
+        }
+    } catch (error) {
+        contentLog(`❌ Upload error: ${error.message}`, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📤 Encrypt & Upload';
+    }
+}
+
+// ── Drag & drop ────────────────────────────────────────
+
+function initMediaDragDrop() {
+    const dropzone = document.getElementById('media-dropzone');
+    if (!dropzone) return;
+
+    ['dragenter', 'dragover'].forEach(event => {
+        dropzone.addEventListener(event, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('drag-active');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(event => {
+        dropzone.addEventListener(event, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('drag-active');
+        });
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const input = document.getElementById('media-file-input');
+            input.files = files;
+            mediaFileSelected({ target: input });
+        }
+    });
+
+    // Click anywhere on dropzone to trigger file picker
+    dropzone.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') {
+            document.getElementById('media-file-input').click();
+        }
+    });
+}
+
+// Initialize drag/drop when DOM is ready
+document.addEventListener('DOMContentLoaded', initMediaDragDrop);
+// Also try immediately in case DOM is already loaded
+if (document.readyState !== 'loading') initMediaDragDrop();
+
+// ── Update media field ─────────────────────────────────
+
+async function mediaUpdateField(field, value) {
+    if (!mediaSelectedId) return;
+
+    try {
+        const body = {};
+        body[field] = value;
+
+        const resp = await fetch(`/api/content/media/${mediaSelectedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            contentLog(`✅ Updated ${field} for ${mediaSelectedId}`);
+            // Update local cache
+            const idx = mediaEntries.findIndex(m => m.id === mediaSelectedId);
+            if (idx >= 0) Object.assign(mediaEntries[idx], data);
+            renderMediaGallery();
+        } else {
+            contentLog(`❌ Update failed: ${data.error}`, true);
+        }
+    } catch (error) {
+        contentLog(`❌ Update error: ${error.message}`, true);
+    }
+}
+
+// ── Delete media ───────────────────────────────────────
+
+async function mediaDeleteSelected() {
+    if (!mediaSelectedId) return;
+
+    const item = mediaEntries.find(m => m.id === mediaSelectedId);
+    const name = item ? item.original_name : mediaSelectedId;
+
+    if (!confirm(`Delete "${name}"? This will remove the encrypted file and cannot be undone.`)) return;
+
+    try {
+        const resp = await fetch(`/api/content/media/${mediaSelectedId}`, { method: 'DELETE' });
+        const data = await resp.json();
+
+        if (data.success) {
+            contentLog(`🗑️ Deleted media: ${data.id} (${data.original_name})`);
+            mediaSelectedId = null;
+            mediaLoaded = false;
+            await loadMedia();
+            mediaUploadPrompt();
+        } else {
+            contentLog(`❌ Delete failed: ${data.error}`, true);
+        }
+    } catch (error) {
+        contentLog(`❌ Delete error: ${error.message}`, true);
+    }
+}
+
+// ── Copy URI ───────────────────────────────────────────
+
+function mediaCopyUri() {
+    if (!mediaSelectedId) return;
+    const uri = `media://${mediaSelectedId}`;
+    navigator.clipboard.writeText(uri).then(() => {
+        contentLog(`📋 Copied: ${uri}`);
+    }).catch(() => {
+        // Fallback: select the text
+        const el = document.getElementById('media-detail-uri');
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+        contentLog(`📋 URI selected — press Ctrl+C to copy`);
+    });
+}
+
+// ── Helpers ────────────────────────────────────────────
+
+function getMediaIcon(mimeType) {
+    if (!mimeType) return '📁';
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType.startsWith('video/')) return '🎬';
+    if (mimeType.startsWith('audio/')) return '🎵';
+    if (mimeType === 'application/pdf') return '📄';
+    return '📁';
+}
+
+function getStageColor(stage) {
+    const colors = {
+        'OK': 'var(--accent)',
+        'REMIND_1': 'var(--info, #3b82f6)',
+        'REMIND_2': 'var(--warning)',
+        'PRE_RELEASE': 'var(--warning)',
+        'PARTIAL': 'var(--danger)',
+        'FULL': 'var(--danger)',
+    };
+    return colors[stage] || 'var(--text-dim)';
+}
+
+function formatMediaSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const val = (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1);
+    return `${val} ${units[i]}`;
+}

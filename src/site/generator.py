@@ -74,8 +74,13 @@ class SiteGenerator:
         # Copy CSS files
         self._copy_css()
         
+        # Process media files (decrypt eligible ones for this stage)
+        content_stage = state.escalation.state
+        media_map = self._process_media(content_stage)
+        
         # Build context
         context = self._build_context(state, audit_entries)
+        context["_media_map"] = media_map  # Internal: used by article rendering
         
         files_generated = []
         
@@ -126,6 +131,116 @@ class SiteGenerator:
             css_dest.mkdir(parents=True, exist_ok=True)
             for css_file in css_src.glob("*.css"):
                 shutil.copy(css_file, css_dest / css_file.name)
+    
+    def _process_media(self, stage: str) -> Dict[str, str]:
+        """
+        Decrypt eligible media files for the current stage.
+        
+        Reads the media manifest, checks each entry's min_stage against
+        the current stage, and decrypts accessible files to public/media/.
+        
+        Args:
+            stage: Current content stage (e.g. "OK", "PARTIAL", "FULL")
+        
+        Returns:
+            Media map: {media_id: relative_url} for resolved media.
+            Only includes media that was successfully decrypted.
+        """
+        from ..content.crypto import decrypt_file, get_encryption_key, is_encrypted_file
+        from ..content.media import MediaManifest
+        
+        media_map: Dict[str, str] = {}
+        
+        try:
+            manifest = MediaManifest.load()
+        except Exception as e:
+            logger.warning(f"Failed to load media manifest: {e}")
+            return media_map
+        
+        visible = manifest.get_visible_entries(stage)
+        if not visible:
+            logger.debug("No media visible at current stage")
+            return media_map
+        
+        # Need encryption key to decrypt
+        passphrase = get_encryption_key()
+        if not passphrase:
+            logger.warning(
+                "Media files exist but CONTENT_ENCRYPTION_KEY is not set. "
+                "Media will not be included in the build."
+            )
+            return media_map
+        
+        media_out = self.output_dir / "media"
+        media_out.mkdir(parents=True, exist_ok=True)
+        
+        decrypted_count = 0
+        for entry in visible:
+            enc_path = manifest.enc_path(entry.id)
+            if not enc_path.exists():
+                logger.warning(
+                    f"Media '{entry.id}' in manifest but .enc file missing: {enc_path}"
+                )
+                continue
+            
+            try:
+                envelope = enc_path.read_bytes()
+                if not is_encrypted_file(envelope):
+                    logger.warning(f"Media '{entry.id}' is not a valid encrypted file")
+                    continue
+                
+                result = decrypt_file(envelope, passphrase)
+                
+                # Write decrypted file to public/media/ using original name
+                output_name = entry.original_name
+                output_path = media_out / output_name
+                
+                # Handle filename collisions by adding media ID
+                if output_path.exists():
+                    stem = output_path.stem
+                    suffix = output_path.suffix
+                    output_name = f"{stem}_{entry.id}{suffix}"
+                    output_path = media_out / output_name
+                
+                output_path.write_bytes(result["plaintext"])
+                
+                # Map: media_id → relative URL from site root
+                media_map[entry.id] = f"media/{output_name}"
+                decrypted_count += 1
+                
+            except Exception as e:
+                logger.error(f"Failed to decrypt media '{entry.id}': {e}")
+        
+        if decrypted_count:
+            logger.info(
+                f"Processed media: {decrypted_count}/{len(visible)} files "
+                f"decrypted to {media_out}"
+            )
+        
+        return media_map
+    
+    def _build_media_resolver(
+        self,
+        media_map: Dict[str, str],
+        base_path: str = "",
+    ) -> "Callable[[str], Optional[str]]":
+        """
+        Create a media resolver callback for EditorJSRenderer.
+        
+        Args:
+            media_map: {media_id: relative_url} from _process_media
+            base_path: URL prefix (e.g. "../" for articles in subdirectory)
+        
+        Returns:
+            Callable that resolves media IDs to URLs, or None if restricted.
+        """
+        def resolver(media_id: str) -> Optional[str]:
+            rel_url = media_map.get(media_id)
+            if rel_url is None:
+                return None  # Not decrypted / not visible at this stage
+            return f"{base_path}{rel_url}"
+        
+        return resolver
     
     def _build_context(
         self,
@@ -399,7 +514,11 @@ class SiteGenerator:
                     from ..content.crypto import load_article
                     from .editorjs import EditorJSRenderer
                     article_data = load_article(content_path)
-                    renderer = EditorJSRenderer()
+                    
+                    # Build media resolver for articles (one level deep: ../)
+                    media_map = context.get("_media_map", {})
+                    media_resolver = self._build_media_resolver(media_map, base_path="../")
+                    renderer = EditorJSRenderer(media_resolver=media_resolver)
                     content_html = renderer.render(article_data)
                 except ValueError as e:
                     # Encrypted but no key available
