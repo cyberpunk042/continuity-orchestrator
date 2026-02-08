@@ -47,6 +47,49 @@ def _load_manifest():
         return None
 
 
+def _manifest_path() -> Path:
+    return _project_root() / "content" / "manifest.yaml"
+
+
+def _update_manifest_entry(slug: str, metadata: dict):
+    """Update or insert an article entry in manifest.yaml."""
+    import yaml
+
+    manifest_file = _manifest_path()
+    if manifest_file.exists():
+        data = yaml.safe_load(manifest_file.read_text(encoding="utf-8")) or {}
+    else:
+        data = {"version": 1, "articles": [], "defaults": {"visibility": {"min_stage": "FULL"}}}
+
+    articles = data.setdefault("articles", [])
+
+    # Find existing entry
+    entry = None
+    for a in articles:
+        if a.get("slug") == slug:
+            entry = a
+            break
+
+    if entry is None:
+        entry = {"slug": slug}
+        articles.append(entry)
+
+    # Update visibility
+    vis = entry.setdefault("visibility", {})
+    if "min_stage" in metadata:
+        vis["min_stage"] = metadata["min_stage"]
+    if "include_in_nav" in metadata:
+        vis["include_in_nav"] = metadata["include_in_nav"]
+    if "pin_to_top" in metadata:
+        vis["pin_to_top"] = metadata["pin_to_top"]
+
+    manifest_file.write_text(
+        yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    logger.info(f"Updated manifest entry for '{slug}': {vis}")
+
+
 def _article_meta(slug: str, data: dict, manifest) -> dict:
     """Build metadata dict for an article."""
     from ..content.crypto import is_encrypted
@@ -227,6 +270,11 @@ def api_save_article(slug: str):
         json.dumps(data_to_write, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+    # Update manifest metadata if provided
+    metadata = body.get("metadata")
+    if metadata:
+        _update_manifest_entry(slug, metadata)
 
     return jsonify({
         "success": True,

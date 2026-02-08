@@ -309,10 +309,15 @@ return;
 const resp = await fetch(`/api/content/articles/${contentSelectedSlug}`, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-content: outputData,
-encrypt: encrypt,
-}),
+            body: JSON.stringify({
+                content: outputData,
+                encrypt: encrypt,
+                metadata: {
+                    min_stage: document.getElementById('content-meta-stage').value,
+                    include_in_nav: document.getElementById('content-meta-nav').checked,
+                    pin_to_top: document.getElementById('content-meta-pin').checked,
+                },
+            }),
 });
 const data = await resp.json();
 

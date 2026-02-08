@@ -1,45 +1,45 @@
-# Content Manifest
-# Defines article visibility rules and stage-specific behavior
-
 version: 1
-
 articles:
-  - slug: about
-    title: "About my-deadman"
-    visibility:
-      min_stage: OK
-      include_in_nav: true
-      pin_to_top: false
-    meta:
-      description: "Project overview and objectives"
-      author: "Operator"
-      tags: ["info"]
-
+- slug: about
+  title: About my-deadman
+  visibility:
+    min_stage: OK
+    include_in_nav: true
+    pin_to_top: false
+  meta:
+    description: Project overview and objectives
+    author: Operator
+    tags:
+    - info
+- slug: testset
+  visibility:
+    min_stage: OK
+    include_in_nav: true
+    pin_to_top: false
 defaults:
   visibility:
     min_stage: FULL
     include_in_nav: false
-
 stages:
   OK:
     show_countdown: false
   REMIND_1:
-    banner: "⏰ Reminder: Deadline approaching"
+    banner: '⏰ Reminder: Deadline approaching'
     banner_class: warning
     show_countdown: true
   REMIND_2:
-    banner: "⚠️ Final warning: Action required"
+    banner: '⚠️ Final warning: Action required'
     banner_class: warning
     show_countdown: true
   PRE_RELEASE:
-    banner: "🔴 Pre-release mode active"
+    banner: 🔴 Pre-release mode active
     banner_class: alert
     show_countdown: true
   PARTIAL:
-    banner: "📢 Partial disclosure in effect"
+    banner: 📢 Partial disclosure in effect
     banner_class: critical
     show_countdown: true
   FULL:
-    banner: "🚨 Full disclosure mode"
+    banner: 🚨 Full disclosure mode
     banner_class: critical
     show_countdown: false
