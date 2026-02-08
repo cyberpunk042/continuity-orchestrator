@@ -50,14 +50,6 @@ Helper scripts for common operations.
 python -m http.server -d public 8080
 ```
 
----
-
-## Deprecated Scripts
-
-| Script | Status | Alternative |
-|--------|--------|-------------|
-| `run_tick.sh` | Deprecated | Use `python -m src.main tick` |
-| `demo_escalation.sh` | Deprecated | Use `./demo.sh` from project root |
 
 ---
 

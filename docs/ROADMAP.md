@@ -1,7 +1,7 @@
 # Continuity Orchestrator — Roadmap
 
-> **Last Updated**: 2026-02-04  
-> **Status**: Production Ready → Expanding Capabilities
+> **Last Updated**: 2026-02-07  
+> **Status**: Production Ready
 
 ---
 
@@ -17,10 +17,12 @@
 | **Adapter Framework** | ✅ Working | ~1200 | 8 production adapters |
 | **Template System** | ✅ Working | ~200 | Resolver, context, templates |
 | **Audit Trail** | ✅ Working | ~180 | NDJSON append-only ledger |
-| **CLI** | ✅ Enhanced | ~780 | 12 commands, health/metrics |
+| **CLI** | ✅ Modular | ~780 | 30+ commands across CLI modules |
 | **Site Generator** | ✅ Working | ~1100 | Static HTML, articles |
-| **Reliability** | ✅ New | ~500 | Retry queue, circuit breakers |
-| **Observability** | ✅ New | ~400 | Metrics, health checks |
+| **Reliability** | ✅ Working | ~500 | Retry queue, circuit breakers |
+| **Observability** | ✅ Working | ~400 | Metrics, health checks |
+| **Admin Dashboard** | ✅ Working | ~4400 | Web UI: wizard, secrets, integrations, mirror |
+| **Mirror System** | ✅ Working | ~600 | Multi-repo sync with streaming UI |
 | **Testing** | ✅ Strong | ~3000 | 255 tests, ~80% coverage |
 
 **Total**: ~8,500 lines of Python across 25+ modules
@@ -35,6 +37,7 @@
 | Reddit | ✅ | PRAW multi-subreddit posting |
 | Webhook | ✅ | HTTP POST integrations |
 | GitHub Surface | ✅ | Gists/Pages artifacts |
+| Internet Archive | ✅ | Wayback Machine archival |
 | Persistence API | ✅ | Remote state sync |
 | Article Publish | ✅ | Stage-based content |
 
@@ -53,6 +56,10 @@
 | `renew` | Extend deadline |
 | `set-deadline` | Adjust deadline |
 | `reset` | Reset escalation |
+| `trigger-release` | Manual release trigger |
+| `mirror-status` | Show mirror repo state |
+| `mirror-sync` | Sync content to mirrors |
+| `mirror-clean` | Clean stale mirror state |
 | `init` | New project wizard |
 
 ---
@@ -117,90 +124,81 @@
 | C.3 — GitHub Surface | Medium | httpx | ✅ Done |
 | C.4 — Persistence API | Low | httpx | ✅ Done |
 | C.5 — Article Publish | Low | site generator | ✅ Done |
-| C.6 — SMS (Twilio) | Medium | twilio | ⬜ |
-| C.7 — X (Twitter) | High | OAuth, tweepy | ⬜ |
-| C.8 — Reddit | High | OAuth, praw | ⬜ |
+| C.6 — SMS (Twilio) | Medium | twilio | ✅ Done |
+| C.7 — X (Twitter) | High | OAuth, tweepy | ✅ Done |
+| C.8 — Reddit | High | OAuth, praw | ✅ Done |
 
-### Phase D: Triggers & Automation
+### Phase D: Triggers & Automation ✅
 **Goal**: Multiple ways to trigger actions beyond CRON
 
-| Task | Description |
-|------|-------------|
-| D.1 — **Webhook Trigger** | External POST to trigger tick |
-| D.2 — **Issue/PR Trigger** | GitHub events as signals |
-| D.3 — **Manual Dispatch** | Parameterized workflow runs |
-| D.4 — **Renewal API** | Secure endpoint to extend deadline |
-| D.5 — **Health Check** | Status endpoint for monitoring |
+| Task | Description | Status |
+|------|-------------|--------|
+| D.1 — **Webhook Trigger** | External POST to trigger tick | ✅ Done |
+| D.2 — **Manual Dispatch** | Parameterized workflow runs | ✅ Done |
+| D.3 — **Renewal API** | Secure endpoint to extend deadline | ✅ Done |
+| D.4 — **Health Check** | Status endpoint for monitoring | ✅ Done |
+| D.5 — **Release Trigger** | Manual release via web or CLI | ✅ Done |
 
-### Phase E: Asset & Content Management
-**Goal**: Structured management of publishable content
-
-| Feature | Description |
-|---------|-------------|
-| E.1 — **Post Registry** | Pre-authored posts per stage |
-| E.2 — **Article Store** | Long-form content with metadata |
-| E.3 — **Message Queue** | Ordered messages for escalation |
-| E.4 — **Asset Versioning** | Track changes to published content |
-| E.5 — **Draft System** | Preview before publish |
-
-### Phase F: Static Site & Public Surface
+### Phase E: Static Site & Public Surface ✅
 **Goal**: Generate and publish a public-facing site
 
 | Task | Description | Status |
 |------|-------------|--------|
-| F.1 — Site generator (Markdown → HTML) | SiteGenerator class | ✅ Done |
-| F.2 — GitHub Pages deployment | deploy-site.yml workflow | ✅ Done |
-| F.3 — Status page (current state, timeline) | index.html, timeline.html | ✅ Done |
-| F.4 — Archive page (historical escalations) | archive/*.html | ✅ Done |
-| F.5 — RSS/Atom feed for updates | feed.xml | ✅ Done |
+| E.1 — Site generator (Markdown → HTML) | SiteGenerator class | ✅ Done |
+| E.2 — GitHub Pages deployment | deploy-site.yml workflow | ✅ Done |
+| E.3 — Status page (current state, timeline) | index.html, timeline.html | ✅ Done |
+| E.4 — Archive page (historical escalations) | archive/*.html | ✅ Done |
+| E.5 — RSS/Atom feed for updates | feed.xml | ✅ Done |
 
-### Phase G: Forkability & Customization
+### Phase F: Forkability & Customization
 **Goal**: Make it easy for others to create their own instance
 
-| Task | Description |
-|------|-------------|
-| G.1 — Template repository setup | |
-| G.2 — `init` command to bootstrap new instance | |
-| G.3 — Configuration wizard | |
-| G.4 — Example configurations (minimal, full) | |
-| G.5 — Theming system for templates | |
+| Task | Description | Status |
+|------|-------------|--------|
+| F.1 — Template repository setup | | ⬜ |
+| F.2 — `init` command to bootstrap new instance | | ✅ Done |
+| F.3 — Web configuration wizard | | ✅ Done |
+| F.4 — Example configurations (minimal, full) | | ✅ Done |
+| F.5 — FORKING_GUIDE.md | | ✅ Done |
+
+### Phase G: Admin Dashboard ✅
+**Goal**: Web-based management interface
+
+| Task | Description | Status |
+|------|-------------|--------|
+| G.1 — Dashboard with system status | Real-time status + git info | ✅ Done |
+| G.2 — Secrets management | Edit .env + sync to GitHub | ✅ Done |
+| G.3 — Integration testing | Test adapters from browser | ✅ Done |
+| G.4 — Setup wizard | Guided multi-step onboarding | ✅ Done |
+| G.5 — Mirror management | Multi-repo sync with streaming | ✅ Done |
+| G.6 — Archive/Wayback | Archive pages to Internet Archive | ✅ Done |
 
 ---
 
-## 🏗️ Architecture Improvements Needed
+## 🏗️ Architecture Improvements
 
-### Configuration
-- [ ] Environment-based config (dev/prod)
-- [ ] Secret injection from GitHub Secrets
-- [ ] Override constants via env vars
-- [ ] Multi-plan support (different escalation paths)
+### Configuration ✅
+- [x] Environment-based config (dev/prod)
+- [x] Secret injection from GitHub Secrets
+- [x] Override constants via env vars
+- [x] CONTINUITY_CONFIG master secret
 
-### Reliability
-- [ ] Retry logic for failed adapters
-- [ ] Circuit breaker for external services
-- [ ] Fallback actions on failure
-- [ ] State backup/recovery
+### Reliability ✅
+- [x] Retry logic for failed adapters
+- [x] Circuit breaker for external services
+- [x] Fallback actions on failure
+- [x] State backup/recovery
 
-### Observability
-- [ ] Structured logging (JSON)
-- [ ] Metrics (tick duration, actions executed)
-- [ ] Alert on critical failures
-- [ ] Dashboard/visualization
+### Observability ✅
+- [x] Metrics (tick duration, actions executed)
+- [x] Health checks with component status
+- [x] Admin dashboard with real-time status
 
-### Security
-- [ ] Renewal authentication
-- [ ] Rate limiting
-- [ ] Signature verification for webhooks
-- [ ] Audit log integrity (hash chain)
-
----
-
-## 📊 Immediate Next Steps (This Session)
-
-1. **Cleanup sweep** — Add missing docstrings and comments
-2. **Create DEVELOPMENT.md** — How to set up, run, test
-3. **Update README.md** — Project overview, quick start
-4. **Test coverage plan** — Define what to test first
+### Security ✅
+- [x] DISCLAIMER.md with legal notice
+- [x] SECURITY.md with best practices
+- [x] Local-only admin server (never expose to internet)
+- [x] Audit log for all operations
 
 ---
 
