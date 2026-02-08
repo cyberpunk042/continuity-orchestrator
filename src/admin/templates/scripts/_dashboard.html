@@ -113,6 +113,13 @@
                             : data.config.mock_mode ? '🧪 Mock' : '🔴 Live'}
                         </span>
                     </div>
+                    <div class="status-row">
+                        <span class="status-label">Deploy</span>
+                        <span class="status-value">${data.config.deploy_mode === 'docker'
+                            ? '🐳 Docker'
+                            : '🌐 GitHub Pages'}
+                        </span>
+                    </div>
                     ${deadlineInfoHtml}
                     <div class="status-row">
                         <span class="status-label">Renewals</span>

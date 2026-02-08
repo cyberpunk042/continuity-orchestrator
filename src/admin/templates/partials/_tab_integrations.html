@@ -6,6 +6,14 @@
         </header>
 
         <div class="grid">
+            <!-- Deployment Card (mode-aware) -->
+            <div class="card" id="deploy-integration-card">
+                <h2><span class="icon">🚀</span> Deployment <span id="deploy-mode-badge" style="margin-left: auto;"></span></h2>
+                <div id="deploy-body" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Detecting deployment mode...</div>
+                </div>
+            </div>
+
             <!-- Repo Mirror Card -->
             <div class="card mirror-card" id="mirror-integration-card">
                 <h2><span class="icon">🔁</span> Repo Mirror <span id="mirror-self-role"

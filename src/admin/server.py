@@ -28,6 +28,7 @@ from .routes_content import content_bp
 from .routes_media import media_bp
 from .routes_vault import vault_bp
 from .routes_backup import backup_bp
+from .routes_docker import docker_bp
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ def create_app() -> Flask:
     app.register_blueprint(media_bp, url_prefix="/api/content/media")   # /api/content/media/*
     app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
     app.register_blueprint(backup_bp, url_prefix="/api/backup")          # /api/backup/*
+    app.register_blueprint(docker_bp, url_prefix="/api/docker")           # /api/docker/*
 
     # ── Error Handlers ────────────────────────────────────────────
 

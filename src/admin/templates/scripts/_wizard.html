@@ -2195,8 +2195,8 @@
             const operatingMode = wizardData.MODE;
             const secrets = { ...wizardData };
             delete secrets.DEADLINE_HOURS;
-            delete secrets.DEPLOY_MODE;
-            delete secrets.deployMode;
+            // Note: DEPLOY_MODE stays in secrets — it's LOCAL_ONLY tier,
+            // so it'll be saved to .env but not pushed to GitHub.
             delete secrets.MODE;
             console.log('Wizard secrets to push:', Object.keys(secrets));
 

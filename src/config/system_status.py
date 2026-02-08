@@ -131,6 +131,7 @@ class SystemStatus:
     operator_email: str = ""
     mock_mode: bool = True
     vault_locked: bool = False
+    deploy_mode: str = "github-pages"  # "github-pages" or "docker"
     
     # Components
     adapters: List[AdapterStatus] = field(default_factory=list)
@@ -160,6 +161,7 @@ class SystemStatus:
                 "operator_email": self.operator_email,
                 "mock_mode": self.mock_mode,
                 "vault_locked": self.vault_locked,
+                "deploy_mode": self.deploy_mode,
             },
             "adapters": [a.to_dict() for a in self.adapters],
             "secrets": [s.to_dict() for s in self.secrets],
@@ -387,6 +389,10 @@ def get_system_status(
         or _env_vars.get("ADAPTER_MOCK_MODE", "true")
     )
     status.mock_mode = _mock_raw.lower() == "true"
+    status.deploy_mode = (
+        os.environ.get("DEPLOY_MODE")
+        or _env_vars.get("DEPLOY_MODE", "github-pages")
+    )
     
     # Check all secrets
     for name, meta in SECRET_DEFINITIONS.items():

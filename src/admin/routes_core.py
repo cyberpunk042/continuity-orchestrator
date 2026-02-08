@@ -88,6 +88,8 @@ def api_run():
         "reset": ["python", "-m", "src.main", "reset", "-y"],
         # Trigger GitHub deploy-site workflow
         "deploy-site": ["gh", "workflow", "run", "deploy-site.yml"],
+        # Trigger GitHub cron (tick) workflow
+        "trigger-cron": ["gh", "workflow", "run", "cron.yml"],
     }
 
     if command not in allowed_commands:

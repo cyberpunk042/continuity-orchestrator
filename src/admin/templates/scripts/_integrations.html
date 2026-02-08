@@ -1,4 +1,404 @@
         // ========================================
+        // DEPLOYMENT STATUS (mode-aware card)
+        // ========================================
+
+        // Env snapshot for restart awareness (Task D)
+        if (!window._envSnapshot) window._envSnapshot = null;
+
+        function _captureEnvSnapshot() {
+            if (envData && Object.keys(envData).length > 0 && !window._envSnapshot) {
+                window._envSnapshot = { ...envData };
+            }
+        }
+
+        function _getChangedSecrets() {
+            if (!window._envSnapshot || !envData) return [];
+            const changed = [];
+            // Only track secrets that matter for Docker container restart
+            const trackableKeys = Object.keys(envData).filter(k =>
+                !k.startsWith('DEPLOY_') && !k.startsWith('DEADLINE_') &&
+                k !== 'MODE' && k !== 'PROJECT_NAME'
+            );
+            for (const key of trackableKeys) {
+                const oldVal = window._envSnapshot[key] || '';
+                const newVal = envData[key] || '';
+                if (oldVal !== newVal) changed.push(key);
+            }
+            return changed;
+        }
+
+        async function loadDeployStatus() {
+            const badge = document.getElementById('deploy-mode-badge');
+            const body = document.getElementById('deploy-body');
+            if (!body) return;
+
+            // Ensure data is loaded
+            if (!appData) {
+                try {
+                    const resp = await fetch('/api/status');
+                    appData = await resp.json();
+                } catch (e) {
+                    body.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+                    return;
+                }
+            }
+            if (!envData || Object.keys(envData).length === 0) {
+                try {
+                    const envResp = await fetch('/api/env/read');
+                    const envResult = await envResp.json();
+                    envData = envResult.values || {};
+                } catch (e) { /* proceed without env */ }
+            }
+
+            // Capture initial snapshot for restart awareness
+            _captureEnvSnapshot();
+
+            const mode = appData?.config?.deploy_mode || envData?.DEPLOY_MODE || 'github-pages';
+
+            if (badge) {
+                badge.innerHTML = mode === 'docker'
+                    ? '<span class="badge warning" style="font-size: 0.75rem;">🐳 Docker</span>'
+                    : '<span class="badge ok" style="font-size: 0.75rem;">🌐 GitHub Pages</span>';
+            }
+
+            if (mode === 'docker') {
+                await _renderDockerCard(body);
+            } else {
+                _renderGitHubPagesCard(body);
+            }
+        }
+
+        function _renderGitHubPagesCard(body) {
+            const repo = envData?.GITHUB_REPOSITORY || '';
+            const parts = repo.split('/');
+            const owner = parts[0] || '';
+            const repoName = parts[1] || '';
+            const pagesUrl = owner && repoName
+                ? `https://${owner}.github.io/${repoName}`
+                : '';
+
+            let html = '';
+
+            // Pages URL
+            if (pagesUrl) {
+                html += `
+                    <div class="status-row">
+                        <span class="status-label">Pages URL</span>
+                        <span class="status-value">
+                            <a href="${pagesUrl}" target="_blank" style="color: var(--accent);">
+                                ${pagesUrl} 🔗
+                            </a>
+                        </span>
+                    </div>`;
+            }
+
+            // Cron info
+            html += `
+                <div class="status-row">
+                    <span class="status-label">Auto tick</span>
+                    <span class="status-value">Every 30 min via GitHub Actions cron</span>
+                </div>`;
+
+            // Auto git-sync checkbox
+            html += `
+                <div style="margin-top: 0.5rem;">
+                    <label style="font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <input type="checkbox" id="deploy-auto-sync-ghp" checked>
+                        Git sync before deploy
+                    </label>
+                </div>`;
+
+            // Action buttons
+            html += `
+                <div class="actions" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn primary" onclick="_deployAction('deploy-site')" id="btn-deploy-pages">
+                        🚀 Deploy Now
+                    </button>
+                    <button class="btn" onclick="_deployAction('trigger-cron')" id="btn-trigger-cron">
+                        🔄 Trigger Tick
+                    </button>
+                    ${repo ? `<a class="btn" href="https://github.com/${repo}/actions" target="_blank" style="text-decoration: none;">
+                        ⚡ Actions →
+                    </a>` : ''}
+                </div>`;
+
+            // Status area
+            html += `<div id="deploy-action-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>`;
+
+            body.innerHTML = html;
+        }
+
+        async function _renderDockerCard(body) {
+            let html = '';
+
+            // Fetch Docker status
+            let dockerData = null;
+            try {
+                const resp = await fetch('/api/docker/status');
+                dockerData = await resp.json();
+            } catch (e) {
+                body.innerHTML = `<span style="color: var(--danger);">❌ Failed to fetch Docker status: ${e.message}</span>`;
+                return;
+            }
+
+            if (!dockerData.available) {
+                body.innerHTML = `
+                    <div class="alert warning">
+                        ⚠️ Docker CLI not found. Install Docker to manage containers from here.
+                    </div>`;
+                return;
+            }
+
+            if (!dockerData.compose_file) {
+                body.innerHTML = `
+                    <div class="alert warning">
+                        ⚠️ docker-compose.yml not found in project root.
+                    </div>`;
+                return;
+            }
+
+            // Container status grid
+            const containers = dockerData.containers || [];
+            if (containers.length > 0) {
+                html += `<div style="display: flex; flex-direction: column; gap: 0.4rem;">`;
+                for (const c of containers) {
+                    const isRunning = c.status === 'running';
+                    const icon = isRunning ? '✅' : (c.status === 'exited' ? '⏹' : '⚪');
+                    const stateText = c.state || (c.status === 'not_found' ? 'Not started' : c.status);
+                    const profileBadge = c.profile
+                        ? `<span style="font-size: 0.72rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: rgba(99,102,241,0.15); color: var(--info);">${c.profile}</span>`
+                        : '';
+                    html += `
+                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <span>${icon}</span>
+                            <span style="font-family: monospace; color: var(--text);">${c.name}</span>
+                            ${profileBadge}
+                            <span style="margin-left: auto; color: var(--text-dim);">${stateText}</span>
+                        </div>`;
+                }
+                html += `</div>`;
+            }
+
+            // Git sync config
+            const cfg = dockerData.git_sync_config;
+            const activeProfiles = dockerData.active_profiles || [];
+            const hasGitSync = activeProfiles.includes('git-sync');
+            const hasTunnel = activeProfiles.includes('tunnel');
+
+            html += `<div style="display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.82rem; margin-top: 0.25rem;">`;
+            if (hasGitSync) {
+                const alphaBadge = cfg?.alpha
+                    ? '<span class="badge warning">👑 Alpha</span>'
+                    : '<span class="badge ok">Non-alpha</span>';
+                html += `<div>Git Sync: ${alphaBadge} · Tick ${Math.round((cfg?.tick_interval || 900) / 60)}m · Sync ${cfg?.sync_interval || 30}s</div>`;
+            } else {
+                const anyRunning = containers.some(c => c.status === 'running');
+                if (anyRunning) {
+                    html += `<div style="color: var(--warning);">⚠️ Running in standalone mode (no git sync)</div>`;
+                }
+            }
+            html += `</div>`;
+
+            // Tunnel status
+            const tunnelToken = envData?.CLOUDFLARE_TUNNEL_TOKEN;
+            const tunnelContainer = containers.find(c => c.name === 'continuity-tunnel');
+            const tunnelRunning = tunnelContainer?.status === 'running';
+
+            if (tunnelRunning) {
+                html += `<div style="font-size: 0.82rem; color: var(--accent);">🌐 Tunnel: Active (Cloudflare)</div>`;
+            } else if (tunnelToken) {
+                html += `<div style="font-size: 0.82rem; color: var(--text-dim);">🌐 Tunnel: Token configured but not running</div>`;
+            } else {
+                html += `<div style="font-size: 0.82rem; color: var(--text-dim);">🌐 Tunnel: Not configured</div>`;
+            }
+
+            // Auto git-sync checkbox
+            html += `
+                <div style="margin-top: 0.5rem;">
+                    <label style="font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <input type="checkbox" id="deploy-auto-sync-docker" checked>
+                        Auto git-sync before restart
+                    </label>
+                </div>`;
+
+            // Action buttons
+            const anyRunning = containers.some(c => c.status === 'running');
+            html += `<div class="actions" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">`;
+            if (anyRunning) {
+                html += `
+                    <button class="btn primary" onclick="_dockerAction('restart')" id="btn-docker-restart">
+                        🔄 Restart
+                    </button>
+                    <button class="btn" onclick="_dockerAction('logs')" id="btn-docker-logs">
+                        📋 Logs
+                    </button>
+                    <button class="btn" onclick="_dockerAction('stop')" id="btn-docker-stop">
+                        ⏹ Stop
+                    </button>`;
+            } else {
+                html += `
+                    <button class="btn primary" onclick="_dockerStart(['git-sync'])" id="btn-docker-start">
+                        ▶️ Start (git-sync)
+                    </button>
+                    <button class="btn" onclick="_dockerStart([])" id="btn-docker-start-standalone">
+                        ▶️ Start (standalone)
+                    </button>`;
+            }
+
+            // Tunnel button
+            if (tunnelToken && !tunnelRunning && anyRunning) {
+                html += `
+                    <button class="btn" onclick="_dockerStart(['git-sync', 'tunnel'])" id="btn-docker-tunnel">
+                        🌐 Start Tunnel
+                    </button>`;
+            }
+            html += `</div>`;
+
+            // Restart awareness (Task D)
+            const changedSecrets = _getChangedSecrets();
+            if (changedSecrets.length > 0 && anyRunning) {
+                html += `
+                    <div class="alert warning" style="margin-top: 0.75rem;">
+                        <strong>⚠️ Restart needed</strong> — ${changedSecrets.length} secret${changedSecrets.length > 1 ? 's' : ''} changed since page load
+                        <div style="font-size: 0.8rem; margin-top: 0.3rem; color: var(--text-dim);">
+                            Changed: ${changedSecrets.join(', ')}
+                        </div>
+                        <button class="btn primary" onclick="_dockerAction('restart')" style="margin-top: 0.5rem;">
+                            🔄 Apply Changes (Restart)
+                        </button>
+                    </div>`;
+            }
+
+            // Status area
+            html += `<div id="deploy-action-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>`;
+
+            body.innerHTML = html;
+        }
+
+        // ── Deploy actions (with git-sync-first flow) ────────────────
+
+        async function _deployAction(command) {
+            const statusDiv = document.getElementById('deploy-action-status');
+            const autoSync = document.getElementById('deploy-auto-sync-ghp')?.checked ?? true;
+
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">🔄 Working...</span>';
+
+            try {
+                // Step 1: Git sync if enabled
+                if (autoSync) {
+                    if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">📤 Syncing to Git...</span>';
+                    const syncResp = await fetch('/api/git/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: 'chore: sync before deploy' }),
+                    });
+                    const syncData = await syncResp.json();
+                    if (!syncData.success) {
+                        if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.error || 'Unknown'}</span>`;
+                        return;
+                    }
+                }
+
+                // Step 2: Run the command
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">🚀 Triggering ${command}...</span>`;
+                const result = await apiRun(command);
+
+                if (result.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ ${command} triggered successfully</span>`;
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${result.error || result.output || 'Failed'}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function _dockerAction(action) {
+            const statusDiv = document.getElementById('deploy-action-status');
+            const autoSync = document.getElementById('deploy-auto-sync-docker')?.checked ?? true;
+
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">🔄 Working...</span>';
+
+            try {
+                // Step 1: Git sync before restart (if enabled, and if action warrants it)
+                if (autoSync && action === 'restart') {
+                    if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">📤 Syncing to Git first...</span>';
+                    const syncResp = await fetch('/api/git/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: 'chore: sync before Docker restart' }),
+                    });
+                    const syncData = await syncResp.json();
+                    if (!syncData.success) {
+                        if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ Git sync failed: ${syncData.error || 'Unknown'}. Restart aborted.</span>`;
+                        return;
+                    }
+                }
+
+                // Step 2: Docker action
+                if (action === 'logs') {
+                    if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">📋 Fetching logs...</span>';
+                    const resp = await fetch('/api/docker/logs?service=&lines=80');
+                    const data = await resp.json();
+                    // Show logs in the integration terminal
+                    const terminal = document.getElementById('integration-terminal');
+                    if (terminal) {
+                        terminal.textContent = data.output || data.error || 'No logs available';
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                    if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--accent);">📋 Logs shown below</span>';
+                    return;
+                }
+
+                const actionLabels = { restart: '🔄 Restarting...', stop: '⏹ Stopping...' };
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">${actionLabels[action] || '🔄 Working...'}</span>`;
+
+                const resp = await fetch(`/api/docker/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Docker ${action} completed</span>`;
+                    // Clear env snapshot on restart (changes are now applied)
+                    if (action === 'restart') window._envSnapshot = { ...envData };
+                    // Refresh card after a moment
+                    setTimeout(loadDeployStatus, 2000);
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed'}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function _dockerStart(profiles) {
+            const statusDiv = document.getElementById('deploy-action-status');
+            const profileText = profiles.length > 0 ? profiles.join(' + ') : 'standalone';
+
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">▶️ Starting Docker (${profileText})...</span>`;
+
+            try {
+                const resp = await fetch('/api/docker/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profiles }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Containers started (${profileText})</span>`;
+                    setTimeout(loadDeployStatus, 3000);
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed to start'}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        // ========================================
         // INTEGRATIONS TAB
         // ========================================
         const INTEGRATIONS = [
@@ -41,6 +441,9 @@
 
             // Load mirror status
             loadMirrorStatus();
+
+            // Load deployment status card
+            loadDeployStatus();
 
             for (const integ of INTEGRATIONS) {
                 const el = document.getElementById(`integration-${integ.id}`);
