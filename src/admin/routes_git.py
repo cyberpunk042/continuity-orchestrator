@@ -86,6 +86,112 @@ def api_git_status():
         return jsonify({"available": False, "error": str(e)})
 
 
+@git_bp.route("/fetch", methods=["POST"])
+def api_git_fetch():
+    """Fetch from remote and fast-forward pull if the tree is clean.
+
+    Called periodically by the UI to keep the local repo up-to-date.
+    Safe: never force-pushes, never commits, never touches dirty trees.
+    """
+    import shutil as _shutil
+
+    project_root = _project_root()
+
+    if not _shutil.which("git"):
+        return jsonify({"fetched": False, "error": "git not installed"})
+
+    def _git(*args, timeout=15):
+        result = subprocess.run(
+            ["git"] + list(args),
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result
+
+    try:
+        # Pre-flight: is this a git repo with a remote?
+        r = _git("rev-parse", "--is-inside-work-tree")
+        if r.returncode != 0:
+            return jsonify({"fetched": False, "error": "Not a git repo"})
+
+        r = _git("remote")
+        if r.returncode != 0 or not r.stdout.strip():
+            return jsonify({"fetched": False, "error": "No remote configured"})
+
+        # Step 1: Always fetch (lightweight, safe)
+        r = _git("fetch", "--quiet", timeout=30)
+        if r.returncode != 0:
+            return jsonify({
+                "fetched": False,
+                "error": r.stderr.strip() or "Fetch failed",
+            })
+
+        # Step 2: Check if tree is clean
+        r = _git("status", "--porcelain")
+        dirty_lines = [l for l in (r.stdout or "").splitlines() if l.strip()]
+        has_local_changes = len(dirty_lines) > 0
+
+        # Step 3: Check ahead/behind after fetch
+        ahead, behind = 0, 0
+        tracking = _git("rev-parse", "--abbrev-ref", "@{upstream}")
+        if tracking.returncode == 0 and tracking.stdout.strip():
+            ab = _git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
+            if ab.returncode == 0 and ab.stdout.strip():
+                parts = ab.stdout.strip().split()
+                if len(parts) == 2:
+                    ahead, behind = int(parts[0]), int(parts[1])
+
+        pulled = False
+        pull_detail = None
+        state = "clean"  # Will be overridden below
+
+        # Step 4: Decide action based on tree state
+        if has_local_changes:
+            n = len(dirty_lines)
+            state = "dirty"
+            if behind > 0:
+                pull_detail = f"↓{behind} new commit{'s' if behind > 1 else ''} on remote · {n} local change{'s' if n > 1 else ''} — Sync Now to merge"
+            else:
+                pull_detail = f"{n} local change{'s' if n > 1 else ''} · auto-pull paused"
+        elif behind > 0 and ahead == 0:
+            # Clean tree, behind remote → safe to fast-forward
+            r = _git("pull", "--ff-only", timeout=30)
+            if r.returncode == 0:
+                pulled = True
+                state = "pulled"
+                pull_detail = f"Auto-pulled {behind} commit{'s' if behind > 1 else ''} from remote"
+                logger.info("[git-fetch] %s", pull_detail)
+                behind = 0
+            else:
+                state = "diverged"
+                pull_detail = "Histories diverged — Sync Now to resolve"
+                logger.warning("[git-fetch] FF pull failed: %s", r.stderr.strip())
+        elif ahead > 0:
+            state = "ahead"
+            pull_detail = f"↑{ahead} unpushed commit{'s' if ahead > 1 else ''} — Sync Now to push"
+        else:
+            state = "clean"
+            pull_detail = "Up to date with remote"
+
+        return jsonify({
+            "fetched": True,
+            "pulled": pulled,
+            "state": state,
+            "ahead": ahead,
+            "behind": behind,
+            "has_local_changes": has_local_changes,
+            "local_changes_count": len(dirty_lines),
+            "detail": pull_detail,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"fetched": False, "error": "Fetch timed out"}), 504
+    except Exception as e:
+        logger.exception("[git-fetch] Error")
+        return jsonify({"fetched": False, "error": str(e)}), 500
+
+
 @git_bp.route("/sync", methods=["POST"])
 def api_git_sync():
     """Commit all changes and push to remote."""

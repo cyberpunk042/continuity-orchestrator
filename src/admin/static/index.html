@@ -1992,12 +1992,16 @@
                         <span class="status-label">Remote</span>
                         <span class="status-value">${abHtml}</span>
                     </div>
+                    <div id="git-auto-fetch-notice" style="display: none;"></div>
                     <div class="actions" style="margin-top: 0.75rem;">
                         <button class="btn" onclick="loadGitStatus()">🔄 Refresh</button>
                         <button class="btn primary" onclick="dashboardGitSync()" id="dash-sync-btn">📤 Sync Now</button>
                     </div>
                     <div id="dash-git-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>
                 `;
+
+                // After rendering, trigger auto-fetch display if we have cached data
+                if (window._lastFetchResult) showFetchNotice(window._lastFetchResult);
             } catch (e) {
                 el.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
             }
@@ -2319,11 +2323,15 @@
                     const statusBg = (s) => s === 'ok' ? 'rgba(74,222,128,0.1)' : s === 'failed' ? 'rgba(248,113,113,0.1)' : s === 'stale' ? 'rgba(245,158,11,0.15)' : 'rgba(136,136,136,0.1)';
                     const statusColor = (s) => s === 'ok' ? 'var(--accent)' : s === 'failed' ? 'var(--danger)' : s === 'stale' ? '#f59e0b' : 'var(--text-dim)';
 
+                    const repoUrl = displayName.includes('/') ? `https://github.com/${displayName}` : null;
+
                     html += `
                         <div class="mirror-slave-row" style="padding: 0.75rem 1rem;">
                             <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
                                 <span style="font-size: 0.85rem;">
-                                    🐙 <span class="mirror-slave-repo">${displayName}</span>
+                                    🐙 ${repoUrl
+                            ? `<a href="${repoUrl}" target="_blank" rel="noopener" class="mirror-slave-repo" style="color: inherit; text-decoration: none; border-bottom: 1px dashed var(--text-dim); transition: color 0.2s, border-color 0.2s;" onmouseover="this.style.color='var(--info)';this.style.borderColor='var(--info)'" onmouseout="this.style.color='inherit';this.style.borderColor='var(--text-dim)'">${displayName} ↗</a>`
+                            : `<span class="mirror-slave-repo">${displayName}</span>`}
                                 </span>
                                 <div style="display: flex; gap: 0.35rem; font-size: 0.75rem;">
                                     <span title="Code: ${codeStatus}" style="padding: 0.1rem 0.35rem; border-radius: 4px; background: ${statusBg(codeStatus)}; color: ${statusColor(codeStatus)};">
@@ -3349,6 +3357,7 @@
                                        onblur="normalizeMirrorRepo(this)">
                                 <div class="form-hint">
                                     The empty repo you created on the backup account. Paste a URL or type <code>owner/repo</code>
+                                    ${mirrorRepo ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                                 </div>
                             </div>
 
@@ -3359,6 +3368,7 @@
                                        value="">
                                 <div class="form-hint">
                                     The personal access token you generated on the backup account.
+                                    ${mirrorToken ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                                 </div>
                             </div>
 
@@ -3382,6 +3392,7 @@
                                            value="">
                                     <div class="form-hint">
                                         Stored as <code>MIRROR_1_RENEWAL_TRIGGER_TOKEN</code> on master. Synced as <code>RENEWAL_TRIGGER_TOKEN</code> to mirror.
+                                        ${renewalToken ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
                                     </div>
                                 </div>
                             </div>
@@ -4327,6 +4338,53 @@
 
         // Auto-refresh every 30 seconds
         setInterval(loadStatus, 30000);
+
+        // ── Auto-fetch: keep repo in sync with remote ──────────────
+        // Runs every 60s. Fetches from remote and fast-forward pulls
+        // when the working tree is clean. Shows a notice otherwise.
+        function showFetchNotice(data) {
+            const el = document.getElementById('git-auto-fetch-notice');
+            if (!el) return;
+            if (!data.fetched) { el.style.display = 'none'; return; }
+
+            // Pick style based on state
+            const styles = {
+                dirty: { icon: '⏸️', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)', color: '#f59e0b' },
+                pulled: { icon: '✅', bg: 'rgba(74,222,128,0.1)', border: 'rgba(74,222,128,0.25)', color: 'var(--accent)' },
+                ahead: { icon: '📤', bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.25)', color: 'var(--info)' },
+                diverged: { icon: '⚠️', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.25)', color: 'var(--danger)' },
+                clean: { icon: '✓', bg: 'rgba(74,222,128,0.06)', border: 'rgba(74,222,128,0.12)', color: 'var(--text-dim)' },
+            };
+            const s = styles[data.state] || styles.clean;
+
+            el.style.display = 'block';
+            el.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+                            background: ${s.bg}; border: 1px solid ${s.border};
+                            border-radius: 6px; font-size: 0.78rem; color: ${s.color}; margin-top: 0.5rem;">
+                    <span>${s.icon}</span>
+                    <span>${data.detail}</span>
+                </div>`;
+
+            // If we just pulled, refresh git status so commit info updates
+            if (data.pulled) setTimeout(loadGitStatus, 500);
+        }
+
+        async function autoFetch() {
+            try {
+                const resp = await fetch('/api/git/fetch', { method: 'POST' });
+                const data = await resp.json();
+                window._lastFetchResult = data;
+                showFetchNotice(data);
+            } catch (e) {
+                // Silently ignore — this is a background operation
+            }
+        }
+
+        // First fetch after a short delay (let the page load first)
+        setTimeout(autoFetch, 5000);
+        // Then every 60 seconds
+        setInterval(autoFetch, 60000);
     </script>
 
     <!-- Google Translate -->
