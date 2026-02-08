@@ -111,16 +111,16 @@ let html = '<div style="display: flex; flex-direction: column; gap: 0.25rem;">';
                                 border: 1px solid ${isSelected ? 'rgba(74,222,128,0.3)' : 'transparent'};">
         <span style="font-size: 1.1rem;">${icon}</span>
         <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 0.88rem; font-weight: ${isSelected ? '600' : '500'}; 
+            <div translate="no" style="font-size: 0.88rem; font-weight: ${isSelected ? '600' : '500'}; 
                                         color: ${isSelected ? 'var(--accent)' : 'var(--text)'}; 
                                         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 ${art.title}
             </div>
-            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem;">
+            <div translate="no" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem;">
                 ${art.slug}
             </div>
         </div>
-        ${art.min_stage ? `<span style="font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px;
+        ${art.min_stage ? `<span translate="no" style="font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px;
                             background: ${stageColor}22; color: ${stageColor}; font-weight: 500;">
             ${art.min_stage}</span>` : ''}
     </div>`;
@@ -302,8 +302,11 @@ minHeight: 300,
 
 try {
 await contentEditor.isReady;
-// Small delay to let any final init onChange events settle
-setTimeout(() => { contentEditorReady = true; }, 300);
+// Wait for images to load — they fire onChange when they render
+setTimeout(() => {
+    contentEditorReady = true;
+    contentDirty = false;  // Clear any false positives from image loads
+}, 1500);
 } catch (e) {
 console.warn('Editor.js ready warning:', e);
 contentEditorReady = true;

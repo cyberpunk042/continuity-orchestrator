@@ -75,7 +75,7 @@
                 return `
                     <div class="tool-item">
                         <span>${t.installed ? '✅' : '❌'}</span>
-                        <span class="tool-name">${t.name}</span>
+                        <span class="tool-name" translate="no">${t.name}</span>
                         <span style="color: var(--text-dim);">
                             ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : actionHtml) : 'ok') : actionHtml || '—'}
                         </span>
@@ -85,11 +85,11 @@
 
             dashboard.innerHTML = `
                 <div class="card">
-                    <h2><span class="icon">📊</span> System State</h2>
+                    <h2 style="display: flex; align-items: center;"><span class="icon">📊</span> System State <button class="btn" onclick="loadStatus()" style="margin-left: auto; padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Refresh status">🔄</button></h2>
                     ${countdownHtml}
                     <div class="status-row">
                         <span class="status-label">Stage</span>
-                        <span class="badge ${stageClass}">${data.state.stage}</span>
+                        <span class="badge ${stageClass}" translate="no">${data.state.stage}</span>
                     </div>
                     ${data.state.release_triggered ? `
                     <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid var(--warning); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;">
@@ -103,11 +103,14 @@
                     ` : ''}
                     <div class="status-row">
                         <span class="status-label">Project</span>
-                        <span class="status-value">${data.config.project_name || '—'}</span>
+                        <span class="status-value" translate="no">${data.config.project_name || '—'}</span>
                     </div>
                     <div class="status-row">
                         <span class="status-label">Mode</span>
-                        <span class="status-value">${data.config.mock_mode ? '🧪 Mock' : '🔴 Live'}</span>
+                        <span class="status-value">${data.config.vault_locked
+                            ? '<span style="color: var(--text-dim); font-size: 0.8rem;">🔒 Vault locked</span>'
+                            : data.config.mock_mode ? '🧪 Mock' : '🔴 Live'}
+                        </span>
                     </div>
                     ${deadlineInfoHtml}
                     <div class="status-row">
@@ -146,16 +149,22 @@
                         <div style="padding-top: 1rem;">
                             <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.75rem; color: var(--text-dim);">⚡ Manual Trigger</div>
                             <div class="actions" style="flex-direction: column; gap: 0.5rem;">
-                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch;">
+                                    <select id="trigger-stage" translate="no" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer; font-weight: 600;">
+                                        <option value="FULL" selected>💀 FULL</option>
+                                        <option value="PARTIAL">⚠️ PARTIAL</option>
+                                        <option value="PRE_RELEASE">🔶 PRE_RELEASE</option>
+                                        <option value="REMIND_2">🔔 REMIND_2</option>
+                                        <option value="REMIND_1">🔔 REMIND_1</option>
+                                    </select>
                                     <button class="btn danger" onclick="triggerRelease()" style="flex: 1;"
-                                        title="Immediately sets state to FULL and executes all disclosure actions on the next tick. This is irreversible without a manual Return to OK.">
-                                        💀 Trigger FULL Disclosure
+                                        title="Immediately escalates to the selected stage and executes all disclosure actions on the next tick. This is irreversible without a manual Return to OK.">
+                                        ⚡ Trigger Disclosure
                                     </button>
-                                    <button class="btn" onclick="loadStatus()" style="padding: 0 0.6rem;" title="Refresh status">🔄</button>
                                 </div>
-                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch;">
                                     <button class="btn" onclick="triggerShadow()" style="flex: 1; border-color: var(--warning); color: var(--warning);"
-                                        title="Stealth trigger with delay — same as entering RELEASE_SECRET on the public site. Cancelable by renewal during the delay window.">
+                                        title="Stealth trigger with delay — same as entering RELEASE_SECRET on the public site. Uses the selected stage. Cancelable by renewal during the delay window.">
                                         👻 Shadow Mode
                                     </button>
                                     <select id="shadow-delay" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer;">

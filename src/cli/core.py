@@ -145,6 +145,7 @@ def reset(
         # Simple reset - just reset escalation state
         state = load_state(state_path)
 
+        old_state = state.escalation.state
         state.escalation.state = "OK"
         state.escalation.state_entered_at_iso = now.isoformat()
         state.escalation.last_transition_rule_id = "MANUAL_RESET"
@@ -157,7 +158,23 @@ def reset(
         state.meta.updated_at_iso = now.isoformat()
 
         save_state(state, state_path)
+
+        # Append to audit log
+        audit_entry = {
+            "event_type": "manual_reset",
+            "timestamp": now.isoformat(),
+            "tick_id": f"M-{now.strftime('%Y%m%dT%H%M%S')}-RESET",
+            "previous_state": old_state,
+            "new_state": "OK",
+            "trigger": "MANUAL_RESET",
+        }
+
+        import json as _json
+        with open(audit_path, "a") as f:
+            f.write(_json.dumps(audit_entry) + "\n")
+
         click.secho("✅ State reset to OK", fg="green")
+        click.echo(f"  Previous state: {old_state}")
 
 
 @click.command("renew")
@@ -248,7 +265,7 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
 @click.option(
     "--stage",
     default="FULL",
-    type=click.Choice(["PARTIAL", "FULL"]),
+    type=click.Choice(["REMIND_1", "REMIND_2", "PRE_RELEASE", "PARTIAL", "FULL"]),
     help="Target disclosure stage",
 )
 @click.option(

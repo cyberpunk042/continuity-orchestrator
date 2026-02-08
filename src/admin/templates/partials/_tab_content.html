@@ -70,8 +70,8 @@
         <!-- ── Article editor (default) ── -->
         <div class="card" id="content-editor-card" style="display: flex; flex-direction: column; min-height: 500px;">
             <h2 id="content-editor-title" style="display: flex; align-items: center; justify-content: space-between;">
-                <span><span class="icon">✏️</span> <span id="content-editor-slug">Select an article</span></span>
-                <div id="content-editor-badges" style="display: flex; gap: 0.35rem;"></div>
+                <span><span class="icon">✏️</span> <span id="content-editor-slug" translate="no">Select an article</span></span>
+                <div id="content-editor-badges" translate="no" style="display: flex; gap: 0.35rem;"></div>
             </h2>
 
             <!-- No article selected state -->
@@ -85,7 +85,7 @@
 
             <!-- Editor.js container (hidden until article selected) -->
             <div id="content-editorjs-wrap" style="display: none; flex: 1;">
-                <div id="content-editorjs"
+                <div id="content-editorjs" translate="no"
                     style="border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; min-height: 350px; background: var(--bg-input);">
                 </div>
             </div>
@@ -165,7 +165,7 @@
         <div class="card" id="media-panel-card" style="display: none; flex-direction: column; min-height: 500px;">
             <h2 id="media-panel-title" style="display: flex; align-items: center; justify-content: space-between;">
                 <span><span class="icon">🖼️</span> <span id="media-panel-name">Upload or select media</span></span>
-                <div id="media-panel-badges" style="display: flex; gap: 0.35rem;"></div>
+                <div id="media-panel-badges" translate="no" style="display: flex; gap: 0.35rem;"></div>
             </h2>
 
             <!-- No media selected — upload dropzone -->
@@ -234,14 +234,14 @@
                         <div>
                             <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.2rem;">Media URI</div>
                             <div style="display: flex; align-items: center; gap: 0.4rem;">
-                                <code id="media-detail-uri" style="font-size: 0.82rem; color: var(--accent);"></code>
+                                <code id="media-detail-uri" translate="no" style="font-size: 0.82rem; color: var(--accent);"></code>
                                 <button class="btn" onclick="mediaCopyUri()" title="Copy media URI"
                                     style="padding: 0.15rem 0.4rem; font-size: 0.72rem;">📋</button>
                             </div>
                         </div>
                         <div>
                             <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.2rem;">Details</div>
-                            <div id="media-detail-info" style="font-size: 0.82rem;"></div>
+                            <div id="media-detail-info" translate="no" style="font-size: 0.82rem;"></div>
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
@@ -265,7 +265,7 @@
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
-                        <div id="media-detail-refs" style="font-size: 0.78rem; color: var(--text-dim);"></div>
+                        <div id="media-detail-refs" translate="no" style="font-size: 0.78rem; color: var(--text-dim);"></div>
                         <div style="display: flex; gap: 0.5rem;">
                             <button class="btn" id="media-toggle-encrypt-btn" onclick="mediaToggleEncryption()"
                                 style="padding: 0.4rem 0.8rem; font-size: 0.82rem;">
@@ -285,6 +285,6 @@
     <!-- Status terminal -->
     <div class="card full-width" style="margin-top: 1.5rem;">
         <h2><span class="icon">📟</span> Output</h2>
-        <pre class="terminal" id="content-terminal">Ready.</pre>
+        <pre class="terminal" id="content-terminal" translate="no">Ready.</pre>
     </div>
 </div>

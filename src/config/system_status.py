@@ -27,6 +27,24 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _lazy_read_env(env_path: Path) -> Dict[str, str]:
+    """Read .env file lazily at request time (vault may unlock after startup)."""
+    result: Dict[str, str] = {}
+    if not env_path.exists():
+        return result
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, value = line.partition("=")
+                result[key.strip()] = value.strip().strip("'\"")
+    except Exception:
+        pass
+    return result
+
+
 @dataclass
 class SecretStatus:
     """Status of a single secret/environment variable."""
@@ -112,6 +130,7 @@ class SystemStatus:
     project_name: str = ""
     operator_email: str = ""
     mock_mode: bool = True
+    vault_locked: bool = False
     
     # Components
     adapters: List[AdapterStatus] = field(default_factory=list)
@@ -140,6 +159,7 @@ class SystemStatus:
                 "project_name": self.project_name,
                 "operator_email": self.operator_email,
                 "mock_mode": self.mock_mode,
+                "vault_locked": self.vault_locked,
             },
             "adapters": [a.to_dict() for a in self.adapters],
             "secrets": [s.to_dict() for s in self.secrets],
@@ -292,6 +312,7 @@ def get_system_status(
     )
     
     # Load state if exists
+    state_data: Dict[str, Any] = {}
     if state_file.exists():
         status.state_file_exists = True
         try:
@@ -333,14 +354,31 @@ def get_system_status(
     rules_file = policy_dir / "rules.yaml"
     status.policy_valid = rules_file.exists()
     
-    # Config from env
-    status.project_name = os.environ.get("PROJECT_NAME", "")
-    status.operator_email = os.environ.get("OPERATOR_EMAIL", "")
-    status.mock_mode = os.environ.get("ADAPTER_MOCK_MODE", "true").lower() == "true"
+    # Config from env — try lazy .env read when vault is unlocked
+    # (When vault is locked, .env doesn't exist, so we fall back gracefully)
+    _env_file = state_file.parent.parent / ".env"
+    _vault_file = state_file.parent.parent / ".env.vault"
+    _env_vars = _lazy_read_env(_env_file)
+    status.vault_locked = not _env_file.exists() and _vault_file.exists()
+    
+    status.project_name = (
+        os.environ.get("PROJECT_NAME")
+        or _env_vars.get("PROJECT_NAME")
+        or (state_data.get("meta", {}).get("project", "") if state_file.exists() else "")
+    )
+    status.operator_email = (
+        os.environ.get("OPERATOR_EMAIL")
+        or _env_vars.get("OPERATOR_EMAIL", "")
+    )
+    _mock_raw = (
+        os.environ.get("ADAPTER_MOCK_MODE")
+        or _env_vars.get("ADAPTER_MOCK_MODE", "true")
+    )
+    status.mock_mode = _mock_raw.lower() == "true"
     
     # Check all secrets
     for name, meta in SECRET_DEFINITIONS.items():
-        value = os.environ.get(name, "")
+        value = os.environ.get(name, "") or _env_vars.get(name, "")
         status.secrets.append(SecretStatus(
             name=name,
             set=bool(value),

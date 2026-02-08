@@ -278,3 +278,50 @@ def api_factory_reset():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@core_bp.route("/api/state/trigger", methods=["POST"])
+def api_state_trigger():
+    """Trigger disclosure escalation to a specific stage.
+
+    Accepts:
+        stage: PRE_RELEASE | PARTIAL | FULL (default: FULL)
+        delay: minutes before execution (default: 0)
+        silent: if true, use shadow mode (default: false)
+    """
+    project_root = _project_root()
+    data = request.json or {}
+    stage = data.get("stage", "FULL")
+    delay = int(data.get("delay", 0))
+    silent = data.get("silent", False)
+
+    valid_stages = {"REMIND_1", "REMIND_2", "PRE_RELEASE", "PARTIAL", "FULL"}
+    if stage not in valid_stages:
+        return jsonify({"success": False, "error": f"Invalid stage: {stage}. Must be one of {valid_stages}"}), 400
+
+    cmd = [
+        "python", "-m", "src.main", "trigger-release",
+        "--stage", stage,
+        "--delay", str(delay),
+    ]
+    if silent:
+        cmd.append("--silent")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=_env(),
+        )
+        return jsonify({
+            "success": result.returncode == 0,
+            "output": result.stdout,
+            "error": result.stderr if result.returncode != 0 else None,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Command timed out"}), 504
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

@@ -1059,40 +1059,46 @@
         }
 
         async function triggerRelease() {
+            const stage = document.getElementById('trigger-stage')?.value || 'FULL';
             const typed = prompt(
-                '💀 TRIGGER FULL DISCLOSURE?\n\n' +
+                `⚡ TRIGGER ${stage} DISCLOSURE?\n\n` +
                 '⚠️  THIS IS IRREVERSIBLE IN PRODUCTION.\n\n' +
                 'This will:\n' +
-                '• Set escalation state to FULL immediately\n' +
+                `• Set escalation state to ${stage} immediately\n` +
                 '• Set deadline to past (overdue)\n' +
-                '• On next tick: send emails, SMS, tweets, posts\n' +
-                '• On next tick: build & deploy disclosure site\n\n' +
-                'Type FULL to proceed:'
+                '• On next tick: execute all stage-appropriate actions\n\n' +
+                `Type ${stage} to proceed:`
             );
-            if (typed !== 'FULL') {
+            if (typed !== stage) {
                 if (typed !== null) alert('❌ Cancelled — text did not match.');
                 return;
             }
 
             const statusDiv = document.getElementById('trigger-status');
-            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--danger);">💀 Triggering FULL disclosure...</span>';
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚡ Triggering ${stage} disclosure...</span>`;
 
             try {
-                const triggerData = await apiRun('trigger-release-full');
+                const resp = await fetch('/api/state/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stage, delay: 0 }),
+                });
+                const triggerData = await resp.json();
 
                 if (!triggerData.success) {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Trigger failed: ${triggerData.error || 'Unknown error'}</span>`;
                     return;
                 }
 
-                if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--warning);">✅ State set to FULL</span>';
-                await _postTriggerSteps(statusDiv, 'FULL disclosure');
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--warning);">✅ State set to ${stage}</span>`;
+                await _postTriggerSteps(statusDiv, `${stage} disclosure`);
             } catch (error) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
             }
         }
 
         async function triggerShadow() {
+            const stage = document.getElementById('trigger-stage')?.value || 'FULL';
             const delay = document.getElementById('shadow-delay')?.value || '60';
             const delayLabel = delay === '0' ? 'no delay (immediate)' : `${delay} minute delay`;
 
@@ -1100,27 +1106,31 @@
                 `👻 ACTIVATE SHADOW MODE?\n\n` +
                 `This is the same as entering RELEASE_SECRET on the public site.\n\n` +
                 `• Stealth trigger — appears as a normal renewal\n` +
+                `• Stage: ${stage}\n` +
                 `• Delay: ${delayLabel}\n` +
-                `• Site rebuilds showing "DELAYED" status\n` +
-                `• After delay: next tick executes FULL disclosure\n` +
+                `• After delay: next tick executes ${stage} disclosure\n` +
                 `• Cancelable by renewal during the delay window\n\n` +
                 `Type SHADOW to confirm:`
             );
             if (confirmation !== 'SHADOW') return;
 
             const statusDiv = document.getElementById('trigger-status');
-            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--warning);">👻 Activating shadow mode (${delayLabel})...</span>`;
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--warning);">👻 Activating shadow mode (${stage}, ${delayLabel})...</span>`;
 
             try {
-                const cmdName = `trigger-shadow-${delay}`;
-                const triggerData = await apiRun(cmdName);
+                const resp = await fetch('/api/state/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stage, delay: parseInt(delay), silent: true }),
+                });
+                const triggerData = await resp.json();
 
                 if (!triggerData.success) {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Shadow trigger failed: ${triggerData.error || 'Unknown error'}</span>`;
                     return;
                 }
 
-                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--warning);">✅ Shadow mode active — ${delayLabel}</span>`;
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--warning);">✅ Shadow mode active — ${stage}, ${delayLabel}</span>`;
                 await _postTriggerSteps(statusDiv, 'shadow mode');
             } catch (error) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;

@@ -20,6 +20,12 @@
             return _origLoadStatus();
         };
 
+        // loadAll: called by vault unlock to refresh all dashboard data
+        function loadAll() {
+            loadStatus();
+            if (typeof loadGitStatus === 'function') loadGitStatus();
+        }
+
         // Start polling
         scheduleStatus();
 
