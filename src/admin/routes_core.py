@@ -259,6 +259,7 @@ def api_factory_reset():
     include_content = data.get("include_content", False)
     purge_history = data.get("purge_history", False)
     decrypt_content = data.get("decrypt_content", False)
+    scaffold = data.get("scaffold", True)
 
     cmd = ["python", "-m", "src.main", "reset", "--full", "-y", "--hours", str(hours)]
     if backup:
@@ -271,6 +272,8 @@ def api_factory_reset():
         cmd.append("--purge-history")
     if decrypt_content:
         cmd.append("--decrypt-content")
+    if not scaffold:
+        cmd.append("--no-scaffold")
 
     # History purge via git filter-repo may take longer
     timeout = 120 if purge_history else 30
@@ -337,3 +340,21 @@ def api_state_trigger():
         return jsonify({"error": "Command timed out"}), 504
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@core_bp.route("/api/content/scaffold", methods=["POST"])
+def api_scaffold():
+    """Regenerate default articles (How It Works, Full Disclosure Statement)."""
+    from ..content.scaffold import generate_scaffold
+
+    project_root = _project_root()
+    data = request.json or {}
+    overwrite = data.get("overwrite", False)
+
+    result = generate_scaffold(project_root, overwrite=overwrite)
+    return jsonify({
+        "success": True,
+        "created": result["created"],
+        "skipped": result["skipped"],
+    })
+

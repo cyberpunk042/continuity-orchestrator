@@ -24,6 +24,7 @@ import click
 @click.option("--include-content", is_flag=True, help="Also wipe all articles and media (requires --full)")
 @click.option("--purge-history", is_flag=True, help="Purge media from git history (requires --include-content)")
 @click.option("--decrypt-content", is_flag=True, help="Decrypt content in backup (requires --backup + --include-content)")
+@click.option("--scaffold/--no-scaffold", default=True, help="Regenerate default articles after content wipe")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def reset(
@@ -35,6 +36,7 @@ def reset(
     include_content: bool,
     purge_history: bool,
     decrypt_content: bool,
+    scaffold: bool,
     yes: bool,
 ) -> None:
     """Reset state to OK or perform full factory reset.
@@ -210,6 +212,16 @@ def reset(
 
             click.secho("  ✅ Content wiped", fg="green")
 
+            # Regenerate scaffold articles
+            if scaffold:
+                from ..content.scaffold import generate_scaffold
+                result = generate_scaffold(root)
+                created = result["created"]
+                if created:
+                    click.echo(f"    📄 Scaffold: regenerated {', '.join(created)}")
+                else:
+                    click.echo("    📄 Scaffold: no articles to create")
+
         # ── Git history purge ─────────────────────────────────────
         if purge_history:
             click.echo("")
@@ -223,51 +235,147 @@ def reset(
                     fg="red",
                 )
             else:
-                # Check for clean working tree
+                # Pre-check: clean working tree required
                 status_result = _sp.run(
                     ["git", "status", "--porcelain"],
                     cwd=str(root), capture_output=True, text=True, timeout=10,
                 )
                 if status_result.stdout.strip():
+                    # Stage and commit everything first (we just did a reset)
+                    click.echo("    Staging post-reset changes...")
+                    _sp.run(["git", "add", "-A"], cwd=str(root), timeout=10)
+                    _sp.run(
+                        ["git", "commit", "-m", "factory reset: clean state before history purge"],
+                        cwd=str(root), capture_output=True, text=True, timeout=30,
+                    )
+
+                # Save remote URLs before filter-repo wipes them
+                remote_urls = {}
+                remote_result = _sp.run(
+                    ["git", "remote", "-v"],
+                    cwd=str(root), capture_output=True, text=True, timeout=10,
+                )
+                for line in remote_result.stdout.strip().splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2 and "(push)" in line:
+                        remote_urls[parts[0]] = parts[1]
+                    elif len(parts) >= 2 and parts[0] not in remote_urls:
+                        remote_urls[parts[0]] = parts[1]
+
+                if remote_urls:
+                    click.echo(f"    Saved {len(remote_urls)} remote(s): {', '.join(remote_urls.keys())}")
+                else:
+                    click.secho("    ⚠️  No remotes found — nothing to restore after purge", fg="yellow")
+
+                # Run git filter-repo
+                click.echo("    Running git filter-repo (this may take a while)...")
+                filter_result = _sp.run(
+                    [
+                        "git", "filter-repo",
+                        "--invert-paths",
+                        "--path", "content/media/",
+                        "--force",
+                    ],
+                    cwd=str(root), capture_output=True, text=True, timeout=300,
+                )
+                if filter_result.returncode != 0:
                     click.secho(
-                        "  ❌ Working tree is dirty. Commit or stash first.",
+                        f"  ❌ git filter-repo failed: {filter_result.stderr.strip()}",
                         fg="red",
                     )
                 else:
-                    click.echo("    Running git filter-repo...")
-                    filter_result = _sp.run(
-                        [
-                            "git", "filter-repo",
-                            "--invert-paths",
-                            "--path", "content/media/",
-                            "--force",
-                        ],
-                        cwd=str(root), capture_output=True, text=True, timeout=300,
-                    )
-                    if filter_result.returncode == 0:
-                        click.secho("  ✅ Media purged from git history", fg="green")
-                        click.secho(
-                            "  ⚠️  You must now force-push: "
-                            "git push --force origin main",
-                            fg="yellow",
+                    click.secho("  ✅ Media purged from git history", fg="green")
+
+                    # Determine mirror mode BEFORE restoring remotes
+                    mirror_reset_mode = os.environ.get("MIRROR_RESET_MODE", "leader")
+
+                    # Re-add remotes — but skip mirror remotes in isolated mode
+                    mirror_remote_names = set()
+                    if mirror_reset_mode == "isolated":
+                        # Figure out which remotes are mirrors so we can skip them
+                        from ..mirror.manager import MirrorManager
+                        try:
+                            mm = MirrorManager(root)
+                            mirror_remote_names = {m.id for m in mm.list_mirrors()}
+                        except Exception:
+                            pass  # No mirrors configured
+
+                    for name, url in remote_urls.items():
+                        if name in mirror_remote_names:
+                            click.echo(f"    Skipped mirror remote: {name} (isolated mode)")
+                            continue
+                        _sp.run(
+                            ["git", "remote", "add", name, url],
+                            cwd=str(root), capture_output=True, text=True, timeout=10,
                         )
+                        click.echo(f"    Restored remote: {name} → {url}")
+
+                    # Auto force-push to origin
+                    if "origin" in remote_urls:
+                        click.echo("    Force-pushing to origin...")
+                        push_result = _sp.run(
+                            ["git", "push", "--force", "origin", "main"],
+                            cwd=str(root), capture_output=True, text=True, timeout=120,
+                        )
+                        if push_result.returncode == 0:
+                            click.secho("  ✅ Force-pushed to origin", fg="green")
+                        else:
+                            click.secho(
+                                f"  ❌ Force-push failed: {push_result.stderr.strip()}\n"
+                                "     Run manually: git push --force origin main",
+                                fg="red",
+                            )
                     else:
                         click.secho(
-                            f"  ❌ git filter-repo failed: {filter_result.stderr.strip()}",
-                            fg="red",
+                            "  ⚠️  No origin remote — skipping push. Re-add and force-push manually.",
+                            fg="yellow",
                         )
 
-        # ── Mirror cascade protection (silent) ───────────────────
-        #    When MIRROR_RESET_MODE is 'isolated' (default), write a
-        #    one-shot skip file. git_sync.push_to_mirror reads it and
-        #    skips the next code push to the mirror. The admin panel
-        #    knows nothing about this — the attacker sees a normal
-        #    factory reset success message.
-        mirror_reset_mode = os.environ.get("MIRROR_RESET_MODE", "isolated")
+                    # In leader mode, also force-push to all mirror remotes
+                    if mirror_reset_mode == "leader":
+                        for name, url in remote_urls.items():
+                            if name == "origin":
+                                continue  # Already pushed
+                            click.echo(f"    Force-pushing to mirror: {name}...")
+                            push_result = _sp.run(
+                                ["git", "push", "--force", name, "main"],
+                                cwd=str(root), capture_output=True, text=True, timeout=120,
+                            )
+                            if push_result.returncode == 0:
+                                click.secho(f"  ✅ Force-pushed to {name}", fg="green")
+                            else:
+                                click.secho(
+                                    f"  ⚠️  Force-push to {name} failed: {push_result.stderr.strip()}",
+                                    fg="yellow",
+                                )
+
+        # ── Mirror cascade protection ─────────────────────────────
+        #    When MIRROR_RESET_MODE is 'isolated', disable mirroring
+        #    entirely so no future sync can propagate the reset to
+        #    the mirror. The mirror keeps running independently.
+        #    User must re-enable MIRROR_ENABLED=true when ready.
+        #    Default is 'leader' — reset propagates to mirrors.
+        mirror_reset_mode = os.environ.get("MIRROR_RESET_MODE", "leader")
         if mirror_reset_mode == "isolated":
-            skip_file = root / "state" / ".skip_mirror_code_push"
-            skip_file.parent.mkdir(parents=True, exist_ok=True)
-            skip_file.touch()
+            # Disable mirroring in .env
+            env_path = root / ".env"
+            if env_path.exists():
+                lines = env_path.read_text().splitlines()
+                new_lines = []
+                found = False
+                for line in lines:
+                    if line.strip().startswith("MIRROR_ENABLED"):
+                        new_lines.append("MIRROR_ENABLED=false")
+                        found = True
+                    else:
+                        new_lines.append(line)
+                if not found:
+                    new_lines.append("MIRROR_ENABLED=false")
+                env_path.write_text("\n".join(new_lines) + "\n")
+            click.secho(
+                "  🔒 Mirror disabled (isolated mode) — re-enable manually when ready",
+                fg="yellow",
+            )
     else:
         # Simple reset - just reset escalation state
         state = load_state(state_path)
@@ -504,3 +612,29 @@ def trigger_release(
     else:
         # Output token for client-side fake success
         click.echo(f"{client_token}")
+
+
+@click.command()
+@click.option("--overwrite", is_flag=True, help="Overwrite existing scaffold articles")
+@click.pass_context
+def scaffold(ctx: click.Context, overwrite: bool) -> None:
+    """Regenerate default articles (How It Works, Full Disclosure Statement).
+
+    By default, only creates articles that don't already exist.
+    Use --overwrite to replace existing ones.
+    """
+    from ..content.scaffold import generate_scaffold
+
+    root = ctx.obj["root"]
+    result = generate_scaffold(root, overwrite=overwrite)
+
+    for slug in result["created"]:
+        click.secho(f"  ✅ Created: {slug}", fg="green")
+    for slug in result["skipped"]:
+        click.echo(f"  ⏭️  Skipped: {slug} (already exists)")
+
+    total = len(result["created"])
+    if total:
+        click.secho(f"\n📄 {total} scaffold article(s) created", fg="green")
+    else:
+        click.echo("\n📄 No articles created (all exist already)")

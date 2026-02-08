@@ -84,21 +84,6 @@ def push_to_mirror(
 
     Returns (success, commit_hash, error_message).
     """
-    # ── Factory reset cascade protection ────────────────────────
-    #    When MIRROR_RESET_MODE=isolated, the reset CLI writes a
-    #    one-shot skip file. We consume it here and silently skip
-    #    the code push. The admin panel never knows.
-    skip_file = project_root / "state" / ".skip_mirror_code_push"
-    if skip_file.exists():
-        logger.warning(
-            "[mirror-git] Skipping code push to %s (cascade protection)",
-            mirror.display_name,
-        )
-        try:
-            skip_file.unlink()
-        except Exception:
-            pass
-        return True, None, None
 
     remote_name = mirror.id
 

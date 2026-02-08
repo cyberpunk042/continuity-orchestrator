@@ -36,6 +36,17 @@ articles:
     min_stage: FULL
     include_in_nav: true
     pin_to_top: false
+- slug: full_disclosure
+  title: Full Disclosure Statement
+  visibility:
+    min_stage: FULL
+    include_in_nav: true
+    pin_to_top: false
+  meta:
+    description: Template disclosure document
+    author: System
+    tags:
+    - disclosure
 defaults:
   visibility:
     min_stage: FULL
@@ -44,22 +55,22 @@ stages:
   OK:
     show_countdown: false
   REMIND_1:
-    banner: '⏰ Reminder: Deadline approaching'
+    banner: "\u23F0 Reminder: Deadline approaching"
     banner_class: warning
     show_countdown: true
   REMIND_2:
-    banner: '⚠️ Final warning: Action required'
+    banner: "\u26A0\uFE0F Final warning: Action required"
     banner_class: warning
     show_countdown: true
   PRE_RELEASE:
-    banner: 🔴 Pre-release mode active
+    banner: "\U0001F534 Pre-release mode active"
     banner_class: alert
     show_countdown: true
   PARTIAL:
-    banner: 📢 Partial disclosure in effect
+    banner: "\U0001F4E2 Partial disclosure in effect"
     banner_class: critical
     show_countdown: true
   FULL:
-    banner: 🚨 Full disclosure mode
+    banner: "\U0001F6A8 Full disclosure mode"
     banner_class: critical
     show_countdown: false

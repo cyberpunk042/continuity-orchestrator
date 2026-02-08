@@ -419,3 +419,151 @@ def _secure_delete(path: Path):
             path.unlink()
         except Exception:
             pass
+
+
+# ── Exportable vault (portable encrypted .env) ──────────────
+
+EXPORT_FORMAT = "continuity-vault-export-v1"
+EXPORT_KDF_ITERATIONS = 600_000  # Higher for offline attacks
+
+
+def export_vault_file(passphrase: str) -> dict:
+    """
+    Encrypt the .env contents into a downloadable vault envelope.
+
+    Different from lock_vault: this creates a portable file for backup,
+    the original .env stays untouched.
+
+    Args:
+        passphrase: User-chosen password (min 8 chars).
+
+    Returns:
+        Dict envelope ready to serialize as JSON.
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from datetime import datetime, timezone
+
+    if not passphrase or len(passphrase) < 8:
+        raise ValueError("Password must be at least 8 characters")
+
+    env_path = _env_path()
+    if not env_path.exists():
+        raise ValueError("No .env file found — nothing to export")
+
+    plaintext = env_path.read_bytes()
+
+    salt = os.urandom(SALT_BYTES)
+    iv = os.urandom(IV_BYTES)
+
+    # Use higher iteration count for exportable files (offline attack risk)
+    import hashlib
+    key = hashlib.pbkdf2_hmac(
+        "sha256", passphrase.encode("utf-8"), salt,
+        EXPORT_KDF_ITERATIONS, dklen=KEY_BYTES,
+    )
+
+    aesgcm = AESGCM(key)
+    ct_and_tag = aesgcm.encrypt(iv, plaintext, None)
+    ciphertext = ct_and_tag[:-TAG_BYTES]
+    tag = ct_and_tag[-TAG_BYTES:]
+
+    return {
+        "format": EXPORT_FORMAT,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "kdf": "pbkdf2-sha256",
+        "kdf_iterations": EXPORT_KDF_ITERATIONS,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "iv": base64.b64encode(iv).decode("ascii"),
+        "tag": base64.b64encode(tag).decode("ascii"),
+        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+    }
+
+
+def import_vault_file(vault_data: dict, passphrase: str, *, dry_run: bool = False) -> dict:
+    """
+    Decrypt an exported vault and optionally write to .env.
+
+    Args:
+        vault_data: Parsed JSON envelope.
+        passphrase: Password used to encrypt.
+        dry_run: If True, just show diff without writing.
+
+    Returns:
+        {"success": True, "changes": [...], "key_count": int}
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    import hashlib
+
+    fmt = vault_data.get("format")
+    if fmt != EXPORT_FORMAT:
+        raise ValueError(f"Unknown vault format: {fmt}")
+
+    try:
+        salt = base64.b64decode(vault_data["salt"])
+        iv = base64.b64decode(vault_data["iv"])
+        tag = base64.b64decode(vault_data["tag"])
+        ciphertext = base64.b64decode(vault_data["ciphertext"])
+        iterations = vault_data.get("kdf_iterations", EXPORT_KDF_ITERATIONS)
+    except (KeyError, ValueError) as e:
+        raise ValueError(f"Invalid vault envelope: {e}")
+
+    key = hashlib.pbkdf2_hmac(
+        "sha256", passphrase.encode("utf-8"), salt,
+        iterations, dklen=KEY_BYTES,
+    )
+
+    aesgcm = AESGCM(key)
+    try:
+        plaintext = aesgcm.decrypt(iv, ciphertext + tag, None)
+    except Exception:
+        raise ValueError("Wrong password or corrupted vault file")
+
+    new_content = plaintext.decode("utf-8")
+    new_env = _parse_env_lines(new_content)
+
+    # Diff against current .env
+    env_path = _env_path()
+    current_env = {}
+    if env_path.exists():
+        current_env = _parse_env_lines(env_path.read_text("utf-8"))
+
+    changes = []
+    all_keys = sorted(set(list(new_env.keys()) + list(current_env.keys())))
+    for k in all_keys:
+        if k in new_env and k not in current_env:
+            changes.append({"key": k, "action": "added"})
+        elif k in new_env and k in current_env:
+            if new_env[k] != current_env[k]:
+                changes.append({"key": k, "action": "changed"})
+            else:
+                changes.append({"key": k, "action": "unchanged"})
+        else:
+            changes.append({"key": k, "action": "kept"})
+
+    if not dry_run:
+        env_path.write_text(new_content, encoding="utf-8")
+        logger.info(f"Vault imported — {len(new_env)} keys written to .env")
+
+    return {
+        "success": True,
+        "changes": changes,
+        "key_count": len(new_env),
+    }
+
+
+def _parse_env_lines(content: str) -> dict:
+    """Parse .env content into key→value dict."""
+    result = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip()
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+            v = v[1:-1]
+        result[k] = v
+    return result

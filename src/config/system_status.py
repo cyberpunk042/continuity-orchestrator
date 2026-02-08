@@ -218,7 +218,7 @@ SECRET_DEFINITIONS = {
     "MIRROR_1_REPO": {"required_for": [], "guidance": "Backup repo: backup-user/repo-name"},
     "MIRROR_1_TOKEN": {"required_for": ["mirror"], "guidance": "PAT from backup GitHub account (repo + workflow scopes)"},
     "MIRROR_1_RENEWAL_TRIGGER_TOKEN": {"required_for": [], "guidance": "PAT from backup account with Actions scope (for one-click renewal on mirror)"},
-    "MIRROR_RESET_MODE": {"required_for": [], "guidance": "Factory reset cross-repo behavior: isolated (default), leader, or follower"},
+    "MIRROR_RESET_MODE": {"required_for": [], "guidance": "Factory reset cross-repo behavior: leader (default — propagate reset), isolated (protect mirrors), or follower"},
 }
 
 

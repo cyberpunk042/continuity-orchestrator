@@ -37,7 +37,7 @@ from .cli.site import build_site
 from .cli.mirror import mirror_status, mirror_sync, mirror_clean
 from .cli.config import check_config, config_status, generate_config
 from .cli.ops import health, metrics_cmd, retry_queue_cmd, circuit_breakers_cmd
-from .cli.core import reset, renew, trigger_release
+from .cli.core import reset, renew, trigger_release, scaffold
 from .cli.init import init
 from .cli.content import content_keygen, content_status, content_encrypt, content_decrypt
 from .cli.backup import backup_export, backup_restore, backup_import, backup_list
@@ -169,6 +169,7 @@ def set_deadline(ctx: click.Context, hours: float, state_file: str) -> None:
 cli.add_command(reset)
 cli.add_command(renew)
 cli.add_command(trigger_release)
+cli.add_command(scaffold)
 
 # Site commands — extracted to src/cli/site.py
 cli.add_command(build_site)

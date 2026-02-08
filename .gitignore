@@ -49,6 +49,7 @@ backups/
 state/.mirror_sync_lock
 state/.skip_mirror_code_push
 .env.vault
+*.vault
 
 # Media — encrypted files and manifest are tracked in git
 # Plaintext media (images, PDFs, videos) must NEVER be committed

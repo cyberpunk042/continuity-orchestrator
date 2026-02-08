@@ -87,3 +87,55 @@ def api_vault_config():
             return jsonify({"error": "Invalid value for auto_lock_minutes"}), 400
 
     return jsonify({"error": "No config to update"}), 400
+
+
+@vault_bp.route("/vault/export", methods=["POST"])
+def api_vault_export():
+    """Export .env as an encrypted vault file.
+
+    Accepts: {"password": "..."}
+    Returns: vault envelope JSON (downloadable).
+    """
+    from .vault import export_vault_file
+
+    body = request.get_json()
+    if not body or not body.get("password"):
+        return jsonify({"error": "Password is required"}), 400
+
+    try:
+        envelope = export_vault_file(body["password"])
+        return jsonify({"success": True, "vault": envelope})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Export failed: {e}"}), 500
+
+
+@vault_bp.route("/vault/import", methods=["POST"])
+def api_vault_import():
+    """Import an encrypted vault file to restore .env.
+
+    Accepts: {"vault": {...envelope...}, "password": "...", "dry_run": false}
+    Returns: {"success": true, "changes": [...], "key_count": N}
+    """
+    from .vault import import_vault_file
+
+    body = request.get_json()
+    if not body:
+        return jsonify({"error": "No JSON body"}), 400
+    if not body.get("vault"):
+        return jsonify({"error": "Vault data is required"}), 400
+    if not body.get("password"):
+        return jsonify({"error": "Password is required"}), 400
+
+    try:
+        result = import_vault_file(
+            body["vault"],
+            body["password"],
+            dry_run=body.get("dry_run", False),
+        )
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Import failed: {e}"}), 500

@@ -349,12 +349,24 @@ def api_git_sync():
                 else:
                     msg = "Pushed existing commits to remote"
             else:
-                return jsonify({
-                    "success": False,
-                    "error": result.stderr.strip() or "Push failed",
-                    "hint": "Check authentication: gh auth status",
-                    "steps": steps,
-                })
+                # Try force-push fallback
+                error_text = result.stderr.strip() or ""
+                if "rejected" in error_text or "non-fast-forward" in error_text:
+                    logger.warning("[git-sync] Normal push rejected, retrying with force-with-lease")
+                    result = _run(
+                        ["git", "push", "--force-with-lease"],
+                        "git push (force)",
+                        timeout=120,
+                    )
+                if result.returncode != 0:
+                    return jsonify({
+                        "success": False,
+                        "error": result.stderr.strip() or "Push failed",
+                        "hint": "Check authentication: gh auth status",
+                        "steps": steps,
+                    })
+                pushed = result.stderr.strip() or result.stdout.strip()
+                msg = "Force-pushed to remote (post-reset)"
             # Only trigger mirror sync if something was actually pushed
             mirror_triggered = False
             if "Everything up-to-date" not in (pushed or ""):
@@ -377,12 +389,23 @@ def api_git_sync():
         # Step 6: Push (should be clean since we just pulled)
         result = _run(["git", "push"], "git push", timeout=120)
         if result.returncode != 0:
-            return jsonify({
-                "success": False,
-                "error": result.stderr.strip() or "Push failed",
-                "hint": "Check authentication: gh auth status",
-                "steps": steps,
-            })
+            # Normal push failed — may happen after factory reset with history
+            # rewrite. Retry with --force-with-lease (safer than --force).
+            error_text = result.stderr.strip() or ""
+            if "rejected" in error_text or "non-fast-forward" in error_text:
+                logger.warning("[git-sync] Normal push rejected, retrying with force-with-lease")
+                result = _run(
+                    ["git", "push", "--force-with-lease"],
+                    "git push (force)",
+                    timeout=120,
+                )
+            if result.returncode != 0:
+                return jsonify({
+                    "success": False,
+                    "error": result.stderr.strip() or "Push failed",
+                    "hint": "Check authentication: gh auth status",
+                    "steps": steps,
+                })
 
         logger.info("[git-sync] ✓ Sync complete")
 
