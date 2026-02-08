@@ -57,7 +57,7 @@ jobs:
       - name: Install minimal dependencies
         run: |
           python -m pip install --upgrade pip --quiet
-          pip install pyyaml pydantic jinja2 python-dateutil python-dotenv click --quiet
+          pip install pyyaml pydantic jinja2 python-dateutil python-dotenv click cryptography --quiet
           pip install -e . --no-deps --quiet
       
       - name: Build site
