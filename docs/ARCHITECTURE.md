@@ -146,15 +146,22 @@ Every tick writes to an append-only NDJSON ledger with:
 
 | Module | Purpose |
 |--------|---------|
-| `server.py` | Flask app factory, startup |
+| `server.py` | Flask app factory, startup, vault shutdown hook |
 | `helpers.py` | Shared utilities (_fresh_env, _gh_repo_flag) |
+| `vault.py` | .env vault — encrypt/decrypt, auto-lock, rate limiting |
 | `routes_core.py` | Dashboard, run command, status API |
 | `routes_env.py` | .env read/write API |
 | `routes_secrets.py` | GitHub secrets/variables sync |
 | `routes_git.py` | Git status, sync, fetch |
 | `routes_mirror.py` | Mirror sync/clean with streaming |
 | `routes_archive.py` | Internet Archive (Wayback) |
-| `templates/` | Jinja2 partials (8 HTML + 12 JS scripts) |
+| `routes_content.py` | Content/article CRUD, manifest updates |
+| `routes_vault.py` | Vault lock/unlock/config API |
+| `templates/` | Jinja2 partials (10 HTML + 14 JS scripts) — see `templates/README.md` |
+
+> **Template convention:** All `scripts/*.html` files are raw JS inside a shared
+> `<script>` block opened by `_globals.html` and closed by `_boot.html`.
+> Never add `<script>` tags in script files. See `src/admin/templates/README.md`.
 
 ### Adapters (`src/adapters/`)
 

@@ -158,14 +158,33 @@ def _cancel_auto_lock_timer():
         _auto_lock_timer = None
 
 
-def touch_activity():
+def touch_activity(request_path: str = "", request_method: str = "GET"):
     """Reset the auto-lock timer on user activity.
 
-    Call this from the request middleware to track activity.
-    Only resets if vault is unlocked and passphrase is in memory.
+    Only resets for user-initiated requests, NOT background polling.
+    Call this from the request middleware.
     """
-    if _session_passphrase is not None:
-        _start_auto_lock_timer()
+    if _session_passphrase is None:
+        return
+
+    # Ignore background polling endpoints — these fire every 10-30s
+    # and would prevent the timer from ever expiring
+    _POLLING_ENDPOINTS = {
+        "/api/status",
+        "/api/git/status",
+        "/api/env/read",
+        "/api/vault/status",
+        "/api/git/fetch",
+    }
+
+    if request_path in _POLLING_ENDPOINTS and request_method in ("GET", "POST"):
+        return
+
+    # Also ignore static files
+    if request_path.startswith("/static/"):
+        return
+
+    _start_auto_lock_timer()
 
 
 # ── Vault operations ────────────────────────────────────────

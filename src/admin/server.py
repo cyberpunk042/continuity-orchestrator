@@ -70,9 +70,9 @@ def create_app() -> Flask:
         from flask import request
         request._start_time = time.time()
 
-        # Track activity for vault auto-lock
+        # Track activity for vault auto-lock (excludes polling endpoints)
         from .vault import touch_activity
-        touch_activity()
+        touch_activity(request.path, request.method)
 
     @app.after_request
     def log_request_end(response):
