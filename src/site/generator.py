@@ -402,7 +402,7 @@ class SiteGenerator:
                     renderer = EditorJSRenderer()
                     content_html = renderer.render(article_data)
                 except ValueError as e:
-                    # Encrypted but no key — skip gracefully
+                    # Encrypted but no key available
                     logger.warning(f"Skipping encrypted article '{slug}': {e}")
                     content_html = "<p>🔒 This article is encrypted. Decryption key required.</p>"
                 except Exception as e:
