@@ -40,6 +40,7 @@ from .cli.ops import health, metrics_cmd, retry_queue_cmd, circuit_breakers_cmd
 from .cli.core import reset, renew, trigger_release
 from .cli.init import init
 from .cli.content import content_keygen, content_status, content_encrypt, content_decrypt
+from .cli.backup import backup_export, backup_restore, backup_import, backup_list
 
 # Initialize logging
 setup_logging()
@@ -208,6 +209,12 @@ cli.add_command(test_group)
 cli.add_command(export_secrets)
 cli.add_command(explain_stages)
 cli.add_command(simulate_timeline)
+
+# Backup commands — extracted to src/cli/backup.py
+cli.add_command(backup_export)
+cli.add_command(backup_restore)
+cli.add_command(backup_import)
+cli.add_command(backup_list)
 
 
 if __name__ == "__main__":

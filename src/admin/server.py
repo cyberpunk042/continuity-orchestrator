@@ -27,6 +27,7 @@ from .routes_secrets import secrets_bp
 from .routes_content import content_bp
 from .routes_media import media_bp
 from .routes_vault import vault_bp
+from .routes_backup import backup_bp
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ def create_app() -> Flask:
     app.register_blueprint(content_bp, url_prefix="/api/content")       # /api/content/*
     app.register_blueprint(media_bp, url_prefix="/api/content/media")   # /api/content/media/*
     app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
+    app.register_blueprint(backup_bp, url_prefix="/api/backup")          # /api/backup/*
 
     # ── Error Handlers ────────────────────────────────────────────
 

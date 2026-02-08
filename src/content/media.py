@@ -247,24 +247,34 @@ class MediaManifest:
 
     def next_id(self, prefix: str = "media") -> str:
         """
-        Generate the next sequential ID with the given prefix.
+        Generate a globally unique media ID with the given prefix.
 
+        Format: {prefix}_{YYYYMMDD}_{hex4}
         Examples:
-            next_id("img")  → "img_001" (if no img_* entries exist)
-            next_id("img")  → "img_004" (if img_001, img_002, img_003 exist)
-            next_id("doc")  → "doc_001"
-        """
-        existing_nums = []
-        for entry in self.entries:
-            if entry.id.startswith(f"{prefix}_"):
-                try:
-                    num = int(entry.id[len(prefix) + 1:])
-                    existing_nums.append(num)
-                except ValueError:
-                    pass
+            next_id("img")  → "img_20260208_a3f1"
+            next_id("doc")  → "doc_20260208_0e7b"
 
-        next_num = (max(existing_nums) + 1) if existing_nums else 1
-        return f"{prefix}_{next_num:03d}"
+        The timestamp makes IDs sortable and human-readable.
+        The 4-char hex suffix (65,536 combinations) prevents
+        collisions for files uploaded on the same day.
+
+        If a collision with an existing ID occurs (extremely unlikely),
+        we retry with a new random suffix.
+        """
+        import secrets as _secrets
+
+        date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+        existing_ids = {e.id for e in self.entries}
+
+        for _ in range(100):  # safety — should never need more than 1
+            suffix = _secrets.token_hex(2)  # 4 hex chars
+            candidate = f"{prefix}_{date_str}_{suffix}"
+            if candidate not in existing_ids:
+                return candidate
+
+        # Fallback: use full timestamp + longer random (should never reach here)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        return f"{prefix}_{ts}_{_secrets.token_hex(4)}"
 
     # ── Media directory ──────────────────────────────────────────
 

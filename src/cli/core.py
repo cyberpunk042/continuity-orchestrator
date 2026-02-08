@@ -23,6 +23,7 @@ import click
 @click.option("--hours", default=48, type=int, help="Initial deadline hours for full reset")
 @click.option("--include-content", is_flag=True, help="Also wipe all articles and media (requires --full)")
 @click.option("--purge-history", is_flag=True, help="Purge media from git history (requires --include-content)")
+@click.option("--decrypt-content", is_flag=True, help="Decrypt content in backup (requires --backup + --include-content)")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def reset(
@@ -33,6 +34,7 @@ def reset(
     hours: int,
     include_content: bool,
     purge_history: bool,
+    decrypt_content: bool,
     yes: bool,
 ) -> None:
     """Reset state to OK or perform full factory reset.
@@ -80,27 +82,19 @@ def reset(
 
     # Backup existing state if requested
     if backup and state_path.exists():
-        backup_dir.mkdir(exist_ok=True)
-        timestamp = now.strftime("%Y%m%dT%H%M%S")
+        from .backup import create_backup_archive
 
-        # Backup state
-        backup_state = backup_dir / f"state_{timestamp}.json"
-        shutil.copy(state_path, backup_state)
-        click.echo(f"  Backed up state to: {backup_state}")
-
-        # Backup audit log
-        if full and audit_path.exists():
-            backup_audit = backup_dir / f"audit_{timestamp}.ndjson"
-            shutil.copy(audit_path, backup_audit)
-            click.echo(f"  Backed up audit to: {backup_audit}")
-
-        # Backup content if it's about to be wiped
-        if include_content:
-            content_backup = backup_dir / f"content_{timestamp}"
-            content_src = root / "content"
-            if content_src.exists():
-                shutil.copytree(content_src, content_backup)
-                click.echo(f"  Backed up content to: {content_backup}")
+        archive_path, manifest = create_backup_archive(
+            root,
+            include_state=True,
+            include_audit=full and audit_path.exists(),
+            include_articles=include_content,
+            include_media=include_content,
+            decrypt_content=decrypt_content and include_content,
+            trigger="factory_reset",
+        )
+        size_kb = archive_path.stat().st_size / 1024
+        click.echo(f"  📦 Backed up to: {archive_path.name} ({size_kb:.1f} KB)")
 
     if full:
         # Full factory reset - create new state

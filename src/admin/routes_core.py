@@ -258,6 +258,7 @@ def api_factory_reset():
     hours = data.get("hours", 48)
     include_content = data.get("include_content", False)
     purge_history = data.get("purge_history", False)
+    decrypt_content = data.get("decrypt_content", False)
 
     cmd = ["python", "-m", "src.main", "reset", "--full", "-y", "--hours", str(hours)]
     if backup:
@@ -268,6 +269,8 @@ def api_factory_reset():
         cmd.append("--include-content")
     if purge_history:
         cmd.append("--purge-history")
+    if decrypt_content:
+        cmd.append("--decrypt-content")
 
     # History purge via git filter-repo may take longer
     timeout = 120 if purge_history else 30
