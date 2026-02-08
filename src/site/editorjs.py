@@ -282,28 +282,52 @@ class ContentManager:
         return Path(__file__).parent.parent.parent / "content" / "articles"
     
     def list_articles(self) -> List[Dict[str, Any]]:
-        """List all available articles."""
+        """List all available articles, detecting encrypted ones."""
         if not self.content_dir.exists():
             return []
+        
+        from ..content.crypto import is_encrypted, get_encryption_key, load_article
         
         articles = []
         for path in sorted(self.content_dir.glob("*.json")):
             try:
-                content = json.loads(path.read_text())
+                raw = json.loads(path.read_text())
+                encrypted = is_encrypted(raw)
                 
-                # Extract title from first header block
+                # Extract title and metadata
                 title = path.stem.replace("_", " ").title()
-                for block in content.get("blocks", []):
-                    if block.get("type") == "header":
-                        title = block.get("data", {}).get("text", title)
-                        break
+                time_val = None
+                version = None
+                
+                if encrypted:
+                    # Try to decrypt for title extraction if key is available
+                    key = get_encryption_key()
+                    if key:
+                        try:
+                            content = load_article(path, passphrase=key)
+                            time_val = content.get("time")
+                            version = content.get("version")
+                            for block in content.get("blocks", []):
+                                if block.get("type") == "header":
+                                    title = block.get("data", {}).get("text", title)
+                                    break
+                        except Exception:
+                            pass  # Use slug-based title
+                else:
+                    time_val = raw.get("time")
+                    version = raw.get("version")
+                    for block in raw.get("blocks", []):
+                        if block.get("type") == "header":
+                            title = block.get("data", {}).get("text", title)
+                            break
                 
                 articles.append({
                     "slug": path.stem,
                     "title": title,
                     "path": path,
-                    "time": content.get("time"),
-                    "version": content.get("version"),
+                    "time": time_val,
+                    "version": version,
+                    "encrypted": encrypted,
                 })
             except Exception:
                 continue
@@ -311,12 +335,18 @@ class ContentManager:
         return articles
     
     def get_article(self, slug: str) -> Optional[Dict[str, Any]]:
-        """Get a single article by slug."""
+        """Get a single article by slug, decrypting if needed."""
         path = self.content_dir / f"{slug}.json"
         if not path.exists():
             return None
         
-        content = json.loads(path.read_text())
+        from ..content.crypto import is_encrypted, load_article
+        
+        raw = json.loads(path.read_text())
+        encrypted = is_encrypted(raw)
+        
+        # Decrypt if needed (load_article handles this transparently)
+        content = load_article(path)
         html = self.renderer.render(content)
         
         # Extract title
@@ -332,6 +362,7 @@ class ContentManager:
             "html": html,
             "raw": content,
             "time": content.get("time"),
+            "encrypted": encrypted,
         }
     
     def render_article(self, slug: str) -> Optional[str]:

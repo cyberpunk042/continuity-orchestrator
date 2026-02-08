@@ -1,0 +1,133 @@
+<!-- Content Tab -->
+<div id="tab-content" class="tab-content">
+    <header class="header">
+        <h1>📝 Content</h1>
+        <p class="subtitle">Author, encrypt, and manage article content</p>
+    </header>
+
+    <!-- Encryption key status bar -->
+    <div id="content-key-bar" class="card full-width" style="margin-bottom: 1.5rem; padding: 0.75rem 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <div id="content-key-status" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                <span class="loading">Checking encryption key</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn" id="content-gen-key-btn" onclick="contentGenerateKey()"
+                    style="padding: 0.35rem 0.75rem; font-size: 0.82rem;" title="Generate a new encryption key">
+                    🔑 Generate Key
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 340px 1fr;">
+        <!-- Article list sidebar -->
+        <div class="card" id="content-list-card" style="align-self: start;">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                <span><span class="icon">📄</span> Articles</span>
+                <button class="btn" onclick="contentNewArticle()" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
+                    title="Create new article">
+                    ➕ New
+                </button>
+            </h2>
+            <div id="content-article-list">
+                <div class="loading">Loading articles</div>
+            </div>
+        </div>
+
+        <!-- Editor panel -->
+        <div class="card full-width" id="content-editor-card"
+            style="display: flex; flex-direction: column; min-height: 500px;">
+            <h2 id="content-editor-title" style="display: flex; align-items: center; justify-content: space-between;">
+                <span><span class="icon">✏️</span> <span id="content-editor-slug">Select an article</span></span>
+                <div id="content-editor-badges" style="display: flex; gap: 0.35rem;"></div>
+            </h2>
+
+            <!-- No article selected state -->
+            <div id="content-editor-empty"
+                style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-dim);">
+                <div style="text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.3;">📝</div>
+                    <p>Select an article from the list, or create a new one.</p>
+                </div>
+            </div>
+
+            <!-- Editor.js container (hidden until article selected) -->
+            <div id="content-editorjs-wrap" style="display: none; flex: 1;">
+                <div id="content-editorjs"
+                    style="border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; min-height: 350px; background: var(--bg-input);">
+                </div>
+            </div>
+
+            <!-- Editor controls (hidden until article selected) -->
+            <div id="content-editor-controls"
+                style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <div
+                    style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+                    <!-- Left: encryption toggle -->
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <label
+                            style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                            <input type="checkbox" id="content-encrypt-toggle" style="accent-color: var(--accent);">
+                            <span>🔒 Save encrypted</span>
+                        </label>
+                        <span id="content-encrypt-note" style="font-size: 0.78rem; color: var(--text-dim);"></span>
+                    </div>
+                    <!-- Right: action buttons -->
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" onclick="contentDiscard()" style="padding: 0.45rem 0.9rem;">
+                            ↩️ Discard
+                        </button>
+                        <button class="btn primary" onclick="contentSave()" id="content-save-btn"
+                            style="padding: 0.45rem 0.9rem;">
+                            💾 Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metadata panel (hidden until article selected) -->
+            <div id="content-meta-panel"
+                style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                <details style="font-size: 0.85rem;">
+                    <summary style="color: var(--text-dim); cursor: pointer; user-select: none;">⚙️ Article Settings
+                    </summary>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+                        <div>
+                            <label class="form-label" style="font-size: 0.78rem;">Minimum Stage</label>
+                            <select class="form-input" id="content-meta-stage" style="padding: 0.45rem;">
+                                <option value="OK">OK (always visible)</option>
+                                <option value="WARNING">WARNING</option>
+                                <option value="CRITICAL">CRITICAL</option>
+                                <option value="FINAL">FINAL</option>
+                                <option value="FULL" selected>FULL (disclosure only)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 0.78rem;">Navigation</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.3rem;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+                                    <input type="checkbox" id="content-meta-nav" checked
+                                        style="accent-color: var(--accent);">
+                                    Include in nav
+                                </label>
+                                <label
+                                    style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+                                    <input type="checkbox" id="content-meta-pin" style="accent-color: var(--accent);">
+                                    Pin to top
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status terminal -->
+    <div class="card full-width" style="margin-top: 1.5rem;">
+        <h2><span class="icon">📟</span> Output</h2>
+        <pre class="terminal" id="content-terminal">Ready.</pre>
+    </div>
+</div>

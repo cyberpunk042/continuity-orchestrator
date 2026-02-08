@@ -1,73 +1,81 @@
-        // Tab switching
-        function switchTab(tabId, subStep) {
-            // Parse compound tab IDs like 'wizard/email'
-            if (tabId.includes('/')) {
-                const parts = tabId.split('/');
-                tabId = parts[0];
-                subStep = parts[1];
-            }
+// Tab switching
+function switchTab(tabId, subStep) {
+// Parse compound tab IDs like 'wizard/email'
+if (tabId.includes('/')) {
+const parts = tabId.split('/');
+tabId = parts[0];
+subStep = parts[1];
+}
 
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-            const tabBtn = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
-            if (tabBtn) tabBtn.classList.add('active');
-            const tabEl = document.getElementById(`tab-${tabId}`);
-            if (tabEl) tabEl.classList.add('active');
+const tabBtn = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
+if (tabBtn) tabBtn.classList.add('active');
+const tabEl = document.getElementById(`tab-${tabId}`);
+if (tabEl) tabEl.classList.add('active');
 
-            // Update URL hash
-            const hash = subStep ? `${tabId}/${subStep}` : tabId;
-            history.replaceState(null, '', `#${hash}`);
+// Update URL hash
+const hash = subStep ? `${tabId}/${subStep}` : tabId;
+history.replaceState(null, '', `#${hash}`);
 
-            // Load data for the tab
-            if (tabId === 'secrets') {
-                if (!secretsLoaded) loadSecretsForm();
-            } else if (tabId === 'wizard') {
-                // Navigate to specific wizard step if provided
-                if (subStep) {
-                    const stepIdx = wizardSteps.findIndex(s => s.id === subStep);
-                    if (stepIdx !== -1) currentWizardStep = stepIdx;
-                }
-                renderWizard();
-            } else if (tabId === 'integrations') {
-                loadIntegrations();
-            } else if (tabId === 'dashboard') {
-                loadStatus();
-            }
-        }
+// Load data for the tab
+if (tabId === 'secrets') {
+if (!secretsLoaded) loadSecretsForm();
+} else if (tabId === 'wizard') {
+// Navigate to specific wizard step if provided
+if (subStep) {
+const stepIdx = wizardSteps.findIndex(s => s.id === subStep);
+if (stepIdx !== -1) currentWizardStep = stepIdx;
+}
+renderWizard();
+} else if (tabId === 'integrations') {
+loadIntegrations();
+} else if (tabId === 'content') {
+if (!contentLoaded) {
+loadEditorScripts(); // Start loading CDN in background
+loadContent();
+}
+} else if (tabId === 'dashboard') {
+loadStatus();
+}
+}
 
-        // Track which tab is active so we can warn about wizard
-        let activeTab = 'dashboard';
+// Track which tab is active so we can warn about wizard
+let activeTab = 'dashboard';
 
-        // Wrap switchTab to warn when leaving wizard with unsaved data
-        const _origSwitchTab = switchTab;
-        switchTab = function (tabId, subStep) {
-            const targetTab = tabId.includes('/') ? tabId.split('/')[0] : tabId;
-            if (activeTab === 'wizard' && targetTab !== 'wizard' && wizardDirty) {
-                if (!confirm('You have unsaved wizard progress. Leave anyway?')) return;
-                wizardDirty = false;  // user confirmed — reset
-            }
-            if (activeTab === 'secrets' && targetTab !== 'secrets' && secretsDirty) {
-                if (!confirm('You have unsaved secret changes. Leave anyway?')) return;
-                // Immediately restore fields to their saved values (no reload needed)
-                document.querySelectorAll('#secrets-form [data-secret-name]').forEach(el => {
-                    el.value = secretsInitialValues[el.dataset.secretName] ?? '';
-                });
-                secretsDirty = false;
-            }
-            activeTab = targetTab;
-            _origSwitchTab(tabId, subStep);
-        };
+// Wrap switchTab to warn when leaving wizard with unsaved data
+const _origSwitchTab = switchTab;
+switchTab = function (tabId, subStep) {
+const targetTab = tabId.includes('/') ? tabId.split('/')[0] : tabId;
+if (activeTab === 'wizard' && targetTab !== 'wizard' && wizardDirty) {
+if (!confirm('You have unsaved wizard progress. Leave anyway?')) return;
+wizardDirty = false; // user confirmed — reset
+}
+if (activeTab === 'secrets' && targetTab !== 'secrets' && secretsDirty) {
+if (!confirm('You have unsaved secret changes. Leave anyway?')) return;
+// Immediately restore fields to their saved values (no reload needed)
+document.querySelectorAll('#secrets-form [data-secret-name]').forEach(el => {
+el.value = secretsInitialValues[el.dataset.secretName] ?? '';
+});
+secretsDirty = false;
+}
+if (activeTab === 'content' && targetTab !== 'content' && contentDirty) {
+if (!confirm('You have unsaved content changes. Leave anyway?')) return;
+contentDirty = false;
+}
+activeTab = targetTab;
+_origSwitchTab(tabId, subStep);
+};
 
-        // Warn before page unload if wizard has unsaved data
-        window.addEventListener('beforeunload', (e) => {
-            if (wizardDirty || secretsDirty) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        });
+// Warn before page unload if wizard has unsaved data
+window.addEventListener('beforeunload', (e) => {
+if (wizardDirty || secretsDirty || contentDirty) {
+e.preventDefault();
+e.returnValue = '';
+}
+});
 
-        function goToWizardStep(stepId) {
-            switchTab('wizard', stepId);
-        }
-
+function goToWizardStep(stepId) {
+switchTab('wizard', stepId);
+}

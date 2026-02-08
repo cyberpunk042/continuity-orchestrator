@@ -392,14 +392,21 @@ class SiteGenerator:
             title = getattr(article_meta, "title", slug)
             description = getattr(article_meta, "description", "")
             
-            # Load article content
+            # Load article content (transparently decrypts encrypted articles)
             content_path = Path(__file__).parent.parent.parent / "content" / "articles" / f"{slug}.json"
             if content_path.exists():
                 try:
+                    from ..content.crypto import load_article
                     from .editorjs import EditorJSRenderer
+                    article_data = load_article(content_path)
                     renderer = EditorJSRenderer()
-                    content_html = renderer.render_file(content_path)
-                except Exception:
+                    content_html = renderer.render(article_data)
+                except ValueError as e:
+                    # Encrypted but no key — skip gracefully
+                    logger.warning(f"Skipping encrypted article '{slug}': {e}")
+                    content_html = "<p>🔒 This article is encrypted. Decryption key required.</p>"
+                except Exception as e:
+                    logger.error(f"Failed to load article '{slug}': {e}")
                     content_html = "<p>Failed to load article content.</p>"
             else:
                 content_html = "<p>Article content not found.</p>"

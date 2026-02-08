@@ -32,6 +32,9 @@ adapters = [
 admin = [
     "flask>=3.0",
 ]
+security = [
+    "cryptography>=42.0",
+]
 
 [project.scripts]
 continuity = "src.main:cli"

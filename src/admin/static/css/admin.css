@@ -920,3 +920,74 @@ body {
     color: var(--text-dim);
     font-size: 0.85rem;
 }
+
+/* Content tab — article list rows */
+.content-article-row:hover {
+    background: var(--bg-hover) !important;
+}
+
+.content-article-row.selected:hover {
+    background: var(--accent-dim) !important;
+}
+
+/* Content tab — responsive layout */
+@media (max-width: 800px) {
+    #tab-content .grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Content tab — Editor.js overrides for dark/light theme */
+#content-editorjs .ce-block__content,
+#content-editorjs .ce-toolbar__content {
+    max-width: 100%;
+}
+
+#content-editorjs .codex-editor {
+    color: var(--text);
+}
+
+#content-editorjs .ce-paragraph,
+#content-editorjs .ce-header,
+#content-editorjs .cdx-quote__text,
+#content-editorjs .cdx-quote__caption {
+    color: var(--text);
+}
+
+#content-editorjs .ce-paragraph[data-placeholder]:empty::before {
+    color: var(--text-dim);
+}
+
+#content-editorjs .ce-toolbar__plus,
+#content-editorjs .ce-toolbar__settings-btn {
+    color: var(--text-dim);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+}
+
+#content-editorjs .ce-toolbar__plus:hover,
+#content-editorjs .ce-toolbar__settings-btn:hover {
+    background: var(--bg-hover);
+}
+
+#content-editorjs .ce-inline-toolbar,
+#content-editorjs .ce-conversion-toolbar,
+#content-editorjs .ce-settings {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+#content-editorjs .ce-inline-toolbar__dropdown:hover,
+#content-editorjs .ce-inline-tool:hover,
+#content-editorjs .ce-settings__button:hover,
+#content-editorjs .ce-conversion-tool:hover {
+    background: var(--bg-hover);
+}
+
+#content-editorjs .cdx-search-field {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+}

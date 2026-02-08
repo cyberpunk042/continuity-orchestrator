@@ -162,6 +162,7 @@ SECRET_DEFINITIONS = {
     "RENEWAL_SECRET": {"required_for": ["renewal"], "guidance": "Code to extend deadline"},
     "RELEASE_SECRET": {"required_for": ["release"], "guidance": "Code to trigger disclosure"},
     "RENEWAL_TRIGGER_TOKEN": {"required_for": ["web_renewal"], "guidance": "GitHub PAT for one-click renewal"},
+    "CONTENT_ENCRYPTION_KEY": {"required_for": ["content_encryption"], "guidance": "Passphrase for encrypting article content (run content-keygen)"},
     
     # Email
     "RESEND_API_KEY": {"required_for": ["email"], "guidance": "Get from https://resend.com/api-keys"},

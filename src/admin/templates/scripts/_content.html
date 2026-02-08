@@ -1,0 +1,504 @@
+// ========================================
+// CONTENT TAB
+// ========================================
+
+let contentLoaded = false;
+let contentArticles = [];
+let contentSelectedSlug = null;
+let contentEditor = null;
+let contentEncryptionAvailable = false;
+let contentOriginalData = null; // For dirty tracking
+let contentDirty = false;
+
+// ── Load content data ───────────────────────────────────
+
+async function loadContent() {
+try {
+// Load articles list
+const resp = await fetch('/api/content/articles');
+const data = await resp.json();
+contentArticles = data.articles || [];
+contentEncryptionAvailable = data.encryption_available;
+
+renderContentKeyBar();
+renderContentList();
+contentLoaded = true;
+} catch (error) {
+document.getElementById('content-article-list').innerHTML =
+`<div style="color: var(--danger); font-size: 0.85rem;">❌ Failed to load: ${error.message}</div>`;
+}
+}
+
+// ── Encryption key status bar ───────────────────────────
+
+function renderContentKeyBar() {
+const el = document.getElementById('content-key-status');
+if (contentEncryptionAvailable) {
+el.innerHTML = `
+<span style="color: var(--accent);">🔑 Encryption key: ✅ Configured</span>`;
+} else {
+el.innerHTML = `
+<span style="color: var(--warning);">🔑 Encryption key: ⚠️ Not set</span>
+<span style="font-size: 0.78rem; color: var(--text-dim);">
+    — set via <a href="#secrets" onclick="switchTab('secrets'); return false;" style="color: var(--info);">Secrets</a>
+    or <a href="#wizard/security" onclick="goToWizardStep('security'); return false;"
+        style="color: var(--info);">Wizard</a>
+</span>`;
+}
+}
+
+async function contentGenerateKey() {
+try {
+const response = await fetch('/api/content/keygen', { method: 'POST' });
+const data = await response.json();
+if (data.error) {
+contentLog(`❌ Failed to generate key: ${data.error}`, true);
+return;
+}
+// Show the key and guide user to save it
+contentLog(
+`🔑 Generated key:\n\n ${data.key}\n\n` +
+`⚠️ This key is NOT saved yet!\n` +
+`Go to 🔐 Secrets → Security → CONTENT_ENCRYPTION_KEY\n` +
+`and paste it there, then Save & Push.`
+);
+// Also copy to clipboard
+try {
+await navigator.clipboard.writeText(data.key);
+contentLog(`\n📋 Key copied to clipboard.`);
+} catch (e) { /* clipboard not available */ }
+} catch (error) {
+contentLog(`❌ Error: ${error.message}`, true);
+}
+}
+
+// ── Article list ────────────────────────────────────────
+
+function renderContentList() {
+const el = document.getElementById('content-article-list');
+
+if (contentArticles.length === 0) {
+el.innerHTML = `
+<div style="text-align: center; padding: 1.5rem 0; color: var(--text-dim);">
+    <div style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.3;">📄</div>
+    <p style="font-size: 0.85rem;">No articles yet</p>
+    <button class="btn primary" onclick="contentNewArticle()" style="margin-top: 0.75rem; font-size: 0.82rem;">
+        ➕ Create your first article
+    </button>
+</div>`;
+return;
+}
+
+let html = '<div style="display: flex; flex-direction: column; gap: 0.25rem;">';
+    for (const art of contentArticles) {
+    const isSelected = art.slug === contentSelectedSlug;
+    const icon = art.encrypted ? '🔒' : '📄';
+    const stageColor = {
+    'OK': 'var(--accent)',
+    'WARNING': 'var(--warning)',
+    'CRITICAL': 'var(--danger)',
+    'FINAL': 'var(--danger)',
+    'FULL': 'var(--danger)',
+    }[art.min_stage] || 'var(--text-dim)';
+
+    html += `
+    <div onclick="contentSelectArticle('${art.slug}')" class="content-article-row ${isSelected ? 'selected' : ''}"
+        style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem;
+                                border-radius: 8px; cursor: pointer; transition: all 0.15s;
+                                background: ${isSelected ? 'var(--accent-dim)' : 'transparent'};
+                                border: 1px solid ${isSelected ? 'rgba(74,222,128,0.3)' : 'transparent'};">
+        <span style="font-size: 1.1rem;">${icon}</span>
+        <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 0.88rem; font-weight: ${isSelected ? '600' : '500'}; 
+                                        color: ${isSelected ? 'var(--accent)' : 'var(--text)'}; 
+                                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${art.title}
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem;">
+                ${art.slug}
+            </div>
+        </div>
+        ${art.min_stage ? `<span style="font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px;
+                            background: ${stageColor}22; color: ${stageColor}; font-weight: 500;">
+            ${art.min_stage}</span>` : ''}
+    </div>`;
+    }
+    html += '</div>';
+el.innerHTML = html;
+}
+
+// ── Select article ──────────────────────────────────────
+
+async function contentSelectArticle(slug) {
+// Warn if dirty
+if (contentDirty && contentSelectedSlug) {
+if (!confirm('You have unsaved changes. Discard and switch article?')) return;
+}
+
+contentSelectedSlug = slug;
+contentDirty = false;
+renderContentList();
+
+// Show loading state in editor
+document.getElementById('content-editor-slug').textContent = slug;
+document.getElementById('content-editor-empty').style.display = 'none';
+document.getElementById('content-editorjs-wrap').style.display = 'block';
+document.getElementById('content-editor-controls').style.display = 'block';
+document.getElementById('content-meta-panel').style.display = 'block';
+document.getElementById('content-editorjs').innerHTML = '<div class="loading">Loading article</div>';
+
+try {
+const resp = await fetch(`/api/content/articles/${slug}`);
+const data = await resp.json();
+
+if (data.error) {
+document.getElementById('content-editorjs').innerHTML =
+`<div style="padding: 1rem; color: var(--danger); font-size: 0.9rem;">
+    ⚠️ ${data.error}
+</div>`;
+return;
+}
+
+// Update badges
+const badges = document.getElementById('content-editor-badges');
+badges.innerHTML = '';
+if (data.encrypted) {
+badges.innerHTML += '<span class="badge warning" style="font-size: 0.72rem; padding: 0.15rem 0.5rem;">🔒 Encrypted</span>';
+}
+
+// Set encryption toggle
+const encToggle = document.getElementById('content-encrypt-toggle');
+encToggle.checked = data.encrypted;
+updateEncryptNote();
+
+// Set metadata fields
+if (data.manifest_entry) {
+const me = data.manifest_entry;
+document.getElementById('content-meta-stage').value = me.min_stage || 'FULL';
+document.getElementById('content-meta-nav').checked = me.include_in_nav !== false;
+document.getElementById('content-meta-pin').checked = !!me.pin_to_top;
+}
+
+// Initialize Editor.js
+contentOriginalData = data.content;
+await initContentEditor(data.content);
+
+} catch (error) {
+document.getElementById('content-editorjs').innerHTML =
+`<div style="padding: 1rem; color: var(--danger);">❌ Failed to load: ${error.message}</div>`;
+}
+}
+
+// ── Editor.js initialization ────────────────────────────
+
+async function initContentEditor(data) {
+// Destroy previous instance
+if (contentEditor) {
+try { contentEditor.destroy(); } catch (e) {}
+contentEditor = null;
+}
+
+const holder = document.getElementById('content-editorjs');
+holder.innerHTML = '';
+
+// Check if EditorJS is loaded
+if (typeof EditorJS === 'undefined') {
+holder.innerHTML = `
+<div style="padding: 1.5rem; text-align: center; color: var(--text-dim);">
+    <p>⏳ Loading Editor.js...</p>
+    <p style="font-size: 0.78rem; margin-top: 0.5rem;">
+        If this persists, check your internet connection (CDN-based).
+    </p>
+</div>`;
+// Try loading scripts dynamically
+await loadEditorScripts();
+if (typeof EditorJS === 'undefined') {
+holder.innerHTML = `
+<div style="padding: 1.5rem; text-align: center; color: var(--danger);">
+    ❌ Failed to load Editor.js from CDN. Check network connectivity.
+</div>`;
+return;
+}
+}
+
+const toolConfig = {};
+
+// Conditionally add tools based on what's available
+if (typeof Header !== 'undefined') toolConfig.header = { class: Header, config: { levels: [1, 2, 3, 4], defaultLevel: 2
+} };
+if (typeof NestedList !== 'undefined') toolConfig.list = { class: NestedList };
+else if (typeof List !== 'undefined') toolConfig.list = { class: List };
+if (typeof Quote !== 'undefined') toolConfig.quote = { class: Quote };
+if (typeof CodeTool !== 'undefined') toolConfig.code = { class: CodeTool };
+if (typeof Table !== 'undefined') toolConfig.table = { class: Table };
+if (typeof Warning !== 'undefined') toolConfig.warning = { class: Warning };
+if (typeof Delimiter !== 'undefined') toolConfig.delimiter = { class: Delimiter };
+
+contentEditor = new EditorJS({
+holder: 'content-editorjs',
+data: data,
+tools: toolConfig,
+placeholder: 'Start writing your article...',
+onChange: () => { contentDirty = true; },
+minHeight: 300,
+});
+
+try {
+await contentEditor.isReady;
+} catch (e) {
+console.warn('Editor.js ready warning:', e);
+}
+}
+
+// ── Lazy-load Editor.js scripts ─────────────────────────
+
+let editorScriptsLoaded = false;
+
+function loadScript(src) {
+return new Promise((resolve, reject) => {
+const script = document.createElement('script');
+script.src = src;
+script.onload = resolve;
+script.onerror = reject;
+document.head.appendChild(script);
+});
+}
+
+async function loadEditorScripts() {
+if (editorScriptsLoaded) return;
+const cdn = 'https://cdn.jsdelivr.net/npm';
+try {
+await loadScript(`${cdn}/@editorjs/editorjs@2.30/dist/editorjs.umd.min.js`);
+// Load tools in parallel
+await Promise.allSettled([
+loadScript(`${cdn}/@editorjs/header@2.8/dist/header.umd.min.js`),
+loadScript(`${cdn}/@editorjs/list@1.9/dist/list.umd.min.js`),
+loadScript(`${cdn}/@editorjs/nested-list@1.4/dist/nested-list.umd.min.js`),
+loadScript(`${cdn}/@editorjs/quote@2.7/dist/quote.umd.min.js`),
+loadScript(`${cdn}/@editorjs/code@2.9/dist/code.umd.min.js`),
+loadScript(`${cdn}/@editorjs/table@2.4/dist/table.umd.min.js`),
+loadScript(`${cdn}/@editorjs/warning@1.4/dist/warning.umd.min.js`),
+loadScript(`${cdn}/@editorjs/delimiter@1.4/dist/delimiter.umd.min.js`),
+]);
+editorScriptsLoaded = true;
+} catch (e) {
+console.error('Failed to load Editor.js scripts:', e);
+}
+}
+
+// ── Save article ────────────────────────────────────────
+
+async function contentSave() {
+if (!contentEditor || !contentSelectedSlug) return;
+
+const saveBtn = document.getElementById('content-save-btn');
+saveBtn.disabled = true;
+saveBtn.textContent = '⏳ Saving...';
+
+try {
+const outputData = await contentEditor.save();
+const encrypt = document.getElementById('content-encrypt-toggle').checked;
+
+if (encrypt && !contentEncryptionAvailable) {
+contentLog('⚠️ Cannot encrypt — CONTENT_ENCRYPTION_KEY is not set.\nGo to Secrets → Security to configure it.', true);
+return;
+}
+
+const resp = await fetch(`/api/content/articles/${contentSelectedSlug}`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+content: outputData,
+encrypt: encrypt,
+}),
+});
+const data = await resp.json();
+
+if (data.success) {
+contentDirty = false;
+contentOriginalData = outputData;
+const encLabel = data.encrypted ? '🔒 encrypted' : '📄 plaintext';
+contentLog(`✅ Saved "${contentSelectedSlug}" as ${encLabel}`);
+// Refresh list to update badges
+await loadContent();
+renderContentList();
+} else {
+contentLog(`❌ Save failed: ${data.error}`, true);
+}
+} catch (error) {
+contentLog(`❌ Save error: ${error.message}`, true);
+} finally {
+saveBtn.disabled = false;
+saveBtn.textContent = '💾 Save';
+}
+}
+
+// ── Discard changes ─────────────────────────────────────
+
+async function contentDiscard() {
+if (!contentDirty) return;
+if (!confirm('Discard all changes?')) return;
+contentDirty = false;
+if (contentOriginalData) {
+await initContentEditor(contentOriginalData);
+}
+contentLog('↩️ Changes discarded.');
+}
+
+// ── New article ─────────────────────────────────────────
+
+async function contentNewArticle() {
+const slug = prompt('Article slug (lowercase, underscores):', '');
+if (!slug) return;
+
+// Validate slug
+const clean = slug.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_');
+if (!clean) {
+alert('Invalid slug. Use lowercase letters, numbers, and underscores.');
+return;
+}
+
+// Check if already exists
+if (contentArticles.some(a => a.slug === clean)) {
+alert(`Article "${clean}" already exists. Select it from the list.`);
+return;
+}
+
+// Create default content
+const defaultContent = {
+time: Date.now(),
+blocks: [
+{ type: 'header', data: { text: clean.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), level: 1 } },
+{ type: 'paragraph', data: { text: '' } },
+],
+version: '2.28.0',
+};
+
+try {
+const resp = await fetch(`/api/content/articles/${clean}`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ content: defaultContent, encrypt: false }),
+});
+const data = await resp.json();
+if (data.success) {
+contentLog(`✅ Created article "${clean}"`);
+await loadContent();
+contentSelectArticle(clean);
+} else {
+contentLog(`❌ Failed: ${data.error}`, true);
+}
+} catch (error) {
+contentLog(`❌ Error: ${error.message}`, true);
+}
+}
+
+// ── Delete article ──────────────────────────────────────
+
+async function contentDeleteArticle() {
+if (!contentSelectedSlug) return;
+if (!confirm(`Permanently delete "${contentSelectedSlug}"? This cannot be undone.`)) return;
+
+try {
+const resp = await fetch(`/api/content/articles/${contentSelectedSlug}`, {
+method: 'DELETE',
+});
+const data = await resp.json();
+if (data.success) {
+contentLog(`🗑️ Deleted "${contentSelectedSlug}"`);
+contentSelectedSlug = null;
+contentDirty = false;
+resetContentEditor();
+await loadContent();
+} else {
+contentLog(`❌ Delete failed: ${data.error}`, true);
+}
+} catch (error) {
+contentLog(`❌ Error: ${error.message}`, true);
+}
+}
+
+// ── Encrypt / decrypt in-place ──────────────────────────
+
+async function contentEncryptInPlace() {
+if (!contentSelectedSlug) return;
+const art = contentArticles.find(a => a.slug === contentSelectedSlug);
+if (!art) return;
+
+if (art.encrypted) {
+// Decrypt
+try {
+const resp = await fetch(`/api/content/articles/${contentSelectedSlug}/decrypt`, { method: 'POST' });
+const data = await resp.json();
+if (data.success) {
+contentLog(`🔓 Decrypted "${contentSelectedSlug}" — now stored as plaintext`);
+await loadContent();
+contentSelectArticle(contentSelectedSlug);
+} else {
+contentLog(`❌ ${data.error}`, true);
+}
+} catch (e) {
+contentLog(`❌ Error: ${e.message}`, true);
+}
+} else {
+// Encrypt
+if (!contentEncryptionAvailable) {
+contentLog('⚠️ Cannot encrypt — CONTENT_ENCRYPTION_KEY is not set.', true);
+return;
+}
+try {
+const resp = await fetch(`/api/content/articles/${contentSelectedSlug}/encrypt`, { method: 'POST' });
+const data = await resp.json();
+if (data.success) {
+contentLog(`🔒 Encrypted "${contentSelectedSlug}" — now stored encrypted in repo`);
+await loadContent();
+contentSelectArticle(contentSelectedSlug);
+} else {
+contentLog(`❌ ${data.error}`, true);
+}
+} catch (e) {
+contentLog(`❌ Error: ${e.message}`, true);
+}
+}
+}
+
+// ── Helpers ─────────────────────────────────────────────
+
+function resetContentEditor() {
+document.getElementById('content-editor-slug').textContent = 'Select an article';
+document.getElementById('content-editor-badges').innerHTML = '';
+document.getElementById('content-editor-empty').style.display = 'flex';
+document.getElementById('content-editorjs-wrap').style.display = 'none';
+document.getElementById('content-editor-controls').style.display = 'none';
+document.getElementById('content-meta-panel').style.display = 'none';
+if (contentEditor) {
+try { contentEditor.destroy(); } catch (e) {}
+contentEditor = null;
+}
+}
+
+function updateEncryptNote() {
+const note = document.getElementById('content-encrypt-note');
+const checked = document.getElementById('content-encrypt-toggle').checked;
+if (checked && !contentEncryptionAvailable) {
+note.innerHTML = '<span style="color: var(--danger);">⚠️ Key not set — encryption will fail</span>';
+} else if (checked) {
+note.textContent = 'Content will be encrypted before saving to disk';
+} else {
+note.textContent = 'Content will be saved as plaintext';
+}
+}
+
+// Attach toggle listener
+document.getElementById('content-encrypt-toggle')?.addEventListener('change', updateEncryptNote);
+
+function contentLog(message, isError = false) {
+const terminal = document.getElementById('content-terminal');
+const timestamp = new Date().toLocaleTimeString();
+if (isError) {
+terminal.className = 'terminal error';
+} else {
+terminal.className = 'terminal';
+}
+terminal.textContent = `[${timestamp}] ${message}`;
+}

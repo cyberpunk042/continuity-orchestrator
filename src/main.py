@@ -39,6 +39,7 @@ from .cli.config import check_config, config_status, generate_config
 from .cli.ops import health, metrics_cmd, retry_queue_cmd, circuit_breakers_cmd
 from .cli.core import reset, renew, trigger_release
 from .cli.init import init
+from .cli.content import content_keygen, content_status, content_encrypt, content_decrypt
 
 # Initialize logging
 setup_logging()
@@ -170,6 +171,12 @@ cli.add_command(trigger_release)
 
 # Site commands — extracted to src/cli/site.py
 cli.add_command(build_site)
+
+# Content commands — extracted to src/cli/content.py
+cli.add_command(content_keygen)
+cli.add_command(content_status)
+cli.add_command(content_encrypt)
+cli.add_command(content_decrypt)
 
 # Config commands — extracted to src/cli/config.py
 cli.add_command(check_config)
