@@ -219,6 +219,17 @@ SECRET_DEFINITIONS = {
     "MIRROR_1_TOKEN": {"required_for": ["mirror"], "guidance": "PAT from backup GitHub account (repo + workflow scopes)"},
     "MIRROR_1_RENEWAL_TRIGGER_TOKEN": {"required_for": [], "guidance": "PAT from backup account with Actions scope (for one-click renewal on mirror)"},
     "MIRROR_RESET_MODE": {"required_for": [], "guidance": "Factory reset cross-repo behavior: leader (default — propagate reset), isolated (protect mirrors), or follower"},
+
+    # Docker Deployment
+    "DEPLOY_MODE": {"required_for": [], "guidance": "Deployment method: 'github-pages' (default) or 'docker' (self-hosted with git-sync)"},
+
+    # Docker Git Sync
+    "DOCKER_GIT_SYNC_ALPHA": {"required_for": [], "guidance": "Docker sync dominance: 'true' = this Docker is the authority (overrides remote on conflict), 'false' = remote is the authority (default)"},
+    "DOCKER_GIT_SYNC_TICK_INTERVAL": {"required_for": [], "guidance": "Seconds between tick runs in Docker git-sync mode (default: 900 = 15min)"},
+    "DOCKER_GIT_SYNC_SYNC_INTERVAL": {"required_for": [], "guidance": "Seconds between remote sync checks in Docker git-sync mode (default: 30)"},
+
+    # Cloudflare Tunnel
+    "CLOUDFLARE_TUNNEL_TOKEN": {"required_for": ["tunnel"], "guidance": "Token from Cloudflare Zero Trust → Networks → Tunnels. Required for --profile tunnel."},
 }
 
 

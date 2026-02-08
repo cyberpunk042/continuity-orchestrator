@@ -44,7 +44,7 @@
                         <label class="form-label">Select your deployment method:</label>
                         <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
                             <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.DEPLOY_MODE === 'github-pages' ? 'var(--accent-dim)' : 'transparent'};">
-                                <input type="radio" name="deploy-mode" value="github-pages" ${wizardData.DEPLOY_MODE !== 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='github-pages'">
+                                <input type="radio" name="deploy-mode" value="github-pages" ${wizardData.DEPLOY_MODE !== 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='github-pages'; const ds=document.getElementById('wiz-docker-settings'); if(ds) ds.style.display='none';">
                                 <div>
                                     <strong>🌐 GitHub Pages</strong> <span style="color: var(--accent);">Recommended</span>
                                     <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
@@ -54,7 +54,7 @@
                                 </div>
                             </label>
                             <label style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${wizardData.DEPLOY_MODE === 'docker' ? 'var(--accent-dim)' : 'transparent'};">
-                                <input type="radio" name="deploy-mode" value="docker" ${wizardData.DEPLOY_MODE === 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='docker'">
+                                <input type="radio" name="deploy-mode" value="docker" ${wizardData.DEPLOY_MODE === 'docker' ? 'checked' : ''} onchange="wizardData.DEPLOY_MODE='docker'; const ds=document.getElementById('wiz-docker-settings'); if(ds) ds.style.display='block';">
                                 <div>
                                     <strong>🐳 Docker (Self-Hosted)</strong>
                                     <div style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem;">
@@ -65,14 +65,82 @@
                             </label>
                         </div>
                     </div>
+
+                    <div id="wiz-docker-settings" style="display: ${wizardData.DEPLOY_MODE === 'docker' ? 'block' : 'none'}; margin-top: 1.25rem; padding: 1.25rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input);">
+                        <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">🐳 Docker Git-Sync Settings</h3>
+
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                                <input type="checkbox" id="wiz-docker-alpha"
+                                    ${wizardData.DOCKER_GIT_SYNC_ALPHA === 'true' ? 'checked' : ''}
+                                    onchange="wizardData.DOCKER_GIT_SYNC_ALPHA = this.checked ? 'true' : 'false'"
+                                    style="accent-color: var(--accent); margin-top: 0.2rem;">
+                                <div>
+                                    <strong>Alpha mode</strong>
+                                    <span style="color: var(--text-dim); font-size: 0.8rem; margin-left: 0.25rem;">(advanced)</span>
+                                    <div style="color: var(--text-dim); font-size: 0.82rem; margin-top: 0.25rem; line-height: 1.5;">
+                                        When enabled, this Docker instance is the <strong>authority</strong>. If the remote
+                                        repository conflicts (e.g. factory reset from another device), this instance
+                                        overrides it with its own state.<br>
+                                        When disabled <em>(default)</em>, the remote repository is the authority — this
+                                        instance follows any remote changes.
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div style="display: flex; gap: 1rem;">
+                            <div class="form-group" style="flex: 1;">
+                                <label class="form-label" style="font-size: 0.85rem;">Tick interval (seconds)</label>
+                                <input type="number" class="form-input" id="wiz-docker-tick-interval"
+                                    value="${wizardData.DOCKER_GIT_SYNC_TICK_INTERVAL || 900}" min="60" step="60"
+                                    onchange="wizardData.DOCKER_GIT_SYNC_TICK_INTERVAL = this.value"
+                                    style="width: 100%;">
+                                <span style="color: var(--text-dim); font-size: 0.75rem;">Default: 900 (15 min)</span>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label class="form-label" style="font-size: 0.85rem;">Sync check interval (seconds)</label>
+                                <input type="number" class="form-input" id="wiz-docker-sync-interval"
+                                    value="${wizardData.DOCKER_GIT_SYNC_SYNC_INTERVAL || 30}" min="10" step="10"
+                                    onchange="wizardData.DOCKER_GIT_SYNC_SYNC_INTERVAL = this.value"
+                                    style="width: 100%;">
+                                <span style="color: var(--text-dim); font-size: 0.75rem;">Default: 30</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 1rem;">
+                            <label class="form-label" style="font-size: 0.85rem;">
+                                ☁️ Cloudflare Tunnel Token <span style="color: var(--text-dim);">(optional)</span>
+                            </label>
+                            <input type="password" class="form-input" id="wiz-tunnel-token"
+                                value="${wizardData.CLOUDFLARE_TUNNEL_TOKEN || ''}"
+                                placeholder="eyJhIjoi..."
+                                onchange="wizardData.CLOUDFLARE_TUNNEL_TOKEN = this.value"
+                                style="width: 100%; font-family: monospace;">
+                            <span style="color: var(--text-dim); font-size: 0.75rem;">
+                                Get from <a href="https://one.dash.cloudflare.com/" target="_blank" style="color: var(--info);">Cloudflare Zero Trust</a> → Networks → Tunnels → Create.
+                                Add <code style="font-size: 0.75rem;">--profile tunnel</code> to your docker compose command.
+                            </span>
+                        </div>
+                    </div>
+
                     <div class="alert info" style="margin-top: 1rem;">
                         💡 <strong>Not sure?</strong> Start with GitHub Pages — you can switch to Docker later.
                     </div>
                 `,
                 validate: () => true,
-                collect: () => ({
-                    DEPLOY_MODE: document.querySelector('input[name="deploy-mode"]:checked')?.value || 'github-pages'
-                })
+                collect: () => {
+                    const mode = document.querySelector('input[name="deploy-mode"]:checked')?.value || 'github-pages';
+                    const data = { DEPLOY_MODE: mode };
+                    if (mode === 'docker') {
+                        data.DOCKER_GIT_SYNC_ALPHA = document.getElementById('wiz-docker-alpha')?.checked ? 'true' : 'false';
+                        data.DOCKER_GIT_SYNC_TICK_INTERVAL = document.getElementById('wiz-docker-tick-interval')?.value || '900';
+                        data.DOCKER_GIT_SYNC_SYNC_INTERVAL = document.getElementById('wiz-docker-sync-interval')?.value || '30';
+                        const tunnelToken = document.getElementById('wiz-tunnel-token')?.value;
+                        if (tunnelToken) data.CLOUDFLARE_TUNNEL_TOKEN = tunnelToken;
+                    }
+                    return data;
+                }
             },
             {
                 id: 'project',

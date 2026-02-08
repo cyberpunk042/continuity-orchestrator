@@ -17,6 +17,11 @@
 #   - Doesn't write/commit anything
 #   - Use: docker compose --profile observer up -d
 #
+# ADD-ON: CLOUDFLARE TUNNEL (composable with any mode)
+#   - Exposes nginx via Cloudflare Tunnel (no port-forwarding needed)
+#   - Requires CLOUDFLARE_TUNNEL_TOKEN in .env
+#   - Add: --profile tunnel  (e.g. --profile git-sync --profile tunnel)
+#
 # ============================================================================
 
 services:
@@ -245,6 +250,12 @@ services:
       - RELEASE_DELAY_MINUTES=${RELEASE_DELAY_MINUTES:-60}
       - RELEASE_DELAY_SCOPE=${RELEASE_DELAY_SCOPE:-partial}
       - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
+      # Git sync settings
+      # DOCKER_GIT_SYNC_ALPHA: false = remote is the source of truth (default)
+      #                        true  = this Docker instance is dominant, force-pushes on divergence
+      - DOCKER_GIT_SYNC_ALPHA=${DOCKER_GIT_SYNC_ALPHA:-false}
+      - DOCKER_GIT_SYNC_TICK_INTERVAL=${DOCKER_GIT_SYNC_TICK_INTERVAL:-900}
+      - DOCKER_GIT_SYNC_SYNC_INTERVAL=${DOCKER_GIT_SYNC_SYNC_INTERVAL:-30}
     volumes:
       # NO HOST MOUNT - repo is cloned inside container
       # State persists in named volumes between restarts
@@ -255,11 +266,6 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "╔════════════════════════════════════════════╗"
-        echo "║  Continuity Orchestrator — GIT SYNC MODE   ║"
-        echo "╚════════════════════════════════════════════╝"
-        echo ""
-        
         # Clone repo if not already present
         if [ ! -d /repo/.git ]; then
           echo "Cloning repository..."
@@ -269,59 +275,29 @@ services:
           fi
           git clone "https://x-access-token:$$GITHUB_TOKEN@github.com/$$GITHUB_REPOSITORY.git" /repo
         fi
-        
+
         cd /repo
-        
+
         # Configure git
         git config --global --add safe.directory /repo
-        git config user.name "Continuity Orchestrator"
-        git config user.email "continuity@automated.bot"
-        
+        git config user.name "$$GIT_AUTHOR_NAME"
+        git config user.email "$$GIT_AUTHOR_EMAIL"
+
         # Ensure remote has token for push
         git remote set-url origin "https://x-access-token:$$GITHUB_TOKEN@github.com/$$GITHUB_REPOSITORY.git"
-        
-        # Pull latest
-        echo "Syncing with remote..."
-        git fetch origin main
-        git reset --hard origin/main
-        
-        # Clear and prepare shared volume for nginx
+
+        # Clear shared volume for nginx
         rm -rf /public/* 2>/dev/null || true
-        
-        # Background sync - pull every 30s and rebuild if changed
-        (while true; do
-          if git fetch origin main 2>/dev/null && [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then
-            echo "New changes detected, pulling..."
-            git reset --hard origin/main
-            echo "Rebuilding site..."
-            python -m src.main build-site --output /public 2>/dev/null || true
-          fi
-          sleep 30
-        done) &
-        
-        while true; do
-          echo "═══════════════════════════════════════════"
-          echo "Running tick at $$(date -Iseconds)"
-          
-          # Run tick
-          python -m src.main tick
-          
-          # Build site to shared volume (for nginx)
-          python -m src.main build-site --output /public || true
-          
-          # Commit and push if changed
-          if git diff --quiet state/ audit/; then
-            echo "No state changes"
-          else
-            echo "Committing state changes..."
-            git add state/ audit/
-            git commit -m "chore(state): tick at $$(date -Iseconds)" || true
-            git push origin main || echo "Push failed, will retry next tick"
-          fi
-          
-          echo "Sleeping 15 minutes..."
-          sleep 900
-        done
+
+        # Hand off to Python sync manager
+        # Handles: initial sync, background fetch loop, tick loop,
+        #          divergence detection, alpha/non-alpha mode
+        python /app/scripts/docker_git_sync.py \
+          --repo /repo \
+          --branch main \
+          --public-dir /public \
+          --tick-interval $${DOCKER_GIT_SYNC_TICK_INTERVAL:-900} \
+          --sync-interval $${DOCKER_GIT_SYNC_SYNC_INTERVAL:-30}
 
   # ==========================================================================
   # NGINX — Static Site Server
@@ -369,6 +345,24 @@ services:
     command: ["python", "-m", "src.main", "health", "--json"]
     profiles:
       - tools
+
+  # ==========================================================================
+  # CLOUDFLARE TUNNEL — Expose site via Cloudflare (optional add-on)
+  # Usage: docker compose --profile git-sync --profile tunnel up -d
+  # ==========================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: continuity-tunnel
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    depends_on:
+      - nginx
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - continuity-net
 
 volumes:
   state-data:
