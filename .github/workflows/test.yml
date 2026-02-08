@@ -15,6 +15,9 @@ on:
 
 jobs:
   test:
+    # Skip on slave/mirror repos — they receive code pushes from the master
+    # but should not burn Actions minutes re-running the same tests.
+    if: vars.MIRROR_ROLE != 'SLAVE'
     runs-on: ubuntu-latest
     
     strategy:
