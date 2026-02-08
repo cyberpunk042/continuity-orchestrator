@@ -271,8 +271,10 @@ class SiteGenerator:
                 if repo_from_state and repo_from_state != "owner/repo":
                     github_repo = repo_from_state
         
-        # Renewal token
-        renewal_trigger_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
+        # Renewal token — base64-encoded to avoid casual exposure in page source
+        import base64 as _b64
+        _raw_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
+        renewal_trigger_token = _b64.b64encode(_raw_token.encode()).decode() if _raw_token else ""
         
         # Release secret (for client-side optimistic display)
         release_secret = os.environ.get("RELEASE_SECRET", "")

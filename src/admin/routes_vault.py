@@ -89,6 +89,31 @@ def api_vault_config():
     return jsonify({"error": "No config to update"}), 400
 
 
+@vault_bp.route("/vault/register-passphrase", methods=["POST"])
+def api_vault_register_passphrase():
+    """Register vault passphrase without locking.
+
+    Stores the passphrase in server memory and enables auto-lock,
+    without encrypting .env. Used when the vault is unlocked but
+    the server has lost the passphrase (e.g. after process restart).
+
+    Accepts: {"passphrase": "..."}
+    """
+    from .vault import register_passphrase
+
+    body = request.get_json()
+    if not body or not body.get("passphrase"):
+        return jsonify({"error": "Passphrase is required"}), 400
+
+    try:
+        result = register_passphrase(body["passphrase"])
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Registration failed: {e}"}), 500
+
+
 @vault_bp.route("/vault/export", methods=["POST"])
 def api_vault_export():
     """Export .env as an encrypted vault file.

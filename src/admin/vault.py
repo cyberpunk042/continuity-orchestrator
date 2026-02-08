@@ -387,6 +387,75 @@ def auto_lock() -> dict:
     return lock_vault(passphrase)
 
 
+def register_passphrase(passphrase: str) -> dict:
+    """Store a vault passphrase in memory without locking.
+
+    Used when the vault is unlocked (.env exists) but the server has no
+    passphrase in memory — auto-lock can't fire. This function validates
+    the passphrase (trial decrypt of .env.vault if available), stores it,
+    and starts the auto-lock timer. Does NOT modify any files on disk.
+
+    Args:
+        passphrase: The user's existing vault passphrase.
+
+    Returns:
+        Success dict or raises ValueError.
+    """
+    global _session_passphrase
+
+    if not passphrase or not passphrase.strip():
+        raise ValueError("Passphrase cannot be empty")
+
+    # Rate limit — same protection as unlock
+    rate_info = _check_rate_limit()
+    if rate_info:
+        raise ValueError(rate_info["error"])
+
+    env_path = _env_path()
+    vault_path = _vault_path()
+
+    if not env_path.exists():
+        raise ValueError("Vault is locked — use unlock instead")
+
+    # Validate passphrase against .env.vault if it exists
+    if vault_path.exists():
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        try:
+            envelope = json.loads(vault_path.read_text(encoding="utf-8"))
+
+            if not envelope.get("vault"):
+                raise ValueError("Invalid vault file format")
+
+            salt = base64.b64decode(envelope["salt"])
+            iv = base64.b64decode(envelope["iv"])
+            tag = base64.b64decode(envelope["tag"])
+            ciphertext = base64.b64decode(envelope["ciphertext"])
+
+            key = _derive_key(passphrase, salt)
+            aesgcm = AESGCM(key)
+            aesgcm.decrypt(iv, ciphertext + tag, None)  # Discard result
+
+        except (KeyError, json.JSONDecodeError):
+            raise ValueError("Invalid vault file — cannot validate passphrase")
+        except ValueError:
+            raise  # Re-raise our own ValueErrors
+        except Exception:
+            _record_failed_attempt()
+            raise ValueError("Wrong passphrase")
+
+        _reset_rate_limit()
+
+    # Store passphrase + start auto-lock timer
+    with _lock:
+        _session_passphrase = passphrase
+
+    _start_auto_lock_timer()
+
+    logger.info("Passphrase registered — auto-lock enabled")
+    return {"success": True, "message": "Passphrase registered — auto-lock enabled"}
+
+
 def set_auto_lock_minutes(minutes: int):
     """Configure the auto-lock timeout.
 

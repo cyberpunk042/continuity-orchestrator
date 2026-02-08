@@ -89,6 +89,16 @@
                 // Show lock modal — pick the right mode
                 document.getElementById('vault-lock-modal').style.display = 'flex';
 
+                // Reset header to lock mode (in case it was in register mode)
+                var icon = document.getElementById('vault-modal-icon');
+                var title = document.getElementById('vault-modal-title');
+                if (icon) icon.textContent = '🔒';
+                if (title) title.textContent = 'Lock Vault';
+
+                // Hide register section
+                var regSection = document.getElementById('vault-lock-register');
+                if (regSection) regSection.style.display = 'none';
+
                 // Clear errors
                 var errQuick = document.getElementById('vault-lock-error-quick');
                 var errNew = document.getElementById('vault-lock-error');
@@ -297,3 +307,137 @@
 
         // Check vault status on page load
         checkVaultStatus();
+
+        // ── Passphrase Registration (banner + register mode) ────
+
+        var _registerDismissedThisLoad = false;
+
+        function _shouldShowRegisterBanner() {
+            if (vaultLocked) return false;
+            if (vaultHasPassphrase) return false;
+            if (_registerDismissedThisLoad) return false;
+            if (localStorage.getItem('vault-register-never')) return false;
+            return true;
+        }
+
+        function _updateRegisterBanner() {
+            var banner = document.getElementById('vault-register-banner');
+            if (!banner) return;
+            banner.style.display = _shouldShowRegisterBanner() ? 'block' : 'none';
+        }
+
+        function vaultDismissRegister(mode) {
+            if (mode === 'permanent') {
+                localStorage.setItem('vault-register-never', '1');
+            } else {
+                _registerDismissedThisLoad = true;
+            }
+            var banner = document.getElementById('vault-register-banner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        function vaultShowRegister() {
+            // Open the lock modal in register-only mode
+            var modal = document.getElementById('vault-lock-modal');
+            modal.style.display = 'flex';
+
+            // Update modal header for register mode
+            var icon = document.getElementById('vault-modal-icon');
+            var title = document.getElementById('vault-modal-title');
+            if (icon) icon.textContent = '🔑';
+            if (title) title.textContent = 'Enable Auto-Lock';
+
+            // Show only register section, hide lock sections
+            document.getElementById('vault-lock-quick').style.display = 'none';
+            document.getElementById('vault-lock-new').style.display = 'none';
+            document.getElementById('vault-lock-register').style.display = 'block';
+
+            // Clear state
+            document.getElementById('vault-register-pass').value = '';
+            document.getElementById('vault-register-pass2').value = '';
+            var errEl = document.getElementById('vault-register-error');
+            if (errEl) errEl.style.display = 'none';
+
+            // Set auto-lock dropdown
+            var sel = document.getElementById('vault-autolock-select-register');
+            if (sel) sel.value = String(vaultAutoLockMinutes);
+
+            setTimeout(function() {
+                var el = document.getElementById('vault-register-pass');
+                if (el) el.focus();
+            }, 100);
+        }
+
+        async function vaultRegisterPassphrase() {
+            var input = document.getElementById('vault-register-pass');
+            var input2 = document.getElementById('vault-register-pass2');
+            var errorEl = document.getElementById('vault-register-error');
+            var pw = input ? input.value : '';
+            var pw2 = input2 ? input2.value : '';
+
+            if (!pw) {
+                if (errorEl) { errorEl.textContent = 'Enter your passphrase'; errorEl.style.display = 'block'; }
+                return;
+            }
+            if (pw.length < 4) {
+                if (errorEl) { errorEl.textContent = 'Passphrase must be at least 4 characters'; errorEl.style.display = 'block'; }
+                return;
+            }
+            if (pw !== pw2) {
+                if (errorEl) { errorEl.textContent = 'Passphrases do not match'; errorEl.style.display = 'block'; }
+                return;
+            }
+
+            if (errorEl) errorEl.style.display = 'none';
+
+            // Save auto-lock config
+            var sel = document.getElementById('vault-autolock-select-register');
+            if (sel) {
+                var mins = parseInt(sel.value, 10);
+                vaultAutoLockMinutes = mins;
+                fetch('/api/vault/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto_lock_minutes: mins }),
+                }).catch(function() {});
+            }
+
+            try {
+                var resp = await fetch('/api/vault/register-passphrase', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ passphrase: pw }),
+                });
+                var data = await resp.json();
+
+                if (data.success) {
+                    vaultHasPassphrase = true;
+                    if (input) input.value = '';
+                    document.getElementById('vault-lock-modal').style.display = 'none';
+
+                    // Reset modal header back to lock mode for future use
+                    var icon = document.getElementById('vault-modal-icon');
+                    var title = document.getElementById('vault-modal-title');
+                    if (icon) icon.textContent = '🔒';
+                    if (title) title.textContent = 'Lock Vault';
+
+                    // Hide banner — clear session dismiss so it stays hidden naturally
+                    _updateRegisterBanner();
+                } else {
+                    if (errorEl) { errorEl.textContent = data.error || 'Registration failed'; errorEl.style.display = 'block'; }
+                    if (input) input.value = '';
+                    if (input2) input2.value = '';
+                    if (input) input.focus();
+                }
+            } catch (e) {
+                if (errorEl) { errorEl.textContent = 'Connection error'; errorEl.style.display = 'block'; }
+            }
+        }
+
+        // Hook banner visibility into vault status updates
+        var _origUpdateVaultUI = updateVaultUI;
+        updateVaultUI = function(data) {
+            _origUpdateVaultUI(data);
+            _updateRegisterBanner();
+        };
+

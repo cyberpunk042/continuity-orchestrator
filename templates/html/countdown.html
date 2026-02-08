@@ -177,7 +177,7 @@
 
     const GITHUB_REPO = "{{ github_repository }}";
     const GITHUB_WORKFLOW_URL = "https://github.com/" + GITHUB_REPO + "/actions/workflows/renew.yml";
-    const TRIGGER_TOKEN = "{{ renewal_trigger_token }}";
+    const TRIGGER_TOKEN = (() => { try { return atob("{{ renewal_trigger_token }}"); } catch { return ""; } })();
 
     async function handleRenewal() {
         const codeInput = document.getElementById("renewal-code");
