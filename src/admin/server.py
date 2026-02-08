@@ -34,11 +34,13 @@ def create_app() -> Flask:
     # Get paths
     project_root = Path(__file__).parent.parent.parent
     static_folder = Path(__file__).parent / "static"
+    template_folder = Path(__file__).parent / "templates"
 
     app = Flask(
         __name__,
         static_folder=str(static_folder),
         static_url_path="/static",
+        template_folder=str(template_folder),
     )
 
     # Store project root for use in routes

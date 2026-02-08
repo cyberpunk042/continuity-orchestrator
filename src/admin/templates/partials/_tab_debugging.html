@@ -1,0 +1,103 @@
+    <!-- Debugging Tab -->
+    <div id="tab-debugging" class="tab-content">
+        <header class="header">
+            <h1>🐛 Debugging</h1>
+            <p class="subtitle">Deadline overrides, archival tools, and testing utilities
+            </p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">⏰</span> Deadline Management</h2>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <div>
+                        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Renew Deadline</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <button class="btn" onclick="renewDeadline(24)">+24h</button>
+                            <button class="btn primary" onclick="renewDeadline(48)">+48h</button>
+                            <button class="btn" onclick="renewDeadline(72)">+72h</button>
+                            <span style="color: var(--text-dim); margin: 0 0.25rem;">or</span>
+                            <input type="number" id="renew-custom-hours" placeholder="hours" min="1" max="720"
+                                style="width: 80px; padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text);" />
+                            <button class="btn"
+                                onclick="renewDeadline(document.getElementById('renew-custom-hours').value)">Renew</button>
+                        </div>
+                    </div>
+                    <div class="divider" style="border-top: 1px solid var(--border);"></div>
+                    <div>
+                        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Set Manual Deadline
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">(testing)</span></label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <input type="datetime-local" id="manual-deadline"
+                                style="padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); color-scheme: dark;" />
+                            <button class="btn" onclick="setManualDeadline()">Set Deadline</button>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(3)">⚡ 3 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(10)">⚡ 10 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(30)">⚡ 30 min</button>
+                            <button class="btn" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;"
+                                onclick="setTestDeadline(60)">⚡ 1 hour</button>
+                        </div>
+                    </div>
+                    <div id="deadline-status" style="font-size: 0.85rem;"></div>
+                    <div class="divider" style="border-top: 1px solid var(--border);"></div>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer;">
+                        <input type="checkbox" id="deadline-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after deadline change
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">📦</span> Archive</h2>
+                <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                    Save a permanent snapshot to <a href="https://archive.org" target="_blank"
+                        style="color: var(--info);">archive.org</a>
+                </p>
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <input type="text" class="form-input" id="archive-url"
+                        placeholder="Custom URL (or leave empty for GitHub Pages)">
+                </div>
+                <div class="actions" style="flex-direction: column;">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn primary" onclick="archiveNow(true)" style="flex: 1;"
+                            title="Archives all pages — may take several minutes">
+                            📦 Archive All Pages
+                        </button>
+                        <button class="btn" onclick="archiveNow(false)" style="flex-shrink: 0;"
+                            title="Archive only the index page">
+                            📄 Index Only
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" onclick="checkArchive(true)" style="flex: 1;"
+                            title="Check all pages on archive.org">
+                            🔍 Check All Pages
+                        </button>
+                        <button class="btn" onclick="checkArchive(false)" style="flex-shrink: 0;"
+                            title="Check index only">
+                            🔍 Index
+                        </button>
+                    </div>
+                </div>
+                <div id="archive-status" style="margin-top: 0.75rem; font-size: 0.85rem;"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🔧</span> State Controls</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="resetState()" style="width: 100%;">
+                        🔄 Reset Timer (keep secrets, reset to OK + 48h)
+                    </button>
+                    <button class="btn danger" onclick="factoryReset()" style="width: 100%;">
+                        🗑️ Factory Reset (fresh state + clear audit)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>

@@ -1,0 +1,52 @@
+    <!-- Integrations Tab -->
+    <div id="tab-integrations" class="tab-content">
+        <header class="header">
+            <h1>🔌 Integrations</h1>
+            <p class="subtitle">Test and manage your configured adapters</p>
+        </header>
+
+        <div class="grid">
+            <!-- Repo Mirror Card -->
+            <div class="card mirror-card" id="mirror-integration-card">
+                <h2><span class="icon">🔁</span> Repo Mirror <span id="mirror-self-role"
+                        style="margin-left: auto;"></span></h2>
+                <div id="mirror-body" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Loading mirror status...</div>
+                </div>
+                <div id="mirror-sync-log" style="display: none;"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">📧</span> Email (Resend)</h2>
+                <div id="integration-email" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">📱</span> SMS (Twilio)</h2>
+                <div id="integration-sms" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🐦</span> X / Twitter</h2>
+                <div id="integration-x" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🤖</span> Reddit</h2>
+                <div id="integration-reddit" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="loading">Checking...</div>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2><span class="icon">📟</span> Test Output</h2>
+                <pre class="terminal" id="integration-terminal">Select an integration to test.</pre>
+            </div>
+        </div>
+    </div>

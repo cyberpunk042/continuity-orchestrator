@@ -1,0 +1,39 @@
+<body>
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+        <div style="width: 120px; flex-shrink: 0;"></div>
+        <div class="tabs-group">
+            <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" onclick="switchTab('wizard')">🧙 Setup</button>
+            <button class="tab" onclick="switchTab('secrets')">🔐 Secrets</button>
+            <button class="tab" onclick="switchTab('commands')">⚡ Commands</button>
+            <button class="tab" onclick="switchTab('integrations')">🔌 Integrations</button>
+            <button class="tab" onclick="switchTab('debugging')">🐛 Debugging</button>
+        </div>
+        <div class="nav-controls">
+            <div id="google_translate_element"></div>
+            <div class="lang-btn" id="lang-btn" onclick="toggleLangDropdown()">
+                <span id="lang-flag">🌐</span>
+                <span id="lang-label">EN</span>
+                <span style="font-size:0.6rem;">▾</span>
+                <div class="lang-dropdown" id="lang-dropdown"></div>
+            </div>
+            <div class="gh-menu" id="gh-menu">
+                <span>🔗</span>
+                <span style="font-size:0.6rem;">▾</span>
+                <div class="gh-dropdown">
+                    <div>
+                        <a id="gh-link-repo" href="#" target="_blank">📦 Repository</a>
+                        <a id="gh-link-pages" href="#" target="_blank">🌐 Pages</a>
+                        <a id="gh-link-actions" href="#" target="_blank">⚡ Actions</a>
+                    </div>
+                </div>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                🌙
+            </button>
+        </div>
+    </nav>
+    <div class="refresh-bar" id="refresh-bar">
+        <div class="refresh-bar-inner"></div>
+    </div>

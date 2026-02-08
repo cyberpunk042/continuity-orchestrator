@@ -1,0 +1,106 @@
+    <!-- Commands Tab -->
+    <div id="tab-commands" class="tab-content">
+        <header class="header">
+            <h1>⚡ Command Center</h1>
+            <p class="subtitle">Run orchestrator commands</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">▶️</span> Engine</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('tick-dry')" style="width: 100%;">
+                        🧪 Dry Run (preview only)
+                    </button>
+                    <button class="btn primary" onclick="runCmdWithSync('tick', 'engine-git-sync')"
+                        style="width: 100%;">
+                        ▶️ Run Tick
+                    </button>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; margin-top: 0.25rem;">
+                        <input type="checkbox" id="engine-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after tick
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">📊</span> Status</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('status')" style="width: 100%;">
+                        📊 Current Status
+                    </button>
+                    <button class="btn" onclick="runCmd('health')" style="width: 100%;">
+                        💓 Health Check
+                    </button>
+                    <button class="btn" onclick="runCmd('config-status')" style="width: 100%;">
+                        ⚙️ Config Status
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🔮</span> Preview</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('explain')" style="width: 100%;">
+                        📖 Explain Stages
+                    </button>
+                    <button class="btn" onclick="runCmd('simulate')" style="width: 100%;">
+                        🔮 Simulate Timeline
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🏗️</span> Build</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('check-config')" style="width: 100%;">
+                        🔍 Check Adapters Config
+                    </button>
+                    <button class="btn" onclick="runCmdWithSync('build-site', 'build-git-sync')" style="width: 100%;">
+                        🏗️ Build Static Site
+                    </button>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; margin-top: 0.25rem;">
+                        <input type="checkbox" id="build-git-sync" checked style="accent-color: var(--accent);">
+                        🔄 Git sync after build
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🧪</span> Test</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('test email')" style="width: 100%;">
+                        📧 Test Email
+                    </button>
+                    <button class="btn" onclick="runCmd('test sms')" style="width: 100%;">
+                        📱 Test SMS
+                    </button>
+                    <button class="btn" onclick="runCmd('test-all')" style="width: 100%;">
+                        🧪 Test All Adapters
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🔄</span> Recovery</h2>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="btn" onclick="runCmd('retry-queue')" style="width: 100%;">
+                        📋 View Retry Queue
+                    </button>
+                    <button class="btn" onclick="runCmd('circuit-breakers')" style="width: 100%;">
+                        ⚡ Circuit Breakers
+                    </button>
+                    <button class="btn" onclick="runCmd('circuit-breakers --reset')" style="width: 100%;">
+                        🔄 Reset All Breakers
+                    </button>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2><span class="icon">📟</span> Terminal Output</h2>
+                <pre class="terminal" id="cmd-terminal">Ready. Click a command above to run.</pre>
+            </div>
+        </div>
+    </div>

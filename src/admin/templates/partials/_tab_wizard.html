@@ -1,0 +1,23 @@
+    <!-- Setup Wizard Tab -->
+    <div id="tab-wizard" class="tab-content">
+        <header class="header">
+            <h1>🧙 Setup Wizard</h1>
+            <p class="subtitle">Step-by-step configuration guide</p>
+        </header>
+
+        <div class="wizard-steps" id="wizard-steps"></div>
+
+        <div class="wizard-content">
+            <div class="card">
+                <div id="wizard-body"></div>
+                <div class="wizard-nav">
+                    <button class="btn" id="wizard-prev" onclick="wizardPrev()">← Back</button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" id="wizard-finish" onclick="wizardFinish()" style="display: none;">✅
+                            Finish</button>
+                        <button class="btn primary" id="wizard-next" onclick="wizardNext()">Next →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

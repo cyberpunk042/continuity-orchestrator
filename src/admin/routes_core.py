@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import subprocess
 
-from flask import Blueprint, current_app, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, jsonify, request, render_template
 from pathlib import Path
 
 from .helpers import fresh_env
@@ -31,9 +31,6 @@ def _project_root():
     return current_app.config["PROJECT_ROOT"]
 
 
-def _static_folder():
-    return Path(__file__).parent / "static"
-
 
 def _env():
     return fresh_env(_project_root())
@@ -42,11 +39,7 @@ def _env():
 @core_bp.route("/")
 def index():
     """Serve the admin dashboard."""
-    static = _static_folder()
-    index_path = static / "index.html"
-    if index_path.exists():
-        return send_from_directory(str(static), "index.html")
-    return "Admin panel not found. Please ensure static/index.html exists.", 404
+    return render_template("index.html")
 
 
 @core_bp.route("/api/status")
