@@ -89,6 +89,7 @@
                     ${countdownHtml}
                     <div class="status-row">
                         <span class="status-label">Stage</span>
+                        <a href="#" onclick="event.preventDefault(); switchTab('debugging');" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; opacity: 0.8;margin-left:auto;margin-right: 8px;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">⏱ Deadline Mgmt →</a>
                         <span class="badge ${stageClass}" translate="no">${data.state.stage}</span>
                     </div>
                     ${data.state.release_triggered ? `
@@ -116,7 +117,6 @@
                     <div class="status-row">
                         <span class="status-label">Renewals</span>
                         <span class="status-value" style="display: flex; align-items: center; gap: 0.75rem;">
-                            <a href="#" onclick="event.preventDefault(); switchTab('debugging');" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; opacity: 0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">⏱ Deadline Mgmt →</a>
                             ${data.state.renewal_count}
                         </span>
                     </div>
