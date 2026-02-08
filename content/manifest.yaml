@@ -11,11 +11,6 @@ articles:
     author: Operator
     tags:
     - info
-- slug: testset
-  visibility:
-    min_stage: OK
-    include_in_nav: true
-    pin_to_top: false
 - slug: testing
   visibility:
     min_stage: FULL

@@ -6,10 +6,11 @@ Prefix: /api/content/media
 Routes:
     GET    /api/content/media                  # List all media entries
     GET    /api/content/media/<media_id>       # Get single entry metadata
-    POST   /api/content/media/upload           # Upload + encrypt a media file
-    GET    /api/content/media/<media_id>/preview  # Decrypt + serve binary
+    POST   /api/content/media/upload           # Upload a media file (raw)
+    GET    /api/content/media/<media_id>/preview  # Serve binary (decrypt if needed)
     DELETE /api/content/media/<media_id>       # Delete media file + manifest entry
     PATCH  /api/content/media/<media_id>       # Update metadata (min_stage, caption)
+    POST   /api/content/media/<media_id>/toggle-encryption  # Encrypt ↔ decrypt
 """
 
 from __future__ import annotations
@@ -160,7 +161,10 @@ def api_get_media(media_id: str):
 @media_bp.route("/upload", methods=["POST"])
 def api_upload_media():
     """
-    Upload and encrypt a media file.
+    Upload a media file (stored as raw bytes).
+
+    Encryption is handled later at article save time — the article's
+    encrypt checkbox determines whether its referenced media gets encrypted.
 
     Accepts multipart/form-data:
         file: The file to upload (required)
@@ -168,8 +172,6 @@ def api_upload_media():
         caption: Optional caption text
         article_slug: Optional article to reference
     """
-    from ..content.crypto import encrypt_file
-
     # ── Validate request ──
 
     if "file" not in request.files:
@@ -191,12 +193,6 @@ def api_upload_media():
         return jsonify({
             "error": f"File too large: {size_mb:.1f} MB (max {max_mb:.0f} MB)"
         }), 413
-
-    # ── Check encryption key ──
-
-    key = _get_encryption_key()
-    if not key:
-        return jsonify({"error": "CONTENT_ENCRYPTION_KEY not set"}), 400
 
     # ── Determine metadata ──
 
@@ -221,23 +217,16 @@ def api_upload_media():
             "error": f"Invalid min_stage '{min_stage}'. Valid: {valid}"
         }), 400
 
-    # ── Generate ID and encrypt ──
+    # ── Generate ID and store raw file ──
 
     manifest = _load_manifest()
     id_prefix = _id_prefix_for_mime(mime_type)
     media_id = manifest.next_id(id_prefix)
 
-    try:
-        encrypted_data = encrypt_file(file_data, original_name, mime_type, key)
-    except Exception as e:
-        logger.error(f"Failed to encrypt media file: {e}")
-        return jsonify({"error": f"Encryption failed: {e}"}), 500
-
-    # ── Write encrypted file ──
-
+    # Write raw file to disk (no encryption at upload time)
     enc_path = manifest.enc_path(media_id)
     enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(encrypted_data)
+    enc_path.write_bytes(file_data)
 
     # ── Update manifest ──
 
@@ -248,6 +237,7 @@ def api_upload_media():
         mime_type=mime_type,
         size_bytes=len(file_data),
         sha256=sha256,
+        encrypted=False,
         min_stage=min_stage,
         referenced_by=[article_slug] if article_slug else [],
         caption=caption,
@@ -267,7 +257,6 @@ def api_upload_media():
         "original_name": original_name,
         "mime_type": mime_type,
         "size_bytes": len(file_data),
-        "encrypted_size_bytes": len(encrypted_data),
         "min_stage": min_stage,
     }), 201
 
@@ -277,10 +266,11 @@ def api_preview_media(media_id: str):
     """
     Decrypt and serve a media file for admin preview.
 
-    Returns the decrypted binary data with the correct Content-Type header.
+    Returns the file binary data with the correct Content-Type header.
+    For encrypted media, decrypts first. For unencrypted, serves directly.
     This endpoint is for admin preview only and should not be publicly exposed.
     """
-    from ..content.crypto import decrypt_file
+    from ..content.crypto import decrypt_file, is_encrypted_file
 
     manifest = _load_manifest()
     entry = manifest.get(media_id)
@@ -288,17 +278,30 @@ def api_preview_media(media_id: str):
     if not entry:
         return jsonify({"error": f"Media '{media_id}' not found"}), 404
 
-    enc_path = manifest.enc_path(media_id)
-    if not enc_path.exists():
-        return jsonify({"error": f"Encrypted file missing for '{media_id}'"}), 404
+    file_path = manifest.enc_path(media_id)
+    if not file_path.exists():
+        return jsonify({"error": f"Media file missing for '{media_id}'"}), 404
 
+    raw_data = file_path.read_bytes()
+
+    # If the file is unencrypted, serve directly
+    if not entry.encrypted or not is_encrypted_file(raw_data):
+        return Response(
+            raw_data,
+            mimetype=entry.mime_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{entry.original_name}"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    # Encrypted — need key to decrypt
     key = _get_encryption_key()
     if not key:
         return jsonify({"error": "CONTENT_ENCRYPTION_KEY not set"}), 400
 
     try:
-        envelope = enc_path.read_bytes()
-        result = decrypt_file(envelope, key)
+        result = decrypt_file(raw_data, key)
     except Exception as e:
         logger.error(f"Failed to decrypt media '{media_id}': {e}")
         return jsonify({"error": f"Decryption failed: {e}"}), 500
@@ -308,7 +311,7 @@ def api_preview_media(media_id: str):
         mimetype=result["mime_type"],
         headers={
             "Content-Disposition": f'inline; filename="{result["filename"]}"',
-            "Cache-Control": "no-store",  # Never cache decrypted media
+            "Cache-Control": "no-store",
         },
     )
 
@@ -322,11 +325,11 @@ def api_delete_media(media_id: str):
     if not entry:
         return jsonify({"error": f"Media '{media_id}' not found"}), 404
 
-    # Delete the encrypted file
-    enc_path = manifest.enc_path(media_id)
-    if enc_path.exists():
-        enc_path.unlink()
-        logger.debug(f"Deleted encrypted file: {enc_path}")
+    # Delete the file
+    file_path = manifest.enc_path(media_id)
+    if file_path.exists():
+        file_path.unlink()
+        logger.debug(f"Deleted media file: {file_path}")
 
     # Remove from manifest
     manifest.remove_entry(media_id)
@@ -338,6 +341,64 @@ def api_delete_media(media_id: str):
         "success": True,
         "id": media_id,
         "original_name": entry.original_name,
+    })
+
+
+@media_bp.route("/<media_id>/toggle-encryption", methods=["POST"])
+def api_toggle_encryption(media_id: str):
+    """Toggle a media file between encrypted and plaintext.
+
+    If currently plaintext → encrypts it (requires CONTENT_ENCRYPTION_KEY).
+    If currently encrypted → decrypts it (requires CONTENT_ENCRYPTION_KEY).
+    """
+    from ..content.crypto import encrypt_file, decrypt_file, is_encrypted_file
+
+    manifest = _load_manifest()
+    entry = manifest.get(media_id)
+
+    if not entry:
+        return jsonify({"error": f"Media '{media_id}' not found"}), 404
+
+    file_path = manifest.enc_path(media_id)
+    if not file_path.exists():
+        return jsonify({"error": f"Media file missing for '{media_id}'"}), 404
+
+    key = _get_encryption_key()
+    if not key:
+        return jsonify({"error": "CONTENT_ENCRYPTION_KEY not set"}), 400
+
+    raw_data = file_path.read_bytes()
+    actually_encrypted = is_encrypted_file(raw_data)
+
+    try:
+        if actually_encrypted:
+            # Decrypt
+            result = decrypt_file(raw_data, key)
+            file_path.write_bytes(result["plaintext"])
+            entry.encrypted = False
+            logger.info(
+                f"Media '{media_id}' decrypted "
+                f"({len(raw_data):,} → {len(result['plaintext']):,} bytes)"
+            )
+        else:
+            # Encrypt
+            encrypted_data = encrypt_file(raw_data, entry.original_name, entry.mime_type, key)
+            file_path.write_bytes(encrypted_data)
+            entry.encrypted = True
+            logger.info(
+                f"Media '{media_id}' encrypted "
+                f"({len(raw_data):,} → {len(encrypted_data):,} bytes)"
+            )
+    except Exception as e:
+        logger.error(f"Toggle encryption failed for '{media_id}': {e}")
+        return jsonify({"error": f"Operation failed: {e}"}), 500
+
+    manifest.save()
+
+    return jsonify({
+        "success": True,
+        "id": media_id,
+        "encrypted": entry.encrypted,
     })
 
 
@@ -452,19 +513,11 @@ def api_editor_upload():
             "size_bytes": len(file_data),
         })
 
-    # ── Larger file → optimize if needed, encrypt, store ──
-    from ..content.crypto import encrypt_file
+    # ── Larger file → optimize if needed, store raw ──
     from ..content.media_optimize import (
         should_optimize, optimize_image, classify_storage,
         LARGE_THRESHOLD_BYTES,
     )
-
-    key = _get_encryption_key()
-    if not key:
-        return jsonify({
-            "success": 0,
-            "error": "CONTENT_ENCRYPTION_KEY not set — cannot encrypt images",
-        }), 400
 
     # Auto-optimize large images (resize + convert to WebP)
     store_data = file_data
@@ -490,12 +543,6 @@ def api_editor_upload():
     id_prefix = _id_prefix_for_mime(store_mime)
     media_id = manifest.next_id(id_prefix)
 
-    try:
-        encrypted_data = encrypt_file(store_data, original_name, store_mime, key)
-    except Exception as e:
-        logger.error(f"Editor upload encryption failed: {e}")
-        return jsonify({"success": 0, "error": f"Encryption failed: {e}"}), 500
-
     # Register in manifest FIRST (so enc_path resolves correctly)
     from ..content.media import MediaEntry
     entry = MediaEntry(
@@ -504,22 +551,22 @@ def api_editor_upload():
         mime_type=store_mime,
         size_bytes=len(store_data),
         sha256=sha256,
+        encrypted=False,
         min_stage=request.form.get("min_stage", "FULL").upper(),
         caption="",
         storage=storage_tier,
     )
     manifest.add_entry(entry)
 
-    # Write encrypted file to the correct location
+    # Write raw file to disk (no encryption at upload time)
     enc_path = manifest.enc_path(media_id)
     enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(encrypted_data)
+    enc_path.write_bytes(store_data)
     manifest.save()
 
     logger.info(
         f"Editor upload ({storage_tier}): {media_id} ({original_name}, "
-        f"{len(store_data):,} bytes → {len(encrypted_data):,} enc, "
-        f"optimized={optimized})"
+        f"{len(store_data):,} bytes, optimized={optimized})"
     )
 
     # If stored in large/, trigger GitHub Release upload in background

@@ -1,6 +1,36 @@
         // ── Vault ───────────────────────────────────────────────
         let vaultLocked = false;
         let vaultAutoLockMinutes = 30;
+        let vaultHasPassphrase = false;  // Server has passphrase in memory
+
+        // ── Cross-tab coordination ─────────────────────────────
+        // BroadcastChannel lets all same-origin tabs sync vault
+        // state instantly — no polling delay, no race conditions.
+        const _vaultChannel = (typeof BroadcastChannel !== 'undefined')
+            ? new BroadcastChannel('vault-state')
+            : null;
+
+        function _broadcastVaultState(locked) {
+            if (_vaultChannel) {
+                _vaultChannel.postMessage({ locked: locked });
+            }
+        }
+
+        if (_vaultChannel) {
+            _vaultChannel.onmessage = function(e) {
+                const newLocked = e.data.locked;
+                if (newLocked !== vaultLocked) {
+                    vaultLocked = newLocked;
+                    updateVaultUI({});
+                    // If we just got unlocked from another tab, reload data
+                    if (!newLocked && typeof loadAll === 'function') {
+                        loadAll();
+                    }
+                }
+            };
+        }
+
+        // ── Core ───────────────────────────────────────────────
 
         async function checkVaultStatus() {
             try {
@@ -8,6 +38,7 @@
                 const data = await resp.json();
                 vaultLocked = data.locked;
                 vaultAutoLockMinutes = data.auto_lock_minutes || 30;
+                vaultHasPassphrase = !!data.has_passphrase;
                 updateVaultUI(data);
             } catch (e) {
                 // Vault API not available — assume unlocked
@@ -31,6 +62,10 @@
                     errorEl.style.display = 'block';
                 }
 
+                // Also dismiss the lock modal if it was open (auto-lock during setup)
+                const lockModal = document.getElementById('vault-lock-modal');
+                if (lockModal) lockModal.style.display = 'none';
+
                 setTimeout(function() { var el = document.getElementById('vault-passphrase-input'); if (el) el.focus(); }, 100);
             } else {
                 overlay.style.display = 'none';
@@ -42,17 +77,86 @@
             if (vaultLocked) {
                 updateVaultUI({});
             } else {
-                // Show lock modal
+                // Show lock modal — pick the right mode
                 document.getElementById('vault-lock-modal').style.display = 'flex';
-                document.getElementById('vault-lock-pass1').value = '';
-                document.getElementById('vault-lock-pass2').value = '';
-                document.getElementById('vault-lock-error').style.display = 'none';
 
-                // Set auto-lock dropdown to current value
-                var sel = document.getElementById('vault-autolock-select');
-                if (sel) sel.value = String(vaultAutoLockMinutes);
+                // Clear errors
+                var errQuick = document.getElementById('vault-lock-error-quick');
+                var errNew = document.getElementById('vault-lock-error');
+                if (errQuick) errQuick.style.display = 'none';
+                if (errNew) errNew.style.display = 'none';
 
-                setTimeout(function() { var el = document.getElementById('vault-lock-pass1'); if (el) el.focus(); }, 100);
+                if (vaultHasPassphrase) {
+                    // Quick lock mode — no passphrase entry needed
+                    document.getElementById('vault-lock-quick').style.display = 'block';
+                    document.getElementById('vault-lock-new').style.display = 'none';
+                    // Set auto-lock dropdown to current value
+                    var sel = document.getElementById('vault-autolock-select-quick');
+                    if (sel) sel.value = String(vaultAutoLockMinutes);
+                } else {
+                    // First time — must enter passphrase
+                    document.getElementById('vault-lock-quick').style.display = 'none';
+                    document.getElementById('vault-lock-new').style.display = 'block';
+                    document.getElementById('vault-lock-pass1').value = '';
+                    document.getElementById('vault-lock-pass2').value = '';
+                    var sel = document.getElementById('vault-autolock-select');
+                    if (sel) sel.value = String(vaultAutoLockMinutes);
+                    setTimeout(function() { var el = document.getElementById('vault-lock-pass1'); if (el) el.focus(); }, 100);
+                }
+            }
+        }
+
+        function vaultShowChangePassphrase() {
+            // Switch from quick-lock to new-passphrase mode
+            document.getElementById('vault-lock-quick').style.display = 'none';
+            document.getElementById('vault-lock-new').style.display = 'block';
+            document.getElementById('vault-lock-pass1').value = '';
+            document.getElementById('vault-lock-pass2').value = '';
+            document.getElementById('vault-lock-error').style.display = 'none';
+            var sel = document.getElementById('vault-autolock-select');
+            if (sel) sel.value = String(vaultAutoLockMinutes);
+            setTimeout(function() { var el = document.getElementById('vault-lock-pass1'); if (el) el.focus(); }, 100);
+        }
+
+        async function vaultQuickLock() {
+            const errorEl = document.getElementById('vault-lock-error-quick');
+
+            // Save auto-lock config
+            var sel = document.getElementById('vault-autolock-select-quick');
+            if (sel) {
+                var mins = parseInt(sel.value, 10);
+                vaultAutoLockMinutes = mins;
+                fetch('/api/vault/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto_lock_minutes: mins }),
+                }).catch(function() {});
+            }
+
+            try {
+                const resp = await fetch('/api/vault/quick-lock', { method: 'POST' });
+                const data = await resp.json();
+
+                if (data.success) {
+                    vaultLocked = true;
+                    document.getElementById('vault-lock-modal').style.display = 'none';
+                    updateVaultUI({});
+                    _broadcastVaultState(true);
+                } else {
+                    // Passphrase gone from memory — fallback to full lock
+                    if (errorEl) {
+                        errorEl.textContent = data.error || 'Quick-lock failed — enter a new passphrase';
+                        errorEl.style.display = 'block';
+                    }
+                    vaultHasPassphrase = false;
+                    // Switch to new-passphrase mode automatically
+                    setTimeout(function() { vaultShowChangePassphrase(); }, 1500);
+                }
+            } catch (e) {
+                if (errorEl) {
+                    errorEl.textContent = 'Connection error';
+                    errorEl.style.display = 'block';
+                }
             }
         }
 
@@ -79,8 +183,10 @@
 
                 if (data.success) {
                     vaultLocked = false;
+                    vaultHasPassphrase = true;  // Server now has it in memory
                     updateVaultUI({});
                     input.value = '';
+                    _broadcastVaultState(false);  // Tell other tabs
                     if (typeof loadAll === 'function') loadAll();
                 } else {
                     errorEl.textContent = data.error || 'Unlock failed';
@@ -139,8 +245,10 @@
 
                 if (data.success) {
                     vaultLocked = true;
+                    vaultHasPassphrase = true;  // New passphrase is now stored
                     document.getElementById('vault-lock-modal').style.display = 'none';
                     updateVaultUI({});
+                    _broadcastVaultState(true);  // Tell other tabs
                 } else {
                     errorEl.textContent = data.error || 'Lock failed';
                     errorEl.style.display = 'block';
@@ -155,16 +263,25 @@
             document.getElementById('vault-lock-modal').style.display = 'none';
         }
 
-        // Periodically check vault status (catches auto-lock)
+        // Periodically check vault status (catches auto-lock from server)
+        // Polls in BOTH states now — the server can lock (auto-lock timer)
+        // or unlock (another tab) at any time.
         setInterval(function() {
-            if (!vaultLocked) {
-                fetch('/api/vault/status').then(function(r) { return r.json(); }).then(function(data) {
-                    if (data.locked && !vaultLocked) {
-                        vaultLocked = true;
-                        updateVaultUI(data);
+            fetch('/api/vault/status').then(function(r) { return r.json(); }).then(function(data) {
+                // Track passphrase availability
+                vaultHasPassphrase = !!data.has_passphrase;
+
+                if (data.locked !== vaultLocked) {
+                    vaultLocked = data.locked;
+                    updateVaultUI(data);
+                    // Broadcast to other tabs so everyone converges fast
+                    _broadcastVaultState(data.locked);
+                    // If unlocked remotely, reload data
+                    if (!data.locked && typeof loadAll === 'function') {
+                        loadAll();
                     }
-                }).catch(function() {});
-            }
+                }
+            }).catch(function() {});
         }, 10000);
 
         // Check vault status on page load

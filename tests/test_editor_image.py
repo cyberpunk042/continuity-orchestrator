@@ -176,7 +176,8 @@ class TestEditorUploadVault:
         ids = [e["id"] for e in manifest["media"]]
         assert result["media_id"] in ids
 
-    def test_large_no_key_fails(self, client, monkeypatch):
+    def test_large_no_key_succeeds_unencrypted(self, client, monkeypatch):
+        """Uploads always succeed — no key needed (encryption deferred to save)."""
         monkeypatch.setattr(
             "src.admin.routes_media._get_encryption_key",
             lambda: None,
@@ -188,8 +189,8 @@ class TestEditorUploadVault:
             content_type="multipart/form-data",
         )
         result = resp.get_json()
-        assert result["success"] == 0
-        assert "CONTENT_ENCRYPTION_KEY" in result["error"]
+        assert result["success"] == 1
+        assert "media_id" in result
 
 
 class TestEditorUploadErrors:

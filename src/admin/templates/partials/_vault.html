@@ -65,55 +65,98 @@
     ">
         <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
         <h2 style="margin: 0 0 0.5rem 0; color: var(--text, #fff); font-size: 1.3rem;">Lock Vault</h2>
-        <p style="color: var(--text-dim, #888); font-size: 0.85rem; margin-bottom: 1.5rem;">
-            Choose a passphrase to encrypt your .env secrets.<br>
-            <strong>Remember it</strong> — you'll need it to unlock.
-        </p>
-        <input type="password" id="vault-lock-pass1" placeholder="Choose passphrase"
-            autocomplete="off"
-            style="
-                width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
-                border-radius: 8px; border: 1px solid var(--border, #333);
-                background: var(--bg-input, #111); color: var(--text, #fff);
-                outline: none; margin-bottom: 0.5rem; box-sizing: border-box;
-            "
-        >
-        <input type="password" id="vault-lock-pass2" placeholder="Confirm passphrase"
-            autocomplete="off"
-            style="
-                width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
-                border-radius: 8px; border: 1px solid var(--border, #333);
-                background: var(--bg-input, #111); color: var(--text, #fff);
-                outline: none; margin-bottom: 1rem; box-sizing: border-box;
-            "
-            onkeydown="if(event.key==='Enter') vaultLock();"
-        >
-        <div id="vault-lock-error" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; justify-content: center;">
-            <span style="font-size: 0.8rem; color: var(--text-dim, #888);">⏱ Auto-lock after</span>
-            <select id="vault-autolock-select" style="
-                background: var(--bg-input, #111); color: var(--text, #fff);
-                border: 1px solid var(--border, #333); border-radius: 6px;
-                padding: 0.3rem 0.5rem; font-size: 0.8rem; cursor: pointer;
-            ">
-                <option value="15">15 min</option>
-                <option value="30" selected>30 min</option>
-                <option value="60">1 hour</option>
-                <option value="0">Disabled</option>
-            </select>
+
+        <!-- Quick lock section (shown when passphrase is in memory) -->
+        <div id="vault-lock-quick" style="display: none;">
+            <p style="color: var(--text-dim, #888); font-size: 0.85rem; margin-bottom: 1.25rem;">
+                Encrypt your .env secrets using your current passphrase.
+            </p>
+            <div id="vault-lock-error-quick" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.25rem; justify-content: center;">
+                <span style="font-size: 0.8rem; color: var(--text-dim, #888);">⏱ Auto-lock after</span>
+                <select id="vault-autolock-select-quick" style="
+                    background: var(--bg-input, #111); color: var(--text, #fff);
+                    border: 1px solid var(--border, #333); border-radius: 6px;
+                    padding: 0.3rem 0.5rem; font-size: 0.8rem; cursor: pointer;
+                ">
+                    <option value="15">15 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="60">1 hour</option>
+                    <option value="0">Disabled</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                <button onclick="vaultLockCancel()" style="
+                    flex: 1; padding: 0.75rem; font-size: 0.9rem;
+                    border: 1px solid var(--border, #333); border-radius: 8px;
+                    background: transparent; color: var(--text, #fff); cursor: pointer;
+                ">Cancel</button>
+                <button onclick="vaultQuickLock()" style="
+                    flex: 1; padding: 0.75rem; font-size: 0.9rem; font-weight: 600;
+                    border: none; border-radius: 8px; cursor: pointer;
+                    background: linear-gradient(135deg, #ef4444, #dc2626);
+                    color: #fff;
+                ">🔒 Lock Now</button>
+            </div>
+            <button onclick="vaultShowChangePassphrase()" style="
+                background: none; border: none; color: var(--text-dim, #888);
+                font-size: 0.78rem; cursor: pointer; text-decoration: underline;
+                text-underline-offset: 2px;
+            ">Change passphrase…</button>
         </div>
-        <div style="display: flex; gap: 0.5rem;">
-            <button onclick="vaultLockCancel()" style="
-                flex: 1; padding: 0.75rem; font-size: 0.9rem;
-                border: 1px solid var(--border, #333); border-radius: 8px;
-                background: transparent; color: var(--text, #fff); cursor: pointer;
-            ">Cancel</button>
-            <button onclick="vaultLock()" style="
-                flex: 1; padding: 0.75rem; font-size: 0.9rem; font-weight: 600;
-                border: none; border-radius: 8px; cursor: pointer;
-                background: linear-gradient(135deg, #ef4444, #dc2626);
-                color: #fff;
-            ">🔒 Lock</button>
+
+        <!-- New passphrase section (shown on first lock or when changing) -->
+        <div id="vault-lock-new" style="display: none;">
+            <p style="color: var(--text-dim, #888); font-size: 0.85rem; margin-bottom: 1.5rem;">
+                Choose a passphrase to encrypt your .env secrets.<br>
+                <strong>Remember it</strong> — you'll need it to unlock.
+            </p>
+            <input type="password" id="vault-lock-pass1" placeholder="Choose passphrase"
+                autocomplete="off"
+                style="
+                    width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+                    border-radius: 8px; border: 1px solid var(--border, #333);
+                    background: var(--bg-input, #111); color: var(--text, #fff);
+                    outline: none; margin-bottom: 0.5rem; box-sizing: border-box;
+                "
+            >
+            <input type="password" id="vault-lock-pass2" placeholder="Confirm passphrase"
+                autocomplete="off"
+                style="
+                    width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+                    border-radius: 8px; border: 1px solid var(--border, #333);
+                    background: var(--bg-input, #111); color: var(--text, #fff);
+                    outline: none; margin-bottom: 1rem; box-sizing: border-box;
+                "
+                onkeydown="if(event.key==='Enter') vaultLock();"
+            >
+            <div id="vault-lock-error" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; justify-content: center;">
+                <span style="font-size: 0.8rem; color: var(--text-dim, #888);">⏱ Auto-lock after</span>
+                <select id="vault-autolock-select" style="
+                    background: var(--bg-input, #111); color: var(--text, #fff);
+                    border: 1px solid var(--border, #333); border-radius: 6px;
+                    padding: 0.3rem 0.5rem; font-size: 0.8rem; cursor: pointer;
+                ">
+                    <option value="15">15 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="60">1 hour</option>
+                    <option value="0">Disabled</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button onclick="vaultLockCancel()" style="
+                    flex: 1; padding: 0.75rem; font-size: 0.9rem;
+                    border: 1px solid var(--border, #333); border-radius: 8px;
+                    background: transparent; color: var(--text, #fff); cursor: pointer;
+                ">Cancel</button>
+                <button onclick="vaultLock()" style="
+                    flex: 1; padding: 0.75rem; font-size: 0.9rem; font-weight: 600;
+                    border: none; border-radius: 8px; cursor: pointer;
+                    background: linear-gradient(135deg, #ef4444, #dc2626);
+                    color: #fff;
+                ">🔒 Lock</button>
+            </div>
         </div>
     </div>
 </div>

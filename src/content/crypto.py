@@ -167,12 +167,14 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
     """
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.backends import default_backend
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=KEY_BYTES,
         salt=salt,
         iterations=KDF_ITERATIONS,
+        backend=default_backend(),
     )
     return kdf.derive(passphrase.encode("utf-8"))
 

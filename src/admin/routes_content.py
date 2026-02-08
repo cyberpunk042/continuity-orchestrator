@@ -90,6 +90,28 @@ def _update_manifest_entry(slug: str, metadata: dict):
     logger.info(f"Updated manifest entry for '{slug}': {vis}")
 
 
+def _remove_manifest_entry(slug: str):
+    """Remove an article entry from manifest.yaml."""
+    import yaml
+
+    manifest_file = _manifest_path()
+    if not manifest_file.exists():
+        return
+
+    data = yaml.safe_load(manifest_file.read_text(encoding="utf-8")) or {}
+    articles = data.get("articles", [])
+
+    original_len = len(articles)
+    data["articles"] = [a for a in articles if a.get("slug") != slug]
+
+    if len(data["articles"]) < original_len:
+        manifest_file.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        logger.info(f"Removed '{slug}' from manifest.yaml")
+
+
 def _article_meta(slug: str, data: dict, manifest) -> dict:
     """Build metadata dict for an article."""
     from ..content.crypto import is_encrypted
@@ -241,7 +263,7 @@ def api_get_article(slug: str):
 
 @content_bp.route("/articles/<slug>", methods=["POST"])
 def api_save_article(slug: str):
-    """Save article content (optionally encrypting)."""
+    """Save article content, optionally encrypting article + referenced media."""
     from ..content.crypto import encrypt_content, get_encryption_key, is_encrypted
 
     body = request.get_json()
@@ -258,6 +280,7 @@ def api_save_article(slug: str):
     articles_dir.mkdir(parents=True, exist_ok=True)
 
     data_to_write = content
+    key = None
 
     if encrypt:
         key = get_encryption_key()
@@ -276,22 +299,273 @@ def api_save_article(slug: str):
     if metadata:
         _update_manifest_entry(slug, metadata)
 
+    # Reconcile media encryption + references to match article state
+    media_info = _extract_media_info(content)
+    media_ids = list(media_info.keys())
+    media_changed = 0
+
+    logger.info(
+        f"Save '{slug}': encrypt={encrypt}, "
+        f"media_ids={media_ids}"
+    )
+
+    if media_ids:
+        # Always try to get the key — needed for both encrypt and decrypt
+        if not key:
+            key = get_encryption_key()
+        media_changed = _reconcile_media_encryption(media_ids, encrypt, key)
+        _update_media_references(slug, media_info)
+
     return jsonify({
         "success": True,
         "slug": slug,
         "encrypted": encrypt,
+        "media_reconciled": media_changed,
     })
+
+
+def _extract_media_info(content: dict) -> dict:
+    """Extract media IDs and their captions from Editor.js content.
+
+    Scans all blocks for media:// URIs. For image blocks, also captures
+    the Editor.js caption so we can backfill the media manifest caption.
+
+    Returns:
+        Dict of {media_id: caption_or_empty_string}
+    """
+    import re
+    media_map = {}  # {id: caption}
+    pattern = re.compile(r'media://(\w+)')
+
+    blocks = content.get("blocks", [])
+    for block in blocks:
+        data = block.get("data", {})
+
+        # Image blocks have structured data with caption + file.url
+        if block.get("type") == "image":
+            file_info = data.get("file", {})
+            url = file_info.get("url", "")
+            match = pattern.search(url)
+            if match:
+                caption = data.get("caption", "").strip()
+                media_map[match.group(1)] = caption
+            continue
+
+        # For any other block type, scan all string values for media:// URIs
+        def _scan(obj):
+            if isinstance(obj, str):
+                for m in pattern.finditer(obj):
+                    if m.group(1) not in media_map:
+                        media_map[m.group(1)] = ""
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    _scan(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _scan(item)
+
+        _scan(data)
+
+    return media_map
+
+
+def _reconcile_media_encryption(media_ids: list, should_encrypt: bool, key: str = None) -> int:
+    """Reconcile media files' encryption state to match the article.
+
+    At save time, this ensures all referenced media files are either
+    encrypted or decrypted to match the article's encrypt checkbox.
+
+    Args:
+        media_ids: List of media IDs referenced by the article.
+        should_encrypt: True if the article is being saved encrypted.
+        key: The CONTENT_ENCRYPTION_KEY passphrase (required if encrypting).
+
+    Returns:
+        Number of media files whose encryption state was changed.
+    """
+    from ..content.crypto import encrypt_file, decrypt_file, is_encrypted_file
+    from ..content.media import MediaManifest
+
+    media_dir = _project_root() / "content" / "media"
+    manifest_path = media_dir / "manifest.json"
+
+    try:
+        manifest = MediaManifest.load(manifest_path)
+    except Exception as e:
+        logger.warning(f"Cannot load media manifest for reconciliation: {e}")
+        return 0
+
+    changed = 0
+    for media_id in media_ids:
+        entry = manifest.get(media_id)
+        if not entry:
+            continue
+
+        file_path = manifest.enc_path(media_id)
+        if not file_path.exists():
+            continue
+
+        try:
+            raw_data = file_path.read_bytes()
+            actually_encrypted = is_encrypted_file(raw_data)
+
+            if should_encrypt and not actually_encrypted:
+                # Need to encrypt this file
+                if not key:
+                    logger.warning(f"Cannot encrypt media '{media_id}' — no key available")
+                    continue
+                encrypted_data = encrypt_file(raw_data, entry.original_name, entry.mime_type, key)
+                file_path.write_bytes(encrypted_data)
+                entry.encrypted = True
+                changed += 1
+                logger.info(f"Media '{media_id}' encrypted ({len(raw_data):,} → {len(encrypted_data):,} bytes)")
+
+            elif not should_encrypt and actually_encrypted:
+                # Need to decrypt this file
+                if not key:
+                    logger.warning(f"Cannot decrypt media '{media_id}' — no key available")
+                    continue
+                result = decrypt_file(raw_data, key)
+                file_path.write_bytes(result["plaintext"])
+                entry.encrypted = False
+                changed += 1
+                logger.info(f"Media '{media_id}' decrypted ({len(raw_data):,} → {len(result['plaintext']):,} bytes)")
+
+            elif should_encrypt and actually_encrypted:
+                # Already encrypted — just ensure manifest flag is correct
+                if not entry.encrypted:
+                    entry.encrypted = True
+                    changed += 1
+
+            elif not should_encrypt and not actually_encrypted:
+                # Already plaintext — just ensure manifest flag is correct
+                if entry.encrypted:
+                    entry.encrypted = False
+                    changed += 1
+
+        except Exception as e:
+            logger.error(f"Failed to reconcile media '{media_id}': {e}")
+            continue
+
+    if changed:
+        manifest.save()
+        logger.info(f"Media reconciliation: {changed} file(s) updated")
+
+    return changed
+
+
+def _update_media_references(slug: str, media_info: dict) -> None:
+    """Update media manifest references and captions for an article.
+
+    At save time, this ensures:
+    1. Each referenced media's `referenced_by` includes this article slug.
+    2. Each non-referenced media no longer lists this slug.
+    3. Empty media captions are backfilled from Editor.js image captions.
+
+    Args:
+        slug: The article slug being saved.
+        media_info: Dict of {media_id: caption_from_editor} from _extract_media_info.
+    """
+    from ..content.media import MediaManifest
+
+    media_dir = _project_root() / "content" / "media"
+    manifest_path = media_dir / "manifest.json"
+
+    try:
+        manifest = MediaManifest.load(manifest_path)
+    except Exception as e:
+        logger.warning(f"Cannot load media manifest for reference update: {e}")
+        return
+
+    changed = False
+    referenced_ids = set(media_info.keys())
+
+    for entry in manifest.entries:
+        if entry.id in referenced_ids:
+            # This media IS referenced by this article
+            if slug not in entry.referenced_by:
+                entry.referenced_by.append(slug)
+                changed = True
+
+            # Backfill caption from Editor.js if media caption is empty
+            editor_caption = media_info.get(entry.id, "")
+            if editor_caption and not entry.caption:
+                entry.caption = editor_caption
+                changed = True
+                logger.debug(
+                    f"Media '{entry.id}' caption set from article: "
+                    f"'{editor_caption[:50]}'"
+                )
+        else:
+            # This media is NOT referenced by this article — remove stale ref
+            if slug in entry.referenced_by:
+                entry.referenced_by.remove(slug)
+                changed = True
+
+    if changed:
+        manifest.save()
+        logger.debug(f"Media references updated for article '{slug}'")
+
+
+def _cleanup_media_references(slug: str) -> list:
+    """Remove a deleted article from all media referenced_by lists.
+
+    Returns list of orphaned media dicts (id + original_name) that
+    are no longer referenced by any article.
+    """
+    from ..content.media import MediaManifest
+
+    media_dir = _project_root() / "content" / "media"
+    manifest_path = media_dir / "manifest.json"
+
+    try:
+        manifest = MediaManifest.load(manifest_path)
+    except Exception:
+        return []
+
+    orphans = []
+    changed = False
+
+    for entry in manifest.entries:
+        if slug in entry.referenced_by:
+            entry.referenced_by.remove(slug)
+            changed = True
+            if not entry.referenced_by:
+                orphans.append({
+                    "id": entry.id,
+                    "original_name": entry.original_name,
+                })
+
+    if changed:
+        manifest.save()
+
+    return orphans
 
 
 @content_bp.route("/articles/<slug>", methods=["DELETE"])
 def api_delete_article(slug: str):
-    """Delete an article file."""
+    """Delete an article file and remove from manifest.
+
+    Also removes this slug from media referenced_by lists and
+    returns any orphaned media IDs (no longer referenced by any article).
+    """
     path = _articles_dir() / f"{slug}.json"
     if not path.exists():
         return jsonify({"error": "Article not found"}), 404
 
     path.unlink()
-    return jsonify({"success": True, "slug": slug})
+
+    # Also remove from manifest.yaml so it doesn't appear on the site
+    _remove_manifest_entry(slug)
+
+    # Clean up media references and find orphans
+    orphaned_media = _cleanup_media_references(slug)
+
+    return jsonify({
+        "success": True,
+        "slug": slug,
+        "orphaned_media": orphaned_media,
+    })
 
 
 @content_bp.route("/articles/<slug>/encrypt", methods=["POST"])

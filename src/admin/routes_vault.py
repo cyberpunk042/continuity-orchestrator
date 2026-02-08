@@ -16,7 +16,7 @@ def api_vault_status():
 
 @vault_bp.route("/vault/lock", methods=["POST"])
 def api_vault_lock():
-    """Lock the vault (encrypt .env)."""
+    """Lock the vault (encrypt .env) with a new passphrase."""
     from .vault import lock_vault
 
     body = request.get_json()
@@ -28,6 +28,25 @@ def api_vault_lock():
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Lock failed: {e}"}), 500
+
+
+@vault_bp.route("/vault/quick-lock", methods=["POST"])
+def api_vault_quick_lock():
+    """Lock the vault using the passphrase stored from last unlock.
+
+    No passphrase input needed — re-uses the one in memory.
+    Returns 400 if no passphrase is stored (first lock must use /vault/lock).
+    """
+    from .vault import auto_lock
+
+    try:
+        result = auto_lock()
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify({"error": result.get("message", "Quick-lock failed")}), 400
     except Exception as e:
         return jsonify({"error": f"Lock failed: {e}"}), 500
 

@@ -11,7 +11,17 @@
 {% block content %}
 <header>
     <h1>{{ article.title }}</h1>
-    <a href="index.html">← Back to Articles</a>
+    <nav style="display: flex; justify-content: space-between; align-items: center;">
+        <a href="index.html">← Back to Articles</a>
+        <div style="display: flex; gap: 1rem;">
+            {% if prev_article %}
+            <a href="{{ prev_article.slug }}.html">← {{ prev_article.title }}</a>
+            {% endif %}
+            {% if next_article %}
+            <a href="{{ next_article.slug }}.html">{{ next_article.title }} →</a>
+            {% endif %}
+        </div>
+    </nav>
 </header>
 
 {% if banner_html %}{{ banner_html|safe }}{% endif %}

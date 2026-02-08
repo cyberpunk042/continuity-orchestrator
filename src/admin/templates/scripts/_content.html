@@ -139,6 +139,8 @@ if (!confirm('You have unsaved changes. Discard and switch article?')) return;
 
 contentSelectedSlug = slug;
 contentDirty = false;
+const statusEl = document.getElementById('content-save-status');
+if (statusEl) statusEl.style.opacity = '0';
 renderContentList();
 
 // Show loading state in editor
@@ -170,7 +172,7 @@ badges.innerHTML += '<span class="badge warning" style="font-size: 0.72rem; padd
 
 // Set encryption toggle
 const encToggle = document.getElementById('content-encrypt-toggle');
-encToggle.checked = data.encrypted || contentEncryptionAvailable;
+encToggle.checked = !!data.encrypted;
 updateEncryptNote();
 
 // Set metadata fields
@@ -285,7 +287,11 @@ holder: 'content-editorjs',
 data: data,
 tools: toolConfig,
 placeholder: 'Start writing your article...',
-onChange: () => { contentDirty = true; },
+onChange: () => {
+    contentDirty = true;
+    const statusEl = document.getElementById('content-save-status');
+    if (statusEl) statusEl.style.opacity = '0';
+},
 minHeight: 300,
 });
 
@@ -372,9 +378,20 @@ contentDirty = false;
 contentOriginalData = outputData;
 const encLabel = data.encrypted ? '🔒 encrypted' : '📄 plaintext';
 contentLog(`✅ Saved "${contentSelectedSlug}" as ${encLabel}`);
+if (data.media_reconciled > 0) {
+    contentLog(`🔄 ${data.media_reconciled} media file(s) updated to match`);
+}
+// Show save status
+const statusEl = document.getElementById('content-save-status');
+if (statusEl) {
+    statusEl.textContent = '✅ Saved · Sync to publish';
+    statusEl.style.opacity = '1';
+}
 // Refresh list to update badges
 await loadContent();
 renderContentList();
+// Invalidate media cache so panel shows updated refs/captions
+mediaLoaded = false;
 } else {
 contentLog(`❌ Save failed: ${data.error}`, true);
 }
@@ -454,17 +471,37 @@ if (!confirm(`Permanently delete "${contentSelectedSlug}"? This cannot be undone
 
 try {
 const resp = await fetch(`/api/content/articles/${contentSelectedSlug}`, {
-method: 'DELETE',
+    method: 'DELETE',
 });
 const data = await resp.json();
 if (data.success) {
-contentLog(`🗑️ Deleted "${contentSelectedSlug}"`);
-contentSelectedSlug = null;
-contentDirty = false;
-resetContentEditor();
-await loadContent();
+    contentLog(`🗑️ Deleted "${contentSelectedSlug}"`);
+
+    // Offer to delete orphaned media
+    if (data.orphaned_media && data.orphaned_media.length > 0) {
+        const names = data.orphaned_media.map(m => `  • ${m.original_name} (${m.id})`).join('\n');
+        if (confirm(`${data.orphaned_media.length} media file(s) are no longer referenced by any article:\n\n${names}\n\nDelete them?`)) {
+            for (const m of data.orphaned_media) {
+                try {
+                    const delResp = await fetch(`/api/content/media/${m.id}`, { method: 'DELETE' });
+                    const delData = await delResp.json();
+                    if (delData.success) {
+                        contentLog(`🗑️ Deleted orphaned media: ${m.original_name}`);
+                    }
+                } catch (e) {
+                    contentLog(`❌ Failed to delete ${m.id}: ${e.message}`, true);
+                }
+            }
+            mediaLoaded = false;
+        }
+    }
+
+    contentSelectedSlug = null;
+    contentDirty = false;
+    resetContentEditor();
+    await loadContent();
 } else {
-contentLog(`❌ Delete failed: ${data.error}`, true);
+    contentLog(`❌ Delete failed: ${data.error}`, true);
 }
 } catch (error) {
 contentLog(`❌ Error: ${error.message}`, true);

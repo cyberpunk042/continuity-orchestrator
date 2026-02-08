@@ -133,10 +133,17 @@ async function mediaSelectItem(mediaId) {
 
     // Badges
     const badges = document.getElementById('media-panel-badges');
-    badges.innerHTML = `
-        <span class="badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(74, 222, 128, 0.15); color: var(--accent);">
-            🔒 Encrypted
-        </span>`;
+    if (item.encrypted) {
+        badges.innerHTML = `
+            <span class="badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(74, 222, 128, 0.15); color: var(--accent);">
+                🔒 Encrypted
+            </span>`;
+    } else {
+        badges.innerHTML = `
+            <span class="badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(160, 160, 160, 0.15); color: var(--text-dim);">
+                📄 Plaintext
+            </span>`;
+    }
 
     // URI
     document.getElementById('media-detail-uri').textContent = `media://${mediaId}`;
@@ -144,7 +151,7 @@ async function mediaSelectItem(mediaId) {
     // Info
     document.getElementById('media-detail-info').innerHTML = `
         ${item.mime_type} · ${formatMediaSize(item.size_bytes)}
-        ${item.enc_file_exists ? '' : '<br><span style="color: var(--danger);">⚠️ .enc file missing</span>'}`;
+        ${item.enc_file_exists ? '' : '<br><span style="color: var(--danger);">⚠️ File missing on disk</span>'}`;
 
     // Stage selector
     document.getElementById('media-detail-stage').value = item.min_stage;
@@ -157,6 +164,16 @@ async function mediaSelectItem(mediaId) {
     document.getElementById('media-detail-refs').textContent = refs.length > 0
         ? `Referenced by: ${refs.join(', ')}`
         : 'Not referenced by any article';
+
+    // Encrypt/decrypt toggle button
+    const toggleBtn = document.getElementById('media-toggle-encrypt-btn');
+    if (item.encrypted) {
+        toggleBtn.textContent = '🔓 Decrypt';
+        toggleBtn.title = 'Decrypt this media file (store as plaintext)';
+    } else {
+        toggleBtn.textContent = '🔒 Encrypt';
+        toggleBtn.title = 'Encrypt this media file';
+    }
 
     // Preview
     const previewEl = document.getElementById('media-detail-preview');
@@ -241,7 +258,7 @@ async function mediaDoUpload() {
 
     const btn = document.getElementById('media-upload-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Encrypting...';
+    btn.textContent = '⏳ Uploading...';
 
     const formData = new FormData();
     formData.append('file', mediaPendingFile);
@@ -268,7 +285,7 @@ async function mediaDoUpload() {
         contentLog(`❌ Upload error: ${error.message}`, true);
     } finally {
         btn.disabled = false;
-        btn.textContent = '📤 Encrypt & Upload';
+        btn.textContent = '📤 Upload';
     }
 }
 
@@ -346,6 +363,41 @@ async function mediaUpdateField(field, value) {
     }
 }
 
+// ── Toggle encryption ──────────────────────────────────
+
+async function mediaToggleEncryption() {
+    if (!mediaSelectedId) return;
+
+    const item = mediaEntries.find(m => m.id === mediaSelectedId);
+    if (!item) return;
+
+    const action = item.encrypted ? 'decrypt' : 'encrypt';
+    const btn = document.getElementById('media-toggle-encrypt-btn');
+    btn.disabled = true;
+    btn.textContent = `⏳ ${action === 'encrypt' ? 'Encrypting' : 'Decrypting'}...`;
+
+    try {
+        const resp = await fetch(`/api/content/media/${mediaSelectedId}/toggle-encryption`, {
+            method: 'POST',
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            const label = data.encrypted ? '🔒 encrypted' : '📄 plaintext';
+            contentLog(`✅ Media ${mediaSelectedId} is now ${label}`);
+            mediaLoaded = false;
+            await loadMedia();
+            mediaSelectItem(mediaSelectedId);
+        } else {
+            contentLog(`❌ ${action} failed: ${data.error}`, true);
+        }
+    } catch (error) {
+        contentLog(`❌ ${action} error: ${error.message}`, true);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 // ── Delete media ───────────────────────────────────────
 
 async function mediaDeleteSelected() {
@@ -354,7 +406,7 @@ async function mediaDeleteSelected() {
     const item = mediaEntries.find(m => m.id === mediaSelectedId);
     const name = item ? item.original_name : mediaSelectedId;
 
-    if (!confirm(`Delete "${name}"? This will remove the encrypted file and cannot be undone.`)) return;
+    if (!confirm(`Delete "${name}"? This will remove the file and cannot be undone.`)) return;
 
     try {
         const resp = await fetch(`/api/content/media/${mediaSelectedId}`, { method: 'DELETE' });

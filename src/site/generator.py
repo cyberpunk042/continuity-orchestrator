@@ -134,17 +134,20 @@ class SiteGenerator:
     
     def _process_media(self, stage: str) -> Dict[str, str]:
         """
-        Decrypt eligible media files for the current stage.
+        Process eligible media files for the current stage.
         
         Reads the media manifest, checks each entry's min_stage against
-        the current stage, and decrypts accessible files to public/media/.
+        the current stage, and processes accessible files to public/media/.
+        
+        For encrypted media: decrypts and writes plaintext.
+        For unencrypted media: copies raw bytes directly.
         
         Args:
             stage: Current content stage (e.g. "OK", "PARTIAL", "FULL")
         
         Returns:
             Media map: {media_id: relative_url} for resolved media.
-            Only includes media that was successfully decrypted.
+            Only includes media that was successfully processed.
         """
         from ..content.crypto import decrypt_file, get_encryption_key, is_encrypted_file
         from ..content.media import MediaManifest
@@ -162,37 +165,49 @@ class SiteGenerator:
             logger.debug("No media visible at current stage")
             return media_map
         
-        # Need encryption key to decrypt
-        passphrase = get_encryption_key()
-        if not passphrase:
-            logger.warning(
-                "Media files exist but CONTENT_ENCRYPTION_KEY is not set. "
-                "Media will not be included in the build."
-            )
-            return media_map
+        # Only need the key if any media is encrypted
+        passphrase = None
+        has_encrypted = any(e.encrypted for e in visible)
+        if has_encrypted:
+            passphrase = get_encryption_key()
+            if not passphrase:
+                logger.warning(
+                    "Encrypted media files exist but CONTENT_ENCRYPTION_KEY is not set. "
+                    "Encrypted media will be skipped."
+                )
         
         media_out = self.output_dir / "media"
         media_out.mkdir(parents=True, exist_ok=True)
         
-        decrypted_count = 0
+        processed_count = 0
         for entry in visible:
-            enc_path = manifest.enc_path(entry.id)
-            if not enc_path.exists():
+            file_path = manifest.enc_path(entry.id)
+            if not file_path.exists():
                 logger.warning(
-                    f"Media '{entry.id}' in manifest but .enc file missing: {enc_path}"
+                    f"Media '{entry.id}' in manifest but file missing: {file_path}"
                 )
                 continue
             
             try:
-                envelope = enc_path.read_bytes()
-                if not is_encrypted_file(envelope):
-                    logger.warning(f"Media '{entry.id}' is not a valid encrypted file")
-                    continue
+                raw_data = file_path.read_bytes()
+                actually_encrypted = is_encrypted_file(raw_data)
                 
-                result = decrypt_file(envelope, passphrase)
+                if actually_encrypted:
+                    # Encrypted media — need key to decrypt
+                    if not passphrase:
+                        logger.warning(
+                            f"Skipping encrypted media '{entry.id}' — no key available"
+                        )
+                        continue
+                    
+                    result = decrypt_file(raw_data, passphrase)
+                    file_bytes = result["plaintext"]
+                    output_name = entry.original_name
+                else:
+                    # Unencrypted media — use raw bytes directly
+                    file_bytes = raw_data
+                    output_name = entry.original_name
                 
-                # Write decrypted file to public/media/ using original name
-                output_name = entry.original_name
                 output_path = media_out / output_name
                 
                 # Handle filename collisions by adding media ID
@@ -202,19 +217,19 @@ class SiteGenerator:
                     output_name = f"{stem}_{entry.id}{suffix}"
                     output_path = media_out / output_name
                 
-                output_path.write_bytes(result["plaintext"])
+                output_path.write_bytes(file_bytes)
                 
                 # Map: media_id → relative URL from site root
                 media_map[entry.id] = f"media/{output_name}"
-                decrypted_count += 1
+                processed_count += 1
                 
             except Exception as e:
-                logger.error(f"Failed to decrypt media '{entry.id}': {e}")
+                logger.error(f"Failed to process media '{entry.id}': {e}")
         
-        if decrypted_count:
+        if processed_count:
             logger.info(
-                f"Processed media: {decrypted_count}/{len(visible)} files "
-                f"decrypted to {media_out}"
+                f"Processed media: {processed_count}/{len(visible)} files "
+                f"written to {media_out}"
             )
         
         return media_map
@@ -501,7 +516,9 @@ class SiteGenerator:
         articles_dir.mkdir(exist_ok=True)
         
         articles_data = []
+        articles_html = []  # Parallel list of rendered HTML content
         
+        # Pass 1: Collect all article data and render content
         for article_meta in visible_articles:
             slug = getattr(article_meta, "slug", "")
             title = getattr(article_meta, "title", slug)
@@ -530,28 +547,34 @@ class SiteGenerator:
             else:
                 content_html = "<p>Article content not found.</p>"
             
-            article_context = {
-                **context,
-                "base_path": "../",  # Articles are in subdirectory
-                "article": {
-                    "title": title,
-                    "slug": slug,
-                    "content": content_html,
-                    "description": description,
-                }
-            }
-            
             articles_data.append({
                 "title": title,
                 "slug": slug,
                 "description": description,
             })
+            articles_html.append(content_html)
+        
+        # Pass 2: Render each article page with prev/next navigation
+        for i, (a_data, content_html) in enumerate(zip(articles_data, articles_html)):
+            prev_article = articles_data[i - 1] if i > 0 else None
+            next_article = articles_data[i + 1] if i < len(articles_data) - 1 else None
+            
+            article_context = {
+                **context,
+                "base_path": "../",  # Articles are in subdirectory
+                "article": {
+                    **a_data,
+                    "content": content_html,
+                },
+                "prev_article": prev_article,
+                "next_article": next_article,
+            }
             
             # Render article page
             template = self.jinja_env.get_template("article.html")
             html = template.render(**article_context)
             
-            output_path = articles_dir / f"{slug}.html"
+            output_path = articles_dir / f"{a_data['slug']}.html"
             output_path.write_text(html)
             files_generated.append(output_path)
         
