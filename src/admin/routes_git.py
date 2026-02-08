@@ -282,23 +282,27 @@ def api_git_sync():
         )
         stashed = result.returncode == 0 and "No local changes" not in result.stdout
 
-        # Step 3: Pull latest from remote (clean working tree → always works)
-        result = _run(["git", "pull", "--ff"], "git pull", timeout=30)
+        # Step 3: Pull latest from remote
+        # Try fast-forward only first (no merge needed if we're behind)
+        result = _run(["git", "pull", "--ff-only"], "git pull (ff)", timeout=30)
         pull_ok = result.returncode == 0
 
         if not pull_ok:
-            # If pull fails even with clean tree, try merge strategy
-            logger.warning("[git-sync] Fast-forward pull failed, trying merge")
+            # Fast-forward failed — histories have diverged. Abort any leftover
+            # merge state from the failed ff attempt, then retry with a merge
+            # strategy that prefers our local version for conflicts (runtime
+            # files like state/current.json and audit/ledger.ndjson).
+            logger.warning("[git-sync] Fast-forward failed, aborting and retrying with merge")
+            _run(["git", "merge", "--abort"], "merge abort (cleanup)")
             result = _run(
-                ["git", "pull", "--no-rebase", "-X", "theirs"],
-                "git pull (merge)",
+                ["git", "pull", "--no-rebase", "-X", "ours"],
+                "git pull (merge, ours wins)",
                 timeout=30,
             )
             pull_ok = result.returncode == 0
             if not pull_ok:
-                # Abort merge if in progress
+                # Still failing — abort and recover
                 _run(["git", "merge", "--abort"], "merge abort")
-                # Recover stash
                 if stashed:
                     _run(["git", "stash", "pop"], "stash recover")
                 return jsonify({
