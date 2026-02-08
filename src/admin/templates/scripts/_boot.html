@@ -20,10 +20,25 @@
             return _origLoadStatus();
         };
 
-        // loadAll: called by vault unlock to refresh all dashboard data
+        // loadAll: called by vault unlock to refresh all vault-sensitive data.
+        // Invalidates caches so each tab re-fetches with the new .env state.
         function loadAll() {
+            // 1. Invalidate shared caches — forces fresh fetch on next tab visit
+            appData = null;
+            envData = {};
+            secretsLoaded = false;
+            contentLoaded = false;
+
+            // 2. Always refresh the dashboard (it's always visible in spirit)
             loadStatus();
             if (typeof loadGitStatus === 'function') loadGitStatus();
+
+            // 3. Reload the currently active tab so the user sees fresh data immediately
+            const tab = activeTab || 'dashboard';
+            if (tab === 'secrets') loadSecretsForm();
+            else if (tab === 'integrations') loadIntegrations();
+            else if (tab === 'content') loadContent();
+            else if (tab === 'wizard' && typeof renderWizard === 'function') renderWizard();
         }
 
         // Start polling

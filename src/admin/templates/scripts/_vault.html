@@ -16,14 +16,23 @@
             }
         }
 
+        // Invalidate all env-dependent caches when vault locks
+        function _vaultInvalidateCaches() {
+            appData = null;
+            envData = {};
+            secretsLoaded = false;
+            contentLoaded = false;
+        }
+
         if (_vaultChannel) {
             _vaultChannel.onmessage = function(e) {
                 const newLocked = e.data.locked;
                 if (newLocked !== vaultLocked) {
                     vaultLocked = newLocked;
                     updateVaultUI({});
-                    // If we just got unlocked from another tab, reload data
-                    if (!newLocked && typeof loadAll === 'function') {
+                    if (newLocked) {
+                        _vaultInvalidateCaches();
+                    } else if (typeof loadAll === 'function') {
                         loadAll();
                     }
                 }
@@ -246,6 +255,7 @@
                 if (data.success) {
                     vaultLocked = true;
                     vaultHasPassphrase = true;  // New passphrase is now stored
+                    _vaultInvalidateCaches();  // Clear stale env-dependent data
                     document.getElementById('vault-lock-modal').style.display = 'none';
                     updateVaultUI({});
                     _broadcastVaultState(true);  // Tell other tabs
@@ -276,8 +286,9 @@
                     updateVaultUI(data);
                     // Broadcast to other tabs so everyone converges fast
                     _broadcastVaultState(data.locked);
-                    // If unlocked remotely, reload data
-                    if (!data.locked && typeof loadAll === 'function') {
+                    if (data.locked) {
+                        _vaultInvalidateCaches();
+                    } else if (typeof loadAll === 'function') {
                         loadAll();
                     }
                 }
