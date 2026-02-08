@@ -498,6 +498,19 @@
                         </details>
                     </div>
                     
+                    <h3 style="margin: 1.5rem 0 1rem; color: var(--text-dim); font-size: 0.9rem;">🔒 CONTENT ENCRYPTION</h3>
+                    <div class="form-group">
+                        <label class="form-label">Encryption Key</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="password" class="form-input" id="wiz-content-encryption-key" placeholder="Leave blank to skip" style="flex: 1;">
+                            <button type="button" class="btn" onclick="wizGenContentKey()" title="Generate a random key">🔑 Generate</button>
+                        </div>
+                        <div class="form-hint">
+                            Passphrase for encrypting article content stored in the repo (optional)
+                            ${appData?.secrets?.find(s => s.name === 'CONTENT_ENCRYPTION_KEY')?.set ? '<span style="color: var(--accent);"> ✓ Already set</span>' : ''}
+                        </div>
+                    </div>
+                    
                     <h3 style="margin: 1.5rem 0 1rem; color: var(--text-dim); font-size: 0.9rem;">🐙 GITHUB CONFIGURATION</h3>
                     <div class="form-group">
                         <label class="form-label">GitHub Repository</label>
@@ -530,6 +543,8 @@
                     if (release) result.RELEASE_SECRET = release;
                     const triggerToken = document.getElementById('wiz-renewal-trigger-token').value;
                     if (triggerToken) result.RENEWAL_TRIGGER_TOKEN = triggerToken;
+                    const encKey = document.getElementById('wiz-content-encryption-key').value;
+                    if (encKey) result.CONTENT_ENCRYPTION_KEY = encKey;
                     const github = document.getElementById('wiz-github-token').value;
                     if (github) result.GITHUB_TOKEN = github;
                     const repo = document.getElementById('wiz-github-repo').value;
@@ -811,6 +826,16 @@
         }
 
         // Auto-detect GitHub token and repo from gh CLI / git remote
+        async function wizGenContentKey() {
+            try {
+                const response = await fetch('/api/content/keygen', { method: 'POST' });
+                const data = await response.json();
+                if (data.error) { alert('Failed: ' + data.error); return; }
+                const input = document.getElementById('wiz-content-encryption-key');
+                if (input) { input.type = 'text'; input.value = data.key; }
+            } catch (error) { alert('Error: ' + error.message); }
+        }
+
         async function autoDetectGitHub() {
             try {
                 const response = await fetch('/api/gh/auto');
