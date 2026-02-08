@@ -91,14 +91,37 @@ def generate_key() -> str:
 
 def get_encryption_key() -> Optional[str]:
     """
-    Read CONTENT_ENCRYPTION_KEY from environment.
+    Read CONTENT_ENCRYPTION_KEY from environment or .env file.
+
+    The server's os.environ is stale (loaded at startup). If the key
+    was set via the admin Secrets page after startup, we fall back to
+    reading the .env file directly.
 
     Returns:
         The passphrase string, or None if not configured.
     """
+    # 1. Check live os.environ first
     key = os.environ.get(ENV_VAR)
     if key and key.strip():
         return key.strip()
+
+    # 2. Fall back to reading .env directly (may have been updated at runtime)
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if env_file.exists():
+        try:
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    if k.strip() == ENV_VAR:
+                        v = v.strip()
+                        if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+                            v = v[1:-1]
+                        if v:
+                            return v
+        except Exception:
+            pass
+
     return None
 
 

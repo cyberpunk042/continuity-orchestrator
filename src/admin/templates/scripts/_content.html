@@ -36,6 +36,7 @@ const el = document.getElementById('content-key-status');
 if (contentEncryptionAvailable) {
 el.innerHTML = `
 <span style="color: var(--accent);">🔑 Encryption key: ✅ Configured</span>`;
+document.getElementById('content-gen-key-btn').style.display = 'none';
 } else {
 el.innerHTML = `
 <span style="color: var(--warning);">🔑 Encryption key: ⚠️ Not set</span>
@@ -44,6 +45,7 @@ el.innerHTML = `
     or <a href="#wizard/security" onclick="goToWizardStep('security'); return false;"
         style="color: var(--info);">Wizard</a>
 </span>`;
+document.getElementById('content-gen-key-btn').style.display = '';
 }
 }
 
@@ -168,7 +170,7 @@ badges.innerHTML += '<span class="badge warning" style="font-size: 0.72rem; padd
 
 // Set encryption toggle
 const encToggle = document.getElementById('content-encrypt-toggle');
-encToggle.checked = data.encrypted;
+encToggle.checked = data.encrypted || contentEncryptionAvailable;
 updateEncryptNote();
 
 // Set metadata fields

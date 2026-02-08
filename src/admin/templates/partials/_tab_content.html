@@ -36,8 +36,7 @@
         </div>
 
         <!-- Editor panel -->
-        <div class="card full-width" id="content-editor-card"
-            style="display: flex; flex-direction: column; min-height: 500px;">
+        <div class="card" id="content-editor-card" style="display: flex; flex-direction: column; min-height: 500px;">
             <h2 id="content-editor-title" style="display: flex; align-items: center; justify-content: space-between;">
                 <span><span class="icon">✏️</span> <span id="content-editor-slug">Select an article</span></span>
                 <div id="content-editor-badges" style="display: flex; gap: 0.35rem;"></div>
@@ -75,6 +74,10 @@
                     </div>
                     <!-- Right: action buttons -->
                     <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn" onclick="contentDeleteArticle()"
+                            style="padding: 0.45rem 0.9rem; color: var(--danger);" title="Delete this article">
+                            🗑️ Delete
+                        </button>
                         <button class="btn" onclick="contentDiscard()" style="padding: 0.45rem 0.9rem;">
                             ↩️ Discard
                         </button>
