@@ -308,7 +308,10 @@ def reset(
                             ["git", "remote", "add", name, url],
                             cwd=str(root), capture_output=True, text=True, timeout=10,
                         )
-                        click.echo(f"    Restored remote: {name} → {url}")
+                        # Mask credentials in URLs for display
+                        import re
+                        safe_url = re.sub(r'://[^@]+@', '://***@', url)
+                        click.echo(f"    Restored remote: {name} → {safe_url}")
 
                     # Auto force-push to origin
                     if "origin" in remote_urls:
@@ -319,6 +322,12 @@ def reset(
                         )
                         if push_result.returncode == 0:
                             click.secho("  ✅ Force-pushed to origin", fg="green")
+                            # Restore tracking branch (filter-repo strips it)
+                            _sp.run(
+                                ["git", "branch", "--set-upstream-to=origin/main", "main"],
+                                cwd=str(root), capture_output=True, text=True, timeout=5,
+                            )
+                            click.echo("    Restored tracking: main → origin/main")
                         else:
                             click.secho(
                                 f"  ❌ Force-push failed: {push_result.stderr.strip()}\n"
