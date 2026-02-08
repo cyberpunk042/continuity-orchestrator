@@ -1,44 +1,57 @@
         // ── Vault ───────────────────────────────────────────────
         let vaultLocked = false;
+        let vaultAutoLockMinutes = 30;
 
         async function checkVaultStatus() {
             try {
                 const resp = await fetch('/api/vault/status');
                 const data = await resp.json();
                 vaultLocked = data.locked;
-                updateVaultUI();
+                vaultAutoLockMinutes = data.auto_lock_minutes || 30;
+                updateVaultUI(data);
             } catch (e) {
                 // Vault API not available — assume unlocked
                 vaultLocked = false;
-                updateVaultUI();
+                updateVaultUI({});
             }
         }
 
-        function updateVaultUI() {
+        function updateVaultUI(data) {
             const overlay = document.getElementById('vault-overlay');
             const btn = document.getElementById('vault-toggle');
 
             if (vaultLocked) {
                 overlay.style.display = 'flex';
                 if (btn) { btn.textContent = '🔒'; btn.title = 'Vault is locked'; }
-                // Focus the passphrase input
+
+                // Show rate limit warning if applicable
+                const errorEl = document.getElementById('vault-error');
+                if (data && data.rate_limited && data.retry_after > 0) {
+                    errorEl.textContent = 'Too many failed attempts. Try again in ' + data.retry_after + 's.';
+                    errorEl.style.display = 'block';
+                }
+
                 setTimeout(function() { var el = document.getElementById('vault-passphrase-input'); if (el) el.focus(); }, 100);
             } else {
                 overlay.style.display = 'none';
-                if (btn) { btn.textContent = '🔓'; btn.title = 'Lock vault'; }
+                if (btn) { btn.textContent = '🔓'; btn.title = 'Lock vault (' + vaultAutoLockMinutes + 'min auto-lock)'; }
             }
         }
 
         function vaultToggle() {
             if (vaultLocked) {
-                // Already locked — show overlay
-                updateVaultUI();
+                updateVaultUI({});
             } else {
                 // Show lock modal
                 document.getElementById('vault-lock-modal').style.display = 'flex';
                 document.getElementById('vault-lock-pass1').value = '';
                 document.getElementById('vault-lock-pass2').value = '';
                 document.getElementById('vault-lock-error').style.display = 'none';
+
+                // Set auto-lock dropdown to current value
+                var sel = document.getElementById('vault-autolock-select');
+                if (sel) sel.value = String(vaultAutoLockMinutes);
+
                 setTimeout(function() { var el = document.getElementById('vault-lock-pass1'); if (el) el.focus(); }, 100);
             }
         }
@@ -66,9 +79,8 @@
 
                 if (data.success) {
                     vaultLocked = false;
-                    updateVaultUI();
+                    updateVaultUI({});
                     input.value = '';
-                    // Reload all data now that .env is available
                     if (typeof loadAll === 'function') loadAll();
                 } else {
                     errorEl.textContent = data.error || 'Unlock failed';
@@ -105,6 +117,18 @@
 
             errorEl.style.display = 'none';
 
+            // Save auto-lock config first
+            var sel = document.getElementById('vault-autolock-select');
+            if (sel) {
+                var mins = parseInt(sel.value, 10);
+                vaultAutoLockMinutes = mins;
+                fetch('/api/vault/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto_lock_minutes: mins }),
+                }).catch(function() {});
+            }
+
             try {
                 const resp = await fetch('/api/vault/lock', {
                     method: 'POST',
@@ -116,7 +140,7 @@
                 if (data.success) {
                     vaultLocked = true;
                     document.getElementById('vault-lock-modal').style.display = 'none';
-                    updateVaultUI();
+                    updateVaultUI({});
                 } else {
                     errorEl.textContent = data.error || 'Lock failed';
                     errorEl.style.display = 'block';
@@ -130,6 +154,18 @@
         function vaultLockCancel() {
             document.getElementById('vault-lock-modal').style.display = 'none';
         }
+
+        // Periodically check vault status (catches auto-lock)
+        setInterval(function() {
+            if (!vaultLocked) {
+                fetch('/api/vault/status').then(function(r) { return r.json(); }).then(function(data) {
+                    if (data.locked && !vaultLocked) {
+                        vaultLocked = true;
+                        updateVaultUI(data);
+                    }
+                }).catch(function() {});
+            }
+        }, 10000);
 
         // Check vault status on page load
         checkVaultStatus();

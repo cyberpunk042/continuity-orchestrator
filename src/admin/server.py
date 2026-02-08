@@ -65,10 +65,14 @@ def create_app() -> Flask:
 
     @app.before_request
     def log_request_start():
-        """Record request start time."""
+        """Record request start time and track vault activity."""
         import time
         from flask import request
         request._start_time = time.time()
+
+        # Track activity for vault auto-lock
+        from .vault import touch_activity
+        touch_activity()
 
     @app.after_request
     def log_request_end(response):
@@ -189,6 +193,38 @@ def run_server(
         def open_browser_delayed():
             webbrowser.open(url)
         Timer(1.5, open_browser_delayed).start()
+
+    # ── Vault shutdown hook ────────────────────────────────────
+    # Auto-lock vault when server shuts down (Ctrl+C, SIGTERM, etc.)
+    import atexit
+
+    def _vault_shutdown():
+        try:
+            from .vault import auto_lock, _session_passphrase
+            if _session_passphrase is not None:
+                print("\n🔒 Locking vault on shutdown...")
+                result = auto_lock()
+                if result.get("success"):
+                    print("✅ Vault locked — .env encrypted")
+                else:
+                    print(f"⚠️  Vault lock skipped: {result.get('message', 'unknown')}")
+        except Exception as e:
+            print(f"⚠️  Vault shutdown lock failed: {e}")
+
+    atexit.register(_vault_shutdown)
+
+    # Also handle SIGINT/SIGTERM explicitly for cleaner shutdown
+    _original_sigint = signal.getsignal(signal.SIGINT)
+
+    def _shutdown_signal(signum, frame):
+        _vault_shutdown()
+        # Re-raise the original signal handler
+        if callable(_original_sigint):
+            _original_sigint(signum, frame)
+        else:
+            raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _shutdown_signal)
 
     # Run the server
     app.run(host=host, port=port, debug=debug)

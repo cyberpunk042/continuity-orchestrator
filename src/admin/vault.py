@@ -6,7 +6,11 @@ AES-256-GCM with PBKDF2 key derivation from a user-chosen passphrase.
 The plaintext .env is securely overwritten and deleted.
 
 When unlocked, the vault is decrypted back to .env and the vault file
-is kept as a backup until the next lock cycle.
+is deleted. The passphrase is held in server memory for auto-lock.
+
+Features:
+  - Auto-lock after configurable inactivity (default: 30 min)
+  - Rate limiting with exponential backoff on failed unlock attempts
 """
 
 from __future__ import annotations
@@ -15,8 +19,9 @@ import base64
 import json
 import logging
 import os
-import secrets
+import time
 from pathlib import Path
+from threading import Timer, Lock as ThreadLock
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -29,6 +34,22 @@ KEY_BYTES = 32
 TAG_BYTES = 16
 
 VAULT_FILENAME = ".env.vault"
+
+# ── In-memory session state ──────────────────────────────────
+_session_passphrase: Optional[str] = None     # Held in RAM for auto-lock
+_auto_lock_timer: Optional[Timer] = None      # Timer for auto-lock
+_auto_lock_minutes: int = 30                  # Default: 30 min inactivity
+_lock = ThreadLock()                          # Thread safety
+
+# ── Rate limiting state ──────────────────────────────────────
+_failed_attempts: int = 0
+_last_failed_time: float = 0
+_RATE_LIMIT_TIERS = [
+    # (max_attempts, lockout_seconds)
+    (3, 30),      # After 3 fails: 30s lockout
+    (6, 300),     # After 6 fails: 5min lockout
+    (10, 900),    # After 10 fails: 15min lockout
+]
 
 
 def _project_root() -> Path:
@@ -57,6 +78,98 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
     return kdf.derive(passphrase.encode("utf-8"))
 
 
+# ── Rate limiting ────────────────────────────────────────────
+
+def _check_rate_limit() -> Optional[dict]:
+    """Check if unlock attempts are rate-limited.
+
+    Returns:
+        None if allowed, or dict with error info if blocked.
+    """
+    global _failed_attempts, _last_failed_time
+
+    if _failed_attempts == 0:
+        return None
+
+    # Find applicable tier
+    lockout_seconds = 0
+    for max_attempts, seconds in _RATE_LIMIT_TIERS:
+        if _failed_attempts >= max_attempts:
+            lockout_seconds = seconds
+
+    if lockout_seconds == 0:
+        return None
+
+    elapsed = time.time() - _last_failed_time
+    remaining = lockout_seconds - elapsed
+
+    if remaining > 0:
+        return {
+            "error": f"Too many failed attempts. Try again in {int(remaining)}s.",
+            "retry_after": int(remaining),
+            "attempts": _failed_attempts,
+        }
+
+    return None
+
+
+def _record_failed_attempt():
+    global _failed_attempts, _last_failed_time
+    _failed_attempts += 1
+    _last_failed_time = time.time()
+    logger.warning(f"Vault unlock failed — attempt #{_failed_attempts}")
+
+
+def _reset_rate_limit():
+    global _failed_attempts, _last_failed_time
+    _failed_attempts = 0
+    _last_failed_time = 0
+
+
+# ── Auto-lock timer ─────────────────────────────────────────
+
+def _start_auto_lock_timer():
+    """(Re)start the auto-lock inactivity timer."""
+    global _auto_lock_timer
+
+    _cancel_auto_lock_timer()
+
+    if _auto_lock_minutes <= 0:
+        return  # Disabled
+
+    def _on_timeout():
+        logger.info(f"Vault auto-lock triggered after {_auto_lock_minutes}min inactivity")
+        try:
+            auto_lock()
+        except Exception as e:
+            logger.error(f"Auto-lock failed: {e}")
+
+    _auto_lock_timer = Timer(_auto_lock_minutes * 60, _on_timeout)
+    _auto_lock_timer.daemon = True  # Don't prevent server shutdown
+    _auto_lock_timer.start()
+    logger.debug(f"Auto-lock timer set: {_auto_lock_minutes}min")
+
+
+def _cancel_auto_lock_timer():
+    """Cancel any pending auto-lock timer."""
+    global _auto_lock_timer
+    if _auto_lock_timer is not None:
+        _auto_lock_timer.cancel()
+        _auto_lock_timer = None
+
+
+def touch_activity():
+    """Reset the auto-lock timer on user activity.
+
+    Call this from the request middleware to track activity.
+    Only resets if vault is unlocked and passphrase is in memory.
+    """
+    if _session_passphrase is not None:
+        _start_auto_lock_timer()
+
+
+# ── Vault operations ────────────────────────────────────────
+
 def vault_status() -> dict:
     """Check vault status.
 
@@ -66,13 +179,27 @@ def vault_status() -> dict:
     env_exists = _env_path().exists()
     vault_exists = _vault_path().exists()
 
+    result = {}
+
     if vault_exists and not env_exists:
-        return {"locked": True, "vault_file": VAULT_FILENAME}
+        result = {"locked": True, "vault_file": VAULT_FILENAME}
     elif env_exists:
-        return {"locked": False, "vault_file": VAULT_FILENAME if vault_exists else None}
+        result = {"locked": False, "vault_file": VAULT_FILENAME if vault_exists else None}
     else:
         # No .env and no vault — nothing to protect
-        return {"locked": False, "vault_file": None, "empty": True}
+        result = {"locked": False, "vault_file": None, "empty": True}
+
+    # Include auto-lock config
+    result["auto_lock_minutes"] = _auto_lock_minutes
+    result["has_passphrase"] = _session_passphrase is not None
+
+    # Include rate limit info if blocked
+    rate_info = _check_rate_limit()
+    if rate_info:
+        result["rate_limited"] = True
+        result["retry_after"] = rate_info["retry_after"]
+
+    return result
 
 
 def lock_vault(passphrase: str) -> dict:
@@ -84,6 +211,8 @@ def lock_vault(passphrase: str) -> dict:
     Returns:
         Success dict or raises ValueError.
     """
+    global _session_passphrase
+
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     env_path = _env_path()
@@ -133,6 +262,13 @@ def lock_vault(passphrase: str) -> dict:
     # Securely overwrite plaintext .env before deleting
     _secure_delete(env_path)
 
+    # Store passphrase in memory for auto-lock re-use
+    with _lock:
+        _session_passphrase = passphrase
+
+    # Cancel auto-lock timer (vault is already locked)
+    _cancel_auto_lock_timer()
+
     logger.info("Vault locked — .env encrypted and deleted")
     return {"success": True, "message": "Vault locked"}
 
@@ -146,6 +282,13 @@ def unlock_vault(passphrase: str) -> dict:
     Returns:
         Success dict or raises ValueError/InvalidTag.
     """
+    global _session_passphrase
+
+    # Check rate limit first
+    rate_info = _check_rate_limit()
+    if rate_info:
+        raise ValueError(rate_info["error"])
+
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     vault_path = _vault_path()
@@ -170,7 +313,6 @@ def unlock_vault(passphrase: str) -> dict:
     ciphertext = base64.b64decode(envelope["ciphertext"])
 
     # Derive key
-    iterations = envelope.get("kdf_iterations", KDF_ITERATIONS)
     key = _derive_key(passphrase, salt)
 
     # Decrypt
@@ -180,7 +322,11 @@ def unlock_vault(passphrase: str) -> dict:
     try:
         plaintext = aesgcm.decrypt(iv, ciphertext_and_tag, None)
     except Exception:
+        _record_failed_attempt()
         raise ValueError("Wrong passphrase — decryption failed")
+
+    # Success — reset rate limit
+    _reset_rate_limit()
 
     # Write .env back
     env_path.write_bytes(plaintext)
@@ -191,8 +337,52 @@ def unlock_vault(passphrase: str) -> dict:
     except Exception:
         pass
 
+    # Store passphrase for auto-lock
+    with _lock:
+        _session_passphrase = passphrase
+
+    # Start auto-lock inactivity timer
+    _start_auto_lock_timer()
+
     logger.info("Vault unlocked — .env restored, vault deleted")
     return {"success": True, "message": "Vault unlocked"}
+
+
+def auto_lock() -> dict:
+    """Auto-lock using the stored passphrase from the last unlock.
+
+    Called by the inactivity timer. If no passphrase is stored,
+    this is a no-op.
+    """
+    with _lock:
+        passphrase = _session_passphrase
+
+    if not passphrase:
+        logger.warning("Auto-lock skipped — no passphrase in memory")
+        return {"success": False, "message": "No passphrase stored"}
+
+    if not _env_path().exists():
+        logger.debug("Auto-lock skipped — .env doesn't exist (already locked?)")
+        return {"success": False, "message": "Already locked"}
+
+    return lock_vault(passphrase)
+
+
+def set_auto_lock_minutes(minutes: int):
+    """Configure the auto-lock timeout.
+
+    Args:
+        minutes: Minutes of inactivity before auto-lock. 0 to disable.
+    """
+    global _auto_lock_minutes
+    _auto_lock_minutes = max(0, minutes)
+
+    # Restart timer with new duration if vault is unlocked
+    if _session_passphrase is not None:
+        _start_auto_lock_timer()
+
+    logger.info(f"Auto-lock timeout set to {_auto_lock_minutes}min"
+                + (" (disabled)" if _auto_lock_minutes == 0 else ""))
 
 
 def _secure_delete(path: Path):

@@ -89,6 +89,19 @@
             onkeydown="if(event.key==='Enter') vaultLock();"
         >
         <div id="vault-lock-error" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; justify-content: center;">
+            <span style="font-size: 0.8rem; color: var(--text-dim, #888);">⏱ Auto-lock after</span>
+            <select id="vault-autolock-select" style="
+                background: var(--bg-input, #111); color: var(--text, #fff);
+                border: 1px solid var(--border, #333); border-radius: 6px;
+                padding: 0.3rem 0.5rem; font-size: 0.8rem; cursor: pointer;
+            ">
+                <option value="15">15 min</option>
+                <option value="30" selected>30 min</option>
+                <option value="60">1 hour</option>
+                <option value="0">Disabled</option>
+            </select>
+        </div>
         <div style="display: flex; gap: 0.5rem;">
             <button onclick="vaultLockCancel()" style="
                 flex: 1; padding: 0.75rem; font-size: 0.9rem;

@@ -48,3 +48,23 @@ def api_vault_unlock():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"Unlock failed: {e}"}), 500
+
+
+@vault_bp.route("/vault/config", methods=["POST"])
+def api_vault_config():
+    """Update vault configuration (auto-lock timeout)."""
+    from .vault import set_auto_lock_minutes
+
+    body = request.get_json()
+    if not body:
+        return jsonify({"error": "No JSON body"}), 400
+
+    if "auto_lock_minutes" in body:
+        try:
+            minutes = int(body["auto_lock_minutes"])
+            set_auto_lock_minutes(minutes)
+            return jsonify({"success": True, "auto_lock_minutes": minutes})
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid value for auto_lock_minutes"}), 400
+
+    return jsonify({"error": "No config to update"}), 400
