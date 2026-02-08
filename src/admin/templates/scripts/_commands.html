@@ -1,0 +1,62 @@
+        // Run command
+        async function runCmd(command) {
+            const terminal = document.getElementById('cmd-terminal');
+            terminal.className = 'terminal';
+            terminal.textContent = `Running ${command}...\n`;
+
+            try {
+                const response = await fetch('/api/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command }),
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    terminal.textContent = data.output || 'Command completed successfully';
+                } else {
+                    terminal.textContent = data.error || data.output || 'Command failed';
+                    terminal.className = 'terminal error';
+                }
+
+                // Refresh status
+                setTimeout(loadStatus, 1000);
+            } catch (error) {
+                terminal.className = 'terminal error';
+                terminal.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Run a command, then optionally git sync
+        async function runCmdWithSync(command, checkboxId) {
+            await runCmd(command);
+            const cb = document.getElementById(checkboxId);
+            if (cb && cb.checked) {
+                await doGitSync('cmd-terminal');
+            }
+        }
+
+        // Shared git sync helper — appends result to a terminal element
+        async function doGitSync(terminalId) {
+            const terminal = document.getElementById(terminalId);
+            if (terminal) terminal.textContent += '\n\n🔄 Syncing to Git...\n';
+            try {
+                const resp = await fetch('/api/git/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'chore: sync from admin panel' }),
+                });
+                const data = await resp.json();
+                if (terminal) {
+                    if (data.success) {
+                        terminal.textContent += `✅ ${data.message}\n`;
+                    } else {
+                        terminal.textContent += `⚠️ Git sync: ${data.error || 'failed'}\n`;
+                        if (data.hint) terminal.textContent += `   💡 ${data.hint}\n`;
+                    }
+                }
+            } catch (e) {
+                if (terminal) terminal.textContent += `⚠️ Git sync failed: ${e.message}\n`;
+            }
+        }
+

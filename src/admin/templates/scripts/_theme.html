@@ -1,0 +1,42 @@
+        // ========================================
+        // THEME TOGGLE
+        // ========================================
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = !html.hasAttribute('data-theme') || html.getAttribute('data-theme') === 'dark';
+            const newTheme = isDark ? 'light' : 'dark';
+            if (newTheme === 'dark') {
+                html.removeAttribute('data-theme');
+            } else {
+                html.setAttribute('data-theme', newTheme);
+            }
+            localStorage.setItem('co-theme', newTheme);
+            document.getElementById('theme-toggle').textContent = newTheme === 'light' ? '☀️' : '🌙';
+        }
+
+        // ========================================
+        // GITHUB SHORTCUT MENU
+        // ========================================
+        function updateGhMenu() {
+            const repo = envData.GITHUB_REPOSITORY;
+            const menu = document.getElementById('gh-menu');
+            if (!repo || !menu) return;
+
+            const [owner, name] = repo.split('/');
+            if (!owner || !name) return;
+
+            document.getElementById('gh-link-repo').href = `https://github.com/${repo}`;
+            document.getElementById('gh-link-pages').href = `https://${owner}.github.io/${name}/`;
+            document.getElementById('gh-link-actions').href = `https://github.com/${repo}/actions`;
+            menu.classList.add('visible');
+        }
+        // Restore theme on load
+        (function initTheme() {
+            const saved = localStorage.getItem('co-theme');
+            if (saved === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+                const btn = document.getElementById('theme-toggle');
+                if (btn) btn.textContent = '☀️';
+            }
+        })();
+

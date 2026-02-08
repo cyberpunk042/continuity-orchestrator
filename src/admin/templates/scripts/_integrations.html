@@ -1,0 +1,180 @@
+        // ========================================
+        // INTEGRATIONS TAB
+        // ========================================
+        const INTEGRATIONS = [
+            {
+                id: 'email', label: 'Email', adapter: 'email',
+                secrets: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'OPERATOR_EMAIL'],
+                testCmd: 'test email',
+                wizardStep: 'email',
+            },
+            {
+                id: 'sms', label: 'SMS', adapter: 'sms',
+                secrets: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER', 'OPERATOR_SMS'],
+                testCmd: 'test sms',
+                wizardStep: 'sms',
+            },
+            {
+                id: 'x', label: 'X / Twitter', adapter: 'x_twitter',
+                secrets: ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
+                testCmd: null,
+                wizardStep: 'twitter',
+            },
+            {
+                id: 'reddit', label: 'Reddit', adapter: 'reddit',
+                secrets: ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USERNAME', 'REDDIT_PASSWORD'],
+                testCmd: null,
+                wizardStep: 'reddit',
+            },
+        ];
+
+        async function loadIntegrations() {
+            if (!appData) {
+                const resp = await fetch('/api/status');
+                appData = await resp.json();
+            }
+            if (!envData || Object.keys(envData).length === 0) {
+                const envResp = await fetch('/api/env/read');
+                const envResult = await envResp.json();
+                envData = envResult.values || {};
+            }
+
+            // Load mirror status
+            loadMirrorStatus();
+
+            for (const integ of INTEGRATIONS) {
+                const el = document.getElementById(`integration-${integ.id}`);
+                if (!el) continue;
+
+                // Check which secrets are set
+                const secretStatus = integ.secrets.map(s => ({
+                    name: s,
+                    set: !!(envData[s] && envData[s].length > 0),
+                }));
+                const allSet = secretStatus.every(s => s.set);
+                const noneSet = secretStatus.every(s => !s.set);
+
+                // Find adapter status
+                const adapter = appData.adapters?.find(a => a.name === integ.adapter);
+                const mode = adapter?.configured ? adapter.mode : null;
+
+                let html = '';
+
+                // Secret status
+                html += `<div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">`;
+                for (const s of secretStatus) {
+                    html += `<span style="font-size: 0.78rem; padding: 0.15rem 0.45rem; border-radius: 4px;
+                        background: ${s.set ? 'rgba(74,222,128,0.1)' : 'rgba(239,68,68,0.1)'};
+                        color: ${s.set ? 'var(--accent)' : 'var(--danger)'};">
+                        ${s.set ? '✓' : '✗'} ${s.name.split('_').slice(-1)[0].toLowerCase()}
+                    </span>`;
+                }
+                html += `</div>`;
+
+                // Mode badge
+                if (mode) {
+                    html += `<div style="font-size: 0.82rem;">
+                        Mode: <span class="badge ${mode === 'real' ? 'ok' : 'warning'}">${mode}</span>
+                    </div>`;
+                }
+
+                // Actions
+                if (allSet && integ.testCmd) {
+                    const defaultTo = integ.id === 'email'
+                        ? (envData['OPERATOR_EMAIL'] || '')
+                        : (envData['OPERATOR_SMS'] || '');
+                    const placeholder = defaultTo
+                        ? `Default: ${defaultTo}`
+                        : (integ.id === 'email' ? 'email@example.com' : '+1234567890');
+                    html += `
+                        <div style="margin-top: 0.4rem;">
+                            <label style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.25rem; display: block;">
+                                Send to ${integ.id === 'email' ? '(email)' : '(phone)'}:
+                            </label>
+                            <input type="${integ.id === 'email' ? 'email' : 'tel'}"
+                                id="test-to-${integ.id}"
+                                placeholder="${placeholder}"
+                                style="width: 100%; box-sizing: border-box; padding: 0.45rem 0.7rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; margin-bottom: 0.5rem;" />
+                            <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="width: 100%;">
+                                🧪 Send Test ${integ.label}
+                            </button>
+                        </div>`;
+                } else if (allSet && !integ.testCmd) {
+                    html += `<div style="color: var(--accent); font-size: 0.85rem;">✅ Configured — no test available yet</div>`;
+                } else {
+                    const missingKeys = secretStatus.filter(s => !s.set).map(s => s.name);
+                    html += `
+                        <div style="color: var(--warning); font-size: 0.82rem;">
+                            Missing: ${missingKeys.join(', ')}
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="goToWizardStep('${integ.wizardStep}')" style="flex: 1;">
+                                🧙 Setup in Wizard →
+                            </button>
+                            <button class="btn" onclick="switchTab('secrets')" style="flex: 1;">
+                                🔐 Secrets →
+                            </button>
+                        </div>`;
+                }
+
+                // Last test result (persisted in localStorage)
+                html += getLastTestHtml(integ.id);
+
+                el.innerHTML = html;
+            }
+        }
+
+        async function runIntegrationTest(integId) {
+            const terminal = document.getElementById('integration-terminal');
+            const toInput = document.getElementById(`test-to-${integId}`);
+            const to = toInput?.value?.trim() || '';
+            const label = integId === 'email' ? 'Email' : 'SMS';
+
+            terminal.className = 'terminal';
+            terminal.textContent = `🧪 Testing ${label}${to ? ` → ${to}` : ' (using default)'}...\n`;
+
+            try {
+                const body = {};
+                if (to) body.to = to;
+
+                const response = await fetch(`/api/test/${integId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await response.json();
+
+                const testResult = {
+                    success: !!data.success,
+                    message: data.success
+                        ? (data.output || 'Completed successfully')
+                        : (data.error || data.output || 'Unknown error'),
+                    timestamp: Date.now(),
+                    to: to || '(default)',
+                };
+                localStorage.setItem(`test-result-${integId}`, JSON.stringify(testResult));
+
+                if (data.success) {
+                    terminal.textContent = `✅ ${label} test result:\n\n${testResult.message}`;
+                } else {
+                    terminal.textContent = `❌ ${label} test failed:\n\n${testResult.message}`;
+                    terminal.className = 'terminal error';
+                }
+
+                // Refresh card to show new status
+                loadIntegrations();
+            } catch (error) {
+                const testResult = {
+                    success: false,
+                    message: error.message,
+                    timestamp: Date.now(),
+                    to: to || '(default)',
+                };
+                localStorage.setItem(`test-result-${integId}`, JSON.stringify(testResult));
+
+                terminal.className = 'terminal error';
+                terminal.textContent = `❌ Error: ${error.message}`;
+                loadIntegrations();
+            }
+        }
+

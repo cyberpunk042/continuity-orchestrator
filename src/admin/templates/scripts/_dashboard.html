@@ -1,0 +1,249 @@
+        // Load status
+        async function loadStatus() {
+            const bar = document.getElementById('refresh-bar');
+            bar?.classList.add('active');
+            try {
+                // Load both status and env values
+                const [statusRes, envRes] = await Promise.all([
+                    fetch('/api/status'),
+                    fetch('/api/env/read'),
+                ]);
+                appData = await statusRes.json();
+                const envResult = await envRes.json();
+                envData = envResult.values || {};
+                updateGhMenu();
+                renderDashboard(appData);
+            } catch (error) {
+                document.getElementById('dashboard').innerHTML = `
+                    <div class="card">
+                        <p class="terminal error">Error loading status: ${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                // Brief delay so the bar is visible even on fast responses
+                setTimeout(() => bar?.classList.remove('active'), 300);
+            }
+        }
+
+        function renderDashboard(data) {
+            const dashboard = document.getElementById('dashboard');
+
+            const stageClass = {
+                'OK': 'ok', 'WARNING': 'warning', 'CRITICAL': 'critical', 'FINAL': 'critical'
+            }[data.state.stage] || 'unknown';
+
+            // Format deadline info
+            let countdownHtml = '';
+            let deadlineInfoHtml = '';
+            if (data.state.time_to_deadline_minutes !== null) {
+                const ttd = data.state.time_to_deadline_minutes;
+                if (ttd > 0) {
+                    const hours = Math.floor(ttd / 60);
+                    const mins = ttd % 60;
+                    const countdownClass = ttd < 60 ? 'danger' : ttd < 360 ? 'warning' : '';
+                    countdownHtml = `<div class="countdown ${countdownClass}">${hours}h ${mins}m</div>`;
+                } else {
+                    countdownHtml = `<div class="countdown danger">⚠️ PASSED</div>`;
+                }
+            } else if (data.state.stage === 'UNKNOWN') {
+                countdownHtml = `<div class="alert info" style="margin-bottom: 1rem;">
+                    💡 <strong>Not initialized</strong> — Run a tick or renew to start the deadline.
+                </div>`;
+            }
+            if (data.state.deadline) {
+                const dl = new Date(data.state.deadline);
+                deadlineInfoHtml = `
+                    <div class="status-row">
+                        <span class="status-label">Deadline</span>
+                        <span class="status-value" style="font-size: 0.85rem;">
+                            ${dl.toLocaleDateString()} ${dl.toLocaleTimeString()}
+                        </span>
+                    </div>`;
+            }
+
+            const ghTool = data.tools.find(t => t.name === 'gh');
+            ghAuthenticated = ghTool?.installed && ghTool?.authenticated;
+
+            // Build tools HTML with install button for gh
+            const toolsHtml = data.tools.map(t => {
+                let actionHtml = '';
+                if (t.name === 'gh' && !t.installed) {
+                    actionHtml = `<button class="btn" onclick="installGh()" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Install</button>`;
+                } else if (t.name === 'gh' && t.installed && !t.authenticated) {
+                    actionHtml = `<span style="color: var(--warning);">run: gh auth login</span>`;
+                }
+                return `
+                    <div class="tool-item">
+                        <span>${t.installed ? '✅' : '❌'}</span>
+                        <span class="tool-name">${t.name}</span>
+                        <span style="color: var(--text-dim);">
+                            ${t.installed ? (t.authenticated !== null ? (t.authenticated ? 'auth ✓' : actionHtml) : 'ok') : actionHtml || '—'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+
+            dashboard.innerHTML = `
+                <div class="card">
+                    <h2><span class="icon">📊</span> System State</h2>
+                    ${countdownHtml}
+                    <div class="status-row">
+                        <span class="status-label">Stage</span>
+                        <span class="badge ${stageClass}">${data.state.stage}</span>
+                    </div>
+                    ${data.state.release_triggered ? `
+                    <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid var(--warning); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;">
+                        <div style="font-weight: 700; color: var(--warning); font-size: 0.85rem;">👻 SHADOW MODE — DELAYED</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">
+                            Delay: ${data.state.release_delay_minutes}m
+                            ${data.state.release_execute_after ? ` • Executes: ${new Date(data.state.release_execute_after).toLocaleString()}` : ''}
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">Cancel by renewing before the execute time.</div>
+                    </div>
+                    ` : ''}
+                    <div class="status-row">
+                        <span class="status-label">Project</span>
+                        <span class="status-value">${data.config.project_name || '—'}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Mode</span>
+                        <span class="status-value">${data.config.mock_mode ? '🧪 Mock' : '🔴 Live'}</span>
+                    </div>
+                    ${deadlineInfoHtml}
+                    <div class="status-row">
+                        <span class="status-label">Renewals</span>
+                        <span class="status-value">${data.state.renewal_count}</span>
+                    </div>
+                    
+                    ${data.state.stage === 'UNKNOWN' ? `
+                        <div class="actions">
+                            <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
+                            <button class="btn primary" onclick="switchTab('wizard')">🧙 Start Setup →</button>
+                        </div>
+                    ` : data.state.release_triggered || data.state.stage === 'FULL' || data.state.stage === 'PARTIAL' || data.state.stage === 'PRE_RELEASE' ? `
+                        <div style="border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem;">
+                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--danger);">
+                                ${data.state.release_triggered
+                        ? '👻 Shadow mode is active — disclosure is pending'
+                        : `⚠️ Disclosure is <strong>${data.state.stage}</strong> — system is active`}
+                            </div>
+                            <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                                ${data.state.release_triggered
+                        ? 'Cancel shadow mode by returning to OK. This clears the pending release and restores the countdown.'
+                        : 'Returning to OK will reset escalation, cancel any pending release, and restore the countdown.'}
+                            </p>
+                            <div class="actions" style="gap: 0.5rem;">
+                                <button class="btn primary" onclick="returnToOK()" style="flex: 1;">
+                                    🔙 Return to OK
+                                </button>
+                                <button class="btn" onclick="loadStatus()" style="padding: 0 0.6rem;" title="Refresh status">🔄</button>
+                            </div>
+                        </div>
+                    ` : data.state.stage === 'OK' || data.state.stage === 'WARNING' || data.state.stage === 'REMIND_1' || data.state.stage === 'REMIND_2' ? `
+                        <div style="padding-top: 1rem;">
+                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.75rem; color: var(--text-dim);">⚡ Manual Trigger</div>
+                            <div class="actions" style="flex-direction: column; gap: 0.5rem;">
+                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                    <button class="btn danger" onclick="triggerRelease()" style="flex: 1;"
+                                        title="Immediately sets state to FULL and executes all disclosure actions on the next tick. This is irreversible without a manual Return to OK.">
+                                        💀 Trigger FULL Disclosure
+                                    </button>
+                                    <button class="btn" onclick="loadStatus()" style="padding: 0 0.6rem;" title="Refresh status">🔄</button>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                    <button class="btn" onclick="triggerShadow()" style="flex: 1; border-color: var(--warning); color: var(--warning);"
+                                        title="Stealth trigger with delay — same as entering RELEASE_SECRET on the public site. Cancelable by renewal during the delay window.">
+                                        👻 Shadow Mode
+                                    </button>
+                                    <select id="shadow-delay" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer;">
+                                        <option value="0">No delay</option>
+                                        <option value="30">30 min delay</option>
+                                        <option value="60" selected>1 hour delay</option>
+                                        <option value="120">2 hour delay</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="actions" style="margin-top: 0.75rem;">
+                            <button class="btn" onclick="loadStatus()">🔄 Refresh</button>
+                        </div>
+                    `}
+                    <div id="trigger-status" style="margin-top: 0.75rem; font-size: 0.85rem;"></div>
+                </div>
+                
+                <div class="card">
+                    <h2><span class="icon">🔌</span> Adapters</h2>
+                    ${data.adapters.map(a => `
+                        <div class="adapter-item">
+                            <span>${a.configured ? '✅' : '❌'}</span>
+                            <span class="adapter-name">${a.name}</span>
+                            <span class="adapter-status ${a.configured ? (a.mode === 'real' ? 'ready' : 'mock') : 'missing'}">
+                                ${a.configured ? a.mode : a.missing.slice(0, 2).join(', ')}
+                            </span>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="card">
+                    <h2><span class="icon">🛠️</span> Tools</h2>
+                    ${toolsHtml}
+                    <div style="padding-top: 0.75rem;">
+                        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">📦 Git</div>
+                        <div id="git-status-content" style="color: var(--text-dim); font-size: 0.85rem;">Loading...</div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2><span class="icon">🔐</span> Secrets</h2>
+                    <div class="status-row">
+                        <span class="status-label">Set</span>
+                        <span class="status-value">${data.secrets.filter(s => s.set).length} / ${data.secrets.length}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Required Missing</span>
+                        <span class="status-value" style="color: var(--danger);">
+                            ${data.secrets.filter(s => s.required_for.length > 0 && !s.set).length}
+                        </span>
+                    </div>
+                    <div class="actions">
+                        <button class="btn" onclick="switchTab('secrets')">Configure Secrets →</button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2><span class="icon">💚</span> Health</h2>
+                    <div class="status-row">
+                        <span class="status-label">State file</span>
+                        <span>${data.health.state_file_exists ? '✅' : '❌'}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Policy</span>
+                        <span>${data.health.policy_valid ? '✅' : '❌'}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Updated</span>
+                        <span style="color: var(--text-dim); font-size: 0.85rem;">
+                            ${new Date(data.timestamp).toLocaleTimeString()}
+                        </span>
+                    </div>
+                </div>
+                
+
+                <div class="card">
+                    <h2><span class="icon">⚡</span> Quick Actions</h2>
+                    <div class="actions" style="flex-direction: column; gap: 1rem;">
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="switchTab('commands')">Open Command Center →</button>
+                            <button class="btn primary" onclick="runCommand('tick-dry')">🧪 Dry Run</button>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <button class="btn" onclick="switchTab('debugging')">🐛 Debugging & Deadline →</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Load git status into the Tools card
+            loadGitStatus();
+        }

@@ -1,0 +1,71 @@
+        // ── Resettable polling timers ─────────────────────────────
+        // When an action triggers a manual refresh, the timer resets
+        // so we don't get a redundant refresh 2s later.
+        let _statusTimer = null;
+        let _fetchTimer = null;
+
+        function scheduleStatus(delayMs = 30000) {
+            clearTimeout(_statusTimer);
+            _statusTimer = setTimeout(() => { loadStatus(); scheduleStatus(); }, delayMs);
+        }
+        function scheduleFetch(delayMs = 60000) {
+            clearTimeout(_fetchTimer);
+            _fetchTimer = setTimeout(() => { autoFetch(); scheduleFetch(); }, delayMs);
+        }
+
+        // Wrap loadStatus to reset its timer
+        const _origLoadStatus = loadStatus;
+        loadStatus = async function () {
+            scheduleStatus();  // Reset the 30s countdown
+            return _origLoadStatus();
+        };
+
+        // Start polling
+        scheduleStatus();
+
+        // ── Auto-fetch: keep repo in sync with remote ──────────────
+        // Runs every 60s. Fetches from remote and fast-forward pulls
+        // when the working tree is clean. Shows a notice otherwise.
+        function showFetchNotice(data) {
+            const el = document.getElementById('git-auto-fetch-notice');
+            if (!el) return;
+            if (!data.fetched) { el.style.display = 'none'; return; }
+
+            // Pick style based on state
+            const styles = {
+                dirty: { icon: '⏸️', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)', color: '#f59e0b' },
+                pulled: { icon: '✅', bg: 'rgba(74,222,128,0.1)', border: 'rgba(74,222,128,0.25)', color: 'var(--accent)' },
+                ahead: { icon: '📤', bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.25)', color: 'var(--info)' },
+                diverged: { icon: '⚠️', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.25)', color: 'var(--danger)' },
+                clean: { icon: '✓', bg: 'rgba(74,222,128,0.06)', border: 'rgba(74,222,128,0.12)', color: 'var(--text-dim)' },
+            };
+            const s = styles[data.state] || styles.clean;
+
+            el.style.display = 'block';
+            el.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+                            background: ${s.bg}; border: 1px solid ${s.border};
+                            border-radius: 6px; font-size: 0.78rem; color: ${s.color}; margin-top: 0.5rem;">
+                    <span>${s.icon}</span>
+                    <span>${data.detail}</span>
+                </div>`;
+
+            // If we just pulled, refresh git status so commit info updates
+            if (data.pulled) setTimeout(loadGitStatus, 500);
+        }
+
+        async function autoFetch() {
+            scheduleFetch();  // Reset the 60s countdown
+            try {
+                const resp = await fetch('/api/git/fetch', { method: 'POST' });
+                const data = await resp.json();
+                window._lastFetchResult = data;
+                showFetchNotice(data);
+            } catch (e) {
+                // Silently ignore — this is a background operation
+            }
+        }
+
+        // First fetch after a short delay (let the page load first)
+        setTimeout(autoFetch, 5000);
+    </script>

@@ -1,0 +1,489 @@
+        // ========================================
+        // MIRROR INTEGRATION
+        // ========================================
+
+        /** Auto-extract owner/repo from any GitHub URL format. */
+        function normalizeMirrorRepo(input) {
+            let v = (input.value || '').trim();
+            if (!v) return;
+            // https://github.com/owner/repo(.git)
+            let m = v.match(/github\.com[/:]+([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
+            if (m) { input.value = m[1]; return; }
+            // git@github.com:owner/repo.git
+            m = v.match(/^git@github\.com:([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
+            if (m) { input.value = m[1]; return; }
+            // Strip trailing .git if bare owner/repo.git
+            if (v.endsWith('.git')) { input.value = v.slice(0, -4); }
+        }
+
+        // Also normalize the dynamically-created secrets-page input
+        document.addEventListener('focusout', (e) => {
+            if (e.target && e.target.id === 'secret-MIRROR_1_REPO') {
+                normalizeMirrorRepo(e.target);
+            }
+        });
+
+        function mirrorTimeAgo(isoStr) {
+            if (!isoStr) return 'never';
+            try {
+                const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+                if (diff < 0) return 'just now';
+                if (diff < 60) return `${diff}s ago`;
+                if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+                if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+                return `${Math.floor(diff / 86400)}d ago`;
+            } catch { return 'unknown'; }
+        }
+
+        function mirrorRoleBadgeClass(role) {
+            if (role === 'MASTER') return 'master';
+            if (role === 'TEMPORARY_MASTER') return 'temp-master';
+            return 'slave';
+        }
+
+        function mirrorRoleIcon(role) {
+            if (role === 'MASTER') return '👑';
+            if (role === 'TEMPORARY_MASTER') return '⚡';
+            return '📋';
+        }
+
+
+
+
+        async function loadMirrorStatus() {
+            const body = document.getElementById('mirror-body');
+            const selfRoleEl = document.getElementById('mirror-self-role');
+            if (!body) return;
+
+            try {
+                const resp = await fetch('/api/mirror/status');
+                const data = await resp.json();
+
+                // Self role badge (inline in h2)
+                const selfRole = data.self_role || 'MASTER';
+                const roleClass = mirrorRoleBadgeClass(selfRole);
+                const roleIcon = mirrorRoleIcon(selfRole);
+                selfRoleEl.innerHTML = `
+                    <span class="mirror-role-badge ${roleClass}" style="font-size: 0.72rem; padding: 0.2rem 0.6rem;">
+                        ${roleIcon} ${selfRole.replace('_', ' ')}
+                    </span>`;
+
+                // Not enabled state — compact, link to wizard
+                if (!data.enabled) {
+                    body.innerHTML = `
+                        <div style="color: var(--text-dim); font-size: 0.85rem;">
+                            Repo mirroring is <strong>not enabled</strong>.
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="goToWizardStep('mirror')" style="flex: 1;">
+                                🧙 Setup in Wizard →
+                            </button>
+                            <button class="btn" onclick="switchTab('secrets')" style="flex: 1;">
+                                🔐 Secrets →
+                            </button>
+                        </div>`;
+                    return;
+                }
+
+                // API returns mirrors[] directly (merged config + state)
+                const mirrors = data.mirrors || [];
+
+                // Render mirror rows
+                let html = '';
+                for (const mirror of mirrors) {
+                    const displayName = mirror.repo || mirror.id;
+                    const codeStatus = mirror.code?.status || 'never';
+                    const secretsStatus = mirror.secrets?.status || 'never';
+                    const varsStatus = mirror.variables?.status || 'never';
+                    const codeAge = mirrorTimeAgo(mirror.code?.last_sync_iso);
+
+                    const statusIcon = (s) => ({ ok: '✅', failed: '❌', stale: '⚠️', never: '⏳', unknown: '⏳' }[s] || '❓');
+                    const statusBg = (s) => s === 'ok' ? 'rgba(74,222,128,0.1)' : s === 'failed' ? 'rgba(248,113,113,0.1)' : s === 'stale' ? 'rgba(245,158,11,0.15)' : 'rgba(136,136,136,0.1)';
+                    const statusColor = (s) => s === 'ok' ? 'var(--accent)' : s === 'failed' ? 'var(--danger)' : s === 'stale' ? '#f59e0b' : 'var(--text-dim)';
+
+                    const repoUrl = displayName.includes('/') ? `https://github.com/${displayName}` : null;
+
+                    html += `
+                        <div class="mirror-slave-row" style="padding: 0.75rem 1rem;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                                <span style="font-size: 0.85rem;">
+                                    🐙 ${repoUrl
+                            ? `<a href="${repoUrl}" target="_blank" rel="noopener" class="mirror-slave-repo" style="color: inherit; text-decoration: none; border-bottom: 1px dashed var(--text-dim); transition: color 0.2s, border-color 0.2s;" onmouseover="this.style.color='var(--info)';this.style.borderColor='var(--info)'" onmouseout="this.style.color='inherit';this.style.borderColor='var(--text-dim)'">${displayName} ↗</a>`
+                            : `<span class="mirror-slave-repo">${displayName}</span>`}
+                                </span>
+                                <div style="display: flex; gap: 0.35rem; font-size: 0.75rem;">
+                                    <span title="Code: ${codeStatus}" style="padding: 0.1rem 0.35rem; border-radius: 4px; background: ${statusBg(codeStatus)}; color: ${statusColor(codeStatus)};">
+                                        📦 ${statusIcon(codeStatus)}
+                                    </span>
+                                    <span title="Secrets: ${secretsStatus}" style="padding: 0.1rem 0.35rem; border-radius: 4px; background: ${statusBg(secretsStatus)}; color: ${statusColor(secretsStatus)};">
+                                        🔐 ${statusIcon(secretsStatus)}
+                                    </span>
+                                    <span title="Variables: ${varsStatus}" style="padding: 0.1rem 0.35rem; border-radius: 4px; background: ${statusBg(varsStatus)}; color: ${statusColor(varsStatus)};">
+                                        📋 ${statusIcon(varsStatus)}
+                                    </span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.35rem;">
+                                Last sync: ${codeAge}${mirror.code?.detail ? ' · ' + mirror.code.detail : ''}
+                            </div>`;
+
+                    // Show errors inline
+                    for (const layer of ['code', 'secrets', 'variables']) {
+                        const err = mirror[layer]?.last_error;
+                        if (err) {
+                            html += `<div style="font-size: 0.7rem; color: var(--danger); margin-top: 0.25rem; word-break: break-all;">
+                                ⚠️ ${layer}: ${err.substring(0, 120)}
+                            </div>`;
+                        }
+                    }
+                    html += `</div>`;
+                }
+
+                // Syncing banner (shown when background sync is in progress)
+                if (data.syncing) {
+                    html += `
+                        <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: rgba(99,102,241,0.12); border-radius: 6px; margin-bottom: 0.5rem; border: 1px solid rgba(99,102,241,0.25);">
+                            <span style="animation: pulse 1.5s ease-in-out infinite;">🔄</span>
+                            <span style="font-size: 0.8rem; color: var(--info);">Mirror sync in progress…</span>
+                        </div>`;
+                }
+
+                // Action buttons row 1: Sync
+                const syncDisabled = data.syncing ? 'disabled title="Sync already in progress"' : '';
+                html += `
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn primary" onclick="mirrorStream('all')" id="mirror-sync-all-btn" ${syncDisabled} style="flex: 1; font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                            🔄 Sync All
+                        </button>
+                        <button class="btn" onclick="mirrorStream('code')" id="mirror-sync-code-btn" title="Sync code only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                            📦 Code
+                        </button>
+                        <button class="btn" onclick="mirrorStream('secrets')" id="mirror-sync-secrets-btn" title="Sync secrets only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                            🔐 Secrets
+                        </button>
+                        <button class="btn" onclick="mirrorStream('vars')" id="mirror-sync-vars-btn" title="Sync variables only" ${syncDisabled} style="font-size: 0.8rem; padding: 0.4rem 0.7rem;">
+                            📋 Vars
+                        </button>
+                    </div>`;
+
+                // Action buttons row 2: Clean (only on mirror, NEVER master)
+                html += `
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem;">
+                        <button class="btn" onclick="mirrorClean('all')" id="mirror-clean-all-btn" title="Wipe EVERYTHING: code + secrets + variables" style="flex: 1; font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            ☠️ Clean All
+                        </button>
+                        <button class="btn" onclick="mirrorClean('code')" id="mirror-clean-code-btn" title="Reset repo to empty" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Code
+                        </button>
+                        <button class="btn" onclick="mirrorClean('secrets')" id="mirror-clean-secrets-btn" title="Delete all secrets" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Secrets
+                        </button>
+                        <button class="btn" onclick="mirrorClean('variables')" id="mirror-clean-vars-btn" title="Delete all variables" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: var(--danger); color: var(--danger);">
+                            🗑️ Vars
+                        </button>
+                    </div>`;
+
+                body.innerHTML = html;
+
+            } catch (err) {
+                body.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem;">
+                    ❌ Failed to load mirror status: ${err.message}
+                </div>`;
+            }
+        }
+
+        // ── Mirror SSE streaming ──
+
+        let _mirrorEventSource = null;
+
+        function _mirrorLockButtons(locked) {
+            ['mirror-sync-all-btn', 'mirror-sync-code-btn', 'mirror-sync-secrets-btn',
+                'mirror-sync-vars-btn', 'mirror-clean-all-btn', 'mirror-clean-secrets-btn',
+                'mirror-clean-vars-btn'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.disabled = locked;
+                });
+        }
+
+        function _mirrorLogEl() {
+            const el = document.getElementById('mirror-sync-log');
+            if (el) {
+                el.style.display = 'block';
+                el.style.cssText = 'display:block; margin-top:0.5rem; background:rgba(0,0,0,0.4); border-radius:8px; padding:0.6rem 0.8rem; font-family:monospace; font-size:0.73rem; line-height:1.7; max-height:280px; overflow-y:auto; color:var(--text-dim);';
+            }
+            return el;
+        }
+
+        function _mirrorAppendLog(logEl, html) {
+            if (!logEl) return;
+            logEl.innerHTML += html;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function mirrorStream(mode) {
+            if (_mirrorEventSource) { _mirrorEventSource.close(); }
+            _mirrorLockButtons(true);
+
+            const logEl = _mirrorLogEl();
+            if (logEl) logEl.innerHTML = '<div style="color:var(--accent);">⏳ Starting sync...</div>';
+
+            // Track progress per step
+            const progress = {};
+
+            _mirrorEventSource = new EventSource(`/api/mirror/sync/stream?mode=${mode}`);
+
+            _mirrorEventSource.onmessage = (event) => {
+                try {
+                    const d = JSON.parse(event.data);
+
+                    if (d.status === 'start') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--accent);">🔀 ${d.detail}</div>`);
+
+                    } else if (d.status === 'mirror_start') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:var(--text); font-weight:600;">── ${d.detail} ──</div>`);
+
+                    } else if (d.status === 'running') {
+                        // Create a progress row that we'll update
+                        const rowId = `mirror-prog-${d.step}`;
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        _mirrorAppendLog(logEl, `<div id="${rowId}">${icon} ${d.step}: <span style="color:var(--text-dim);">⏳ starting...</span></div>`);
+
+                    } else if (d.status === 'progress') {
+                        // Update the progress row in-place
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const itemIcon = d.ok ? '✅' : '❌';
+                        const color = d.ok ? 'var(--accent)' : 'var(--danger)';
+                        if (rowEl) {
+                            rowEl.innerHTML = `${icon} ${d.step}: <span style="color:${color};">${d.progress}</span> ${itemIcon} ${d.detail || ''}`;
+                        } else {
+                            _mirrorAppendLog(logEl, `<div>${icon} ${d.step}: <span style="color:${color};">${d.progress}</span> ${itemIcon} ${d.detail || ''}</div>`);
+                        }
+
+                    } else if (d.status === 'ok') {
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const detail = d.detail ? ` ${d.detail}` : '';
+                        const prog = d.progress ? ` ${d.progress}` : '';
+                        const html = `${icon} ${d.step}:${prog}${detail} <span style="color:var(--accent);">✅</span>`;
+                        if (rowEl) { rowEl.innerHTML = html; }
+                        else { _mirrorAppendLog(logEl, `<div>${html}</div>`); }
+
+                    } else if (d.status === 'failed') {
+                        const rowId = `mirror-prog-${d.step}`;
+                        const rowEl = document.getElementById(rowId);
+                        const icon = d.step === 'code' ? '📦' : d.step === 'secrets' ? '🔐' : '📋';
+                        const prog = d.progress ? ` ${d.progress}` : '';
+                        const html = `${icon} ${d.step}:${prog} <span style="color:var(--danger);">❌ ${d.error || 'failed'}</span>`;
+                        if (rowEl) { rowEl.innerHTML = html; }
+                        else { _mirrorAppendLog(logEl, `<div>${html}</div>`); }
+
+                    } else if (d.status === 'done') {
+                        const color = d.success ? 'var(--accent)' : 'var(--danger)';
+                        const msg = d.success ? '✅ Sync complete' : `⚠️ Finished with ${d.errors} error(s)`;
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:${color}; font-weight:600;">${msg}</div>`);
+                        _mirrorEventSource.close();
+                        _mirrorEventSource = null;
+                        _mirrorLockButtons(false);
+                        loadMirrorStatus();
+                    }
+                } catch (e) {
+                    _mirrorAppendLog(logEl, `<div style="color:var(--danger);">Parse error: ${e.message}</div>`);
+                }
+            };
+
+            _mirrorEventSource.onerror = () => {
+                _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">Stream ended.</div>`);
+                _mirrorEventSource.close();
+                _mirrorEventSource = null;
+                _mirrorLockButtons(false);
+                loadMirrorStatus();
+            };
+        }
+
+        function mirrorClean(mode) {
+            const labels = { all: 'EVERYTHING (code + secrets + variables)', code: 'all CODE (wipe repo)', secrets: 'all SECRETS', variables: 'all VARIABLES' };
+            if (!confirm(`☠️ Delete ${labels[mode] || mode} from MIRROR repo?\n\nThis targets the MIRROR only, never the master.`)) return;
+            if (_mirrorEventSource) { _mirrorEventSource.close(); }
+            _mirrorLockButtons(true);
+
+            const logEl = _mirrorLogEl();
+            if (logEl) logEl.innerHTML = '<div style="color:var(--danger);">🗑️ Starting clean...</div>';
+
+            _mirrorEventSource = new EventSource(`/api/mirror/clean/stream?mode=${mode}`);
+
+            _mirrorEventSource.onmessage = (event) => {
+                try {
+                    const d = JSON.parse(event.data);
+                    if (d.status === 'start') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--text);">🗑️ ${d.detail}</div>`);
+                    } else if (d.status === 'running') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.2rem; color:var(--text-dim); font-weight:600;">${d.detail}</div>`);
+                    } else if (d.status === 'ok') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--accent);">  ✅ ${d.detail}</div>`);
+                    } else if (d.status === 'skipped') {
+                        _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">  ⏭️ ${d.detail}</div>`);
+                    } else if (d.status === 'failed') {
+                        const err = d.error ? `: ${d.error}` : '';
+                        _mirrorAppendLog(logEl, `<div style="color:var(--danger);">  ❌ ${d.detail}${err}</div>`);
+                    } else if (d.status === 'done') {
+                        _mirrorAppendLog(logEl, `<div style="margin-top:0.3rem; color:var(--accent); font-weight:600;">✅ Clean complete</div>`);
+                        _mirrorEventSource.close();
+                        _mirrorEventSource = null;
+                        _mirrorLockButtons(false);
+                        loadMirrorStatus();
+                    }
+                } catch (e) {
+                    _mirrorAppendLog(logEl, `<div style="color:var(--danger);">Parse error: ${e.message}</div>`);
+                }
+            };
+
+            _mirrorEventSource.onerror = () => {
+                _mirrorAppendLog(logEl, `<div style="color:var(--text-dim);">Stream ended.</div>`);
+                _mirrorEventSource.close();
+                _mirrorEventSource = null;
+                _mirrorLockButtons(false);
+                loadMirrorStatus();
+            };
+        }
+
+        function getLastTestHtml(integId) {
+            try {
+                const raw = localStorage.getItem(`test-result-${integId}`);
+                if (!raw) return '';
+                const r = JSON.parse(raw);
+                const ago = formatTimeAgo(r.timestamp);
+                const icon = r.success ? '✅' : '❌';
+                const color = r.success ? 'var(--accent)' : 'var(--danger)';
+                const msg = r.message.length > 60 ? r.message.slice(0, 57) + '…' : r.message;
+                return `<div style="font-size: 0.78rem; color: ${color}; margin-top: 0.35rem;"
+                    title="${r.message.replace(/"/g, '&quot;')}">${icon} Last test ${ago}: ${msg}</div>`;
+            } catch { return ''; }
+        }
+
+        function formatTimeAgo(ts) {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        // Archive functions
+        async function archiveNow(allPages = false) {
+            const statusDiv = document.getElementById('archive-status');
+            const urlInput = document.getElementById('archive-url');
+            const customUrl = urlInput?.value?.trim();
+
+            const label = allPages ? 'all pages' : 'index';
+            statusDiv.innerHTML = `<span style="color: var(--info);">📦 Archiving ${label} to archive.org... This may take a few minutes.</span>`;
+
+            try {
+                const response = await fetch('/api/archive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: customUrl || undefined,
+                        all_pages: allPages,
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.results) {
+                    // Multi-page results
+                    const rows = data.results.map(r => {
+                        const icon = r.success ? '✅' : '❌';
+                        const link = r.archive_url
+                            ? `<a href="${r.archive_url}" target="_blank" style="color: var(--info);">${r.page}</a>`
+                            : `<span>${r.page}</span>`;
+                        const err = r.error ? ` — <span style="color: var(--danger); font-size: 0.8rem;">${r.error}</span>` : '';
+                        return `<div>${icon} ${link}${err}</div>`;
+                    }).join('');
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent); margin-bottom: 0.5rem;">
+                            📦 Archived ${data.archived}/${data.total} pages
+                        </div>
+                        <div style="line-height: 1.8;">${rows}</div>
+                    `;
+                } else if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent);">✅ Archived successfully!</div>
+                        <div style="margin-top: 0.5rem;">
+                            <a href="${data.archive_url}" target="_blank" style="color: var(--info); word-break: break-all;">
+                                ${data.archive_url}
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function checkArchive(allPages = false) {
+            const statusDiv = document.getElementById('archive-status');
+            const urlInput = document.getElementById('archive-url');
+            let url = urlInput?.value?.trim();
+
+            // If no custom URL, try to build GitHub Pages URL
+            if (!url && !allPages) {
+                const repo = envData.GITHUB_REPOSITORY;
+                if (repo) {
+                    const parts = repo.split('/');
+                    url = `https://${parts[0]}.github.io/${parts[1]}/`;
+                } else {
+                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Enter a URL to check</span>';
+                    return;
+                }
+            }
+
+            const label = allPages ? 'all pages' : 'index';
+            statusDiv.innerHTML = `<span style="color: var(--info);">🔍 Checking ${label} on archive.org...</span>`;
+
+            try {
+                const response = await fetch('/api/archive/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: url || undefined,
+                        all_pages: allPages,
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.results) {
+                    // Multi-page results
+                    const rows = data.results.map(r => {
+                        const icon = r.archived ? '✅' : '❌';
+                        const info = r.archived && r.snapshot
+                            ? `<a href="${r.snapshot.url}" target="_blank" style="color: var(--info);">${r.page}</a> <span style="color: var(--text-dim); font-size: 0.8rem;">(${r.snapshot.timestamp || ''})</span>`
+                            : `<span style="color: var(--text-dim);">${r.page}</span> — not archived`;
+                        return `<div>${icon} ${info}</div>`;
+                    }).join('');
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent); margin-bottom: 0.5rem;">
+                            🔍 ${data.archived_count}/${data.total} pages archived
+                        </div>
+                        <div style="line-height: 1.8;">${rows}</div>
+                    `;
+                } else if (data.archived && data.snapshot) {
+                    statusDiv.innerHTML = `
+                        <div style="color: var(--accent);">✅ Found in archive!</div>
+                        <div style="margin-top: 0.5rem;">
+                            <a href="${data.snapshot.url}" target="_blank" style="color: var(--info); word-break: break-all;">
+                                Last snapshot: ${data.snapshot.timestamp}
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<span style="color: var(--warning);">⚠️ Not yet archived. Click "Archive All Pages" to create snapshots.</span>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error.message}</span>`;
+            }
+        }
+

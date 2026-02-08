@@ -1,0 +1,83 @@
+        // ========================================
+        // GIT STATUS (dashboard card)
+        // ========================================
+        async function loadGitStatus() {
+            const el = document.getElementById('git-status-content');
+            if (!el) return;
+            try {
+                const resp = await fetch('/api/git/status');
+                const g = await resp.json();
+                if (!g.available) {
+                    el.innerHTML = `<span style="color: var(--text-dim);">⚠️ ${g.error || 'Git not available'}</span>`;
+                    return;
+                }
+
+                const syncIcon = g.clean ? '✅' : g.total_changes > 0 ? '🟡' : '🟢';
+                const abHtml = (g.ahead || g.behind)
+                    ? `<span style="color: var(--warning);">${g.ahead ? `↑${g.ahead}` : ''} ${g.behind ? `↓${g.behind}` : ''}</span>`
+                    : '<span style="color: var(--accent);">In sync</span>';
+
+                el.innerHTML = `
+                    <div class="status-row">
+                        <span class="status-label">Branch</span>
+                        <span class="status-value" style="font-family: monospace;">${g.branch}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Last commit</span>
+                        <span class="status-value" style="font-size: 0.82rem;">${g.last_commit} <span style="color: var(--text-dim);">(${g.last_commit_time})</span></span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Changes</span>
+                        <span class="status-value">${syncIcon} ${g.total_changes} pending ${g.staged ? `(${g.staged} staged)` : ''}</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Remote</span>
+                        <span class="status-value">${abHtml}</span>
+                    </div>
+                    <div id="git-auto-fetch-notice" style="display: none;"></div>
+                    <div class="actions" style="margin-top: 0.75rem;">
+                        <button class="btn" onclick="loadGitStatus()">🔄 Refresh</button>
+                        <button class="btn primary" onclick="dashboardGitSync()" id="dash-sync-btn">📤 Sync Now</button>
+                    </div>
+                    <div id="dash-git-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>
+                `;
+
+                // After rendering, trigger auto-fetch display if we have cached data
+                if (window._lastFetchResult) showFetchNotice(window._lastFetchResult);
+            } catch (e) {
+                el.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function dashboardGitSync() {
+            const statusDiv = document.getElementById('dash-git-status');
+            const btn = document.getElementById('dash-sync-btn');
+            if (btn) btn.disabled = true;
+            if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--info);">🔄 Syncing...</span>';
+            try {
+                const resp = await fetch('/api/git/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'chore: sync from admin panel' }),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    let msg = `✅ ${data.message}`;
+                    if (data.mirror_sync_triggered) {
+                        msg += ' · 🪞 Mirror sync in progress…';
+                        setTimeout(loadMirrorStatus, 2000);
+                        setTimeout(loadMirrorStatus, 15000);
+                    }
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">${msg}</span>`;
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">⚠️ ${data.error || 'Failed'}</span>`;
+                }
+                // Immediately refresh git status + fetch notice
+                loadGitStatus();
+                autoFetch();
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+            if (btn) btn.disabled = false;
+        }
+
