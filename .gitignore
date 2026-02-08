@@ -44,3 +44,4 @@ temp/
 
 # Runtime state (not tracked)
 state/.mirror_sync_lock
+.env.vault

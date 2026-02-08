@@ -25,6 +25,7 @@ from .routes_git import git_bp
 from .routes_mirror import mirror_bp
 from .routes_secrets import secrets_bp
 from .routes_content import content_bp
+from .routes_vault import vault_bp
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ def create_app() -> Flask:
     app.register_blueprint(mirror_bp, url_prefix="/api/mirror")         # /api/mirror/*
     app.register_blueprint(secrets_bp, url_prefix="/api")               # /api/gh/*, /api/secret/*
     app.register_blueprint(content_bp, url_prefix="/api/content")       # /api/content/*
+    app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
 
     # ── Request Logging ───────────────────────────────────────────
 

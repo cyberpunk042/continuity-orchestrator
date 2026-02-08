@@ -1,0 +1,135 @@
+        // ── Vault ───────────────────────────────────────────────
+        let vaultLocked = false;
+
+        async function checkVaultStatus() {
+            try {
+                const resp = await fetch('/api/vault/status');
+                const data = await resp.json();
+                vaultLocked = data.locked;
+                updateVaultUI();
+            } catch (e) {
+                // Vault API not available — assume unlocked
+                vaultLocked = false;
+                updateVaultUI();
+            }
+        }
+
+        function updateVaultUI() {
+            const overlay = document.getElementById('vault-overlay');
+            const btn = document.getElementById('vault-toggle');
+
+            if (vaultLocked) {
+                overlay.style.display = 'flex';
+                if (btn) { btn.textContent = '🔒'; btn.title = 'Vault is locked'; }
+                // Focus the passphrase input
+                setTimeout(function() { var el = document.getElementById('vault-passphrase-input'); if (el) el.focus(); }, 100);
+            } else {
+                overlay.style.display = 'none';
+                if (btn) { btn.textContent = '🔓'; btn.title = 'Lock vault'; }
+            }
+        }
+
+        function vaultToggle() {
+            if (vaultLocked) {
+                // Already locked — show overlay
+                updateVaultUI();
+            } else {
+                // Show lock modal
+                document.getElementById('vault-lock-modal').style.display = 'flex';
+                document.getElementById('vault-lock-pass1').value = '';
+                document.getElementById('vault-lock-pass2').value = '';
+                document.getElementById('vault-lock-error').style.display = 'none';
+                setTimeout(function() { var el = document.getElementById('vault-lock-pass1'); if (el) el.focus(); }, 100);
+            }
+        }
+
+        async function vaultUnlock() {
+            const input = document.getElementById('vault-passphrase-input');
+            const errorEl = document.getElementById('vault-error');
+            const passphrase = input.value;
+
+            if (!passphrase) {
+                errorEl.textContent = 'Enter your passphrase';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            errorEl.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/vault/unlock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ passphrase: passphrase }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    vaultLocked = false;
+                    updateVaultUI();
+                    input.value = '';
+                    // Reload all data now that .env is available
+                    if (typeof loadAll === 'function') loadAll();
+                } else {
+                    errorEl.textContent = data.error || 'Unlock failed';
+                    errorEl.style.display = 'block';
+                    input.value = '';
+                    input.focus();
+                }
+            } catch (e) {
+                errorEl.textContent = 'Connection error';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function vaultLock() {
+            const pass1 = document.getElementById('vault-lock-pass1').value;
+            const pass2 = document.getElementById('vault-lock-pass2').value;
+            const errorEl = document.getElementById('vault-lock-error');
+
+            if (!pass1) {
+                errorEl.textContent = 'Enter a passphrase';
+                errorEl.style.display = 'block';
+                return;
+            }
+            if (pass1.length < 4) {
+                errorEl.textContent = 'Passphrase must be at least 4 characters';
+                errorEl.style.display = 'block';
+                return;
+            }
+            if (pass1 !== pass2) {
+                errorEl.textContent = 'Passphrases do not match';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            errorEl.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/vault/lock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ passphrase: pass1 }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    vaultLocked = true;
+                    document.getElementById('vault-lock-modal').style.display = 'none';
+                    updateVaultUI();
+                } else {
+                    errorEl.textContent = data.error || 'Lock failed';
+                    errorEl.style.display = 'block';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Connection error';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        function vaultLockCancel() {
+            document.getElementById('vault-lock-modal').style.display = 'none';
+        }
+
+        // Check vault status on page load
+        checkVaultStatus();

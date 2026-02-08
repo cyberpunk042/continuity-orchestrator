@@ -1,0 +1,106 @@
+<!-- Vault Unlock Overlay -->
+<div id="vault-overlay" style="
+    display: none;
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(20px);
+    align-items: center; justify-content: center;
+    flex-direction: column;
+">
+    <div style="
+        background: var(--bg-card, #1a1a2e);
+        border: 1px solid var(--border, #333);
+        border-radius: 16px;
+        padding: 2.5rem;
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    ">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔐</div>
+        <h2 style="margin: 0 0 0.5rem 0; color: var(--text, #fff); font-size: 1.3rem;">Vault Locked</h2>
+        <p style="color: var(--text-dim, #888); font-size: 0.85rem; margin-bottom: 1.5rem;">
+            Your .env secrets are encrypted. Enter your vault passphrase to unlock.
+        </p>
+        <input type="password" id="vault-passphrase-input" placeholder="Vault passphrase"
+            autocomplete="off"
+            style="
+                width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+                border-radius: 8px; border: 1px solid var(--border, #333);
+                background: var(--bg-input, #111); color: var(--text, #fff);
+                outline: none; margin-bottom: 1rem; box-sizing: border-box;
+            "
+            onkeydown="if(event.key==='Enter') vaultUnlock();"
+        >
+        <div id="vault-error" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+        <button onclick="vaultUnlock()" style="
+            width: 100%; padding: 0.75rem; font-size: 0.95rem; font-weight: 600;
+            border: none; border-radius: 8px; cursor: pointer;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            color: #000; transition: opacity 0.2s;
+        " onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+            🔓 Unlock
+        </button>
+    </div>
+</div>
+
+<!-- Vault Lock Modal -->
+<div id="vault-lock-modal" style="
+    display: none;
+    position: fixed; inset: 0; z-index: 10001;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    align-items: center; justify-content: center;
+    flex-direction: column;
+">
+    <div style="
+        background: var(--bg-card, #1a1a2e);
+        border: 1px solid var(--border, #333);
+        border-radius: 16px;
+        padding: 2.5rem;
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    ">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+        <h2 style="margin: 0 0 0.5rem 0; color: var(--text, #fff); font-size: 1.3rem;">Lock Vault</h2>
+        <p style="color: var(--text-dim, #888); font-size: 0.85rem; margin-bottom: 1.5rem;">
+            Choose a passphrase to encrypt your .env secrets.<br>
+            <strong>Remember it</strong> — you'll need it to unlock.
+        </p>
+        <input type="password" id="vault-lock-pass1" placeholder="Choose passphrase"
+            autocomplete="off"
+            style="
+                width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+                border-radius: 8px; border: 1px solid var(--border, #333);
+                background: var(--bg-input, #111); color: var(--text, #fff);
+                outline: none; margin-bottom: 0.5rem; box-sizing: border-box;
+            "
+        >
+        <input type="password" id="vault-lock-pass2" placeholder="Confirm passphrase"
+            autocomplete="off"
+            style="
+                width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+                border-radius: 8px; border: 1px solid var(--border, #333);
+                background: var(--bg-input, #111); color: var(--text, #fff);
+                outline: none; margin-bottom: 1rem; box-sizing: border-box;
+            "
+            onkeydown="if(event.key==='Enter') vaultLock();"
+        >
+        <div id="vault-lock-error" style="color: var(--danger, #ef4444); font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button onclick="vaultLockCancel()" style="
+                flex: 1; padding: 0.75rem; font-size: 0.9rem;
+                border: 1px solid var(--border, #333); border-radius: 8px;
+                background: transparent; color: var(--text, #fff); cursor: pointer;
+            ">Cancel</button>
+            <button onclick="vaultLock()" style="
+                flex: 1; padding: 0.75rem; font-size: 0.9rem; font-weight: 600;
+                border: none; border-radius: 8px; cursor: pointer;
+                background: linear-gradient(135deg, #ef4444, #dc2626);
+                color: #fff;
+            ">🔒 Lock</button>
+        </div>
+    </div>
+</div>
