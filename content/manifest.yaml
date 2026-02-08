@@ -31,6 +31,16 @@ articles:
     min_stage: FULL
     include_in_nav: true
     pin_to_top: false
+- slug: testing_2
+  visibility:
+    min_stage: FULL
+    include_in_nav: true
+    pin_to_top: false
+- slug: testing_large_2
+  visibility:
+    min_stage: FULL
+    include_in_nav: true
+    pin_to_top: false
 defaults:
   visibility:
     min_stage: FULL
