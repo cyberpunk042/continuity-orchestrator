@@ -3,6 +3,7 @@ CLI core commands — state lifecycle operations (reset, renew, trigger-release)
 
 Usage:
     python -m src.main reset [--full] [--hours 48] [--yes]
+    python -m src.main reset --full --include-content [--purge-history] [--yes]
     python -m src.main renew [--hours 48]
     python -m src.main trigger-release [--stage FULL] [--delay 0]
 """
@@ -20,6 +21,8 @@ import click
 @click.option("--full", is_flag=True, help="Full factory reset (new state + clear audit)")
 @click.option("--backup/--no-backup", default=True, help="Backup existing state before reset")
 @click.option("--hours", default=48, type=int, help="Initial deadline hours for full reset")
+@click.option("--include-content", is_flag=True, help="Also wipe all articles and media (requires --full)")
+@click.option("--purge-history", is_flag=True, help="Purge media from git history (requires --include-content)")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def reset(
@@ -28,15 +31,20 @@ def reset(
     full: bool,
     backup: bool,
     hours: int,
+    include_content: bool,
+    purge_history: bool,
     yes: bool,
 ) -> None:
     """Reset state to OK or perform full factory reset.
 
     Without --full: Just resets escalation state to OK.
     With --full: Creates fresh state and clears audit log.
+    With --full --include-content: Also wipes all articles and media.
+    With --full --include-content --purge-history: Also purges media from git history.
     """
     import json
     import shutil
+    import subprocess as _sp
 
     from ..persistence.state_file import load_state, save_state
 
@@ -44,11 +52,24 @@ def reset(
     state_path = root / state_file
     audit_path = root / "audit" / "ledger.ndjson"
     backup_dir = root / "backups"
+    articles_dir = root / "content" / "articles"
+    media_dir = root / "content" / "media"
+
+    # ── Validate flag dependencies ────────────────────────────────
+    if include_content and not full:
+        raise click.ClickException("--include-content requires --full")
+    if purge_history and not include_content:
+        raise click.ClickException("--purge-history requires --include-content")
 
     if full and not yes:
         click.secho("⚠️  FULL RESET will:", fg="yellow", bold=True)
         click.echo("  - Create fresh state with new deadline")
         click.echo("  - Clear the audit log")
+        if include_content:
+            click.echo("  - Delete all articles and media")
+            click.echo("  - Reset content manifests")
+        if purge_history:
+            click.echo("  - Purge media from git history (rewrites commits)")
         if backup:
             click.echo("  - Backup existing files first")
         if not click.confirm("Continue?"):
@@ -72,6 +93,14 @@ def reset(
             backup_audit = backup_dir / f"audit_{timestamp}.ndjson"
             shutil.copy(audit_path, backup_audit)
             click.echo(f"  Backed up audit to: {backup_audit}")
+
+        # Backup content if it's about to be wiped
+        if include_content:
+            content_backup = backup_dir / f"content_{timestamp}"
+            content_src = root / "content"
+            if content_src.exists():
+                shutil.copytree(content_src, content_backup)
+                click.echo(f"  Backed up content to: {content_backup}")
 
     if full:
         # Full factory reset - create new state
@@ -141,6 +170,110 @@ def reset(
         click.echo(f"  Project: {project_name}")
         click.echo(f"  Deadline: {new_deadline.isoformat()}")
         click.echo(f"  ({hours} hours from now)")
+
+        # ── Content cleanup ───────────────────────────────────────
+        if include_content:
+            click.echo("")
+            click.secho("  Content cleanup:", fg="yellow")
+
+            # Wipe articles
+            deleted_articles = 0
+            if articles_dir.exists():
+                for f in articles_dir.glob("*.json"):
+                    f.unlink()
+                    deleted_articles += 1
+            click.echo(f"    Deleted {deleted_articles} article(s)")
+
+            # Wipe encrypted media files (.enc only — README stays)
+            deleted_media = 0
+            freed_bytes = 0
+            if media_dir.exists():
+                for f in media_dir.glob("*.enc"):
+                    freed_bytes += f.stat().st_size
+                    f.unlink()
+                    deleted_media += 1
+            click.echo(f"    Deleted {deleted_media} media file(s) ({freed_bytes / 1024:.0f} KB)")
+
+            # Reset media manifest
+            media_manifest = media_dir / "manifest.json"
+            media_manifest.parent.mkdir(parents=True, exist_ok=True)
+            media_manifest.write_text(json.dumps({"version": 1, "media": []}, indent=2) + "\n")
+            click.echo("    Reset media manifest")
+
+            # Reset content manifest — preserve stages/defaults, clear articles
+            manifest_path = root / "content" / "manifest.yaml"
+            if manifest_path.exists():
+                try:
+                    import yaml
+                    manifest = yaml.safe_load(manifest_path.read_text()) or {}
+                    manifest["articles"] = []
+                    manifest_path.write_text(yaml.dump(
+                        manifest, default_flow_style=False, sort_keys=False
+                    ))
+                except Exception as e:
+                    click.secho(f"    ⚠️ Could not reset manifest.yaml: {e}", fg="yellow")
+            click.echo("    Reset content manifest")
+
+            click.secho("  ✅ Content wiped", fg="green")
+
+        # ── Git history purge ─────────────────────────────────────
+        if purge_history:
+            click.echo("")
+            click.secho("  Git history purge:", fg="yellow")
+
+            # Check for git-filter-repo
+            if not shutil.which("git-filter-repo"):
+                click.secho(
+                    "  ❌ git-filter-repo is not installed.\n"
+                    "     Install with: pip install git-filter-repo",
+                    fg="red",
+                )
+            else:
+                # Check for clean working tree
+                status_result = _sp.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(root), capture_output=True, text=True, timeout=10,
+                )
+                if status_result.stdout.strip():
+                    click.secho(
+                        "  ❌ Working tree is dirty. Commit or stash first.",
+                        fg="red",
+                    )
+                else:
+                    click.echo("    Running git filter-repo...")
+                    filter_result = _sp.run(
+                        [
+                            "git", "filter-repo",
+                            "--invert-paths",
+                            "--path", "content/media/",
+                            "--force",
+                        ],
+                        cwd=str(root), capture_output=True, text=True, timeout=300,
+                    )
+                    if filter_result.returncode == 0:
+                        click.secho("  ✅ Media purged from git history", fg="green")
+                        click.secho(
+                            "  ⚠️  You must now force-push: "
+                            "git push --force origin main",
+                            fg="yellow",
+                        )
+                    else:
+                        click.secho(
+                            f"  ❌ git filter-repo failed: {filter_result.stderr.strip()}",
+                            fg="red",
+                        )
+
+        # ── Mirror cascade protection (silent) ───────────────────
+        #    When MIRROR_RESET_MODE is 'isolated' (default), write a
+        #    one-shot skip file. git_sync.push_to_mirror reads it and
+        #    skips the next code push to the mirror. The admin panel
+        #    knows nothing about this — the attacker sees a normal
+        #    factory reset success message.
+        mirror_reset_mode = os.environ.get("MIRROR_RESET_MODE", "isolated")
+        if mirror_reset_mode == "isolated":
+            skip_file = root / "state" / ".skip_mirror_code_push"
+            skip_file.parent.mkdir(parents=True, exist_ok=True)
+            skip_file.touch()
     else:
         # Simple reset - just reset escalation state
         state = load_state(state_path)

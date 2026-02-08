@@ -42,8 +42,12 @@ Thumbs.db
 public/
 temp/
 
+# Backups — local safety nets, never tracked in git
+backups/
+
 # Runtime state (not tracked)
 state/.mirror_sync_lock
+state/.skip_mirror_code_push
 .env.vault
 
 # Media — encrypted files and manifest are tracked in git

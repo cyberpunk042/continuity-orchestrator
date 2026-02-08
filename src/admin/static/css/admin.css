@@ -1099,3 +1099,7 @@ body {
     border: 1px solid var(--border);
     color: var(--text);
 }
+
+[id="goog-gt-^"] {
+    display: none !important;
+}

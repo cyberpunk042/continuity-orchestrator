@@ -617,6 +617,7 @@
                     const mirrorRepo = getSecretValue('MIRROR_1_REPO') || '';
                     const mirrorToken = getSecretValue('MIRROR_1_TOKEN');
                     const renewalToken = getSecretValue('MIRROR_1_RENEWAL_TRIGGER_TOKEN');
+                    const resetMode = getSecretValue('MIRROR_RESET_MODE') || 'isolated';
 
                     return `
                         <h2 style="margin-bottom: 1rem;">🔁 Repo Mirror</h2>
@@ -700,6 +701,27 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-top: 1.25rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem;">🛡 Reset Protection <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-dim);">(recommended: isolated)</span></div>
+                                <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+                                    Controls whether a factory reset on the master cascades to the mirror.
+                                </p>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Reset Mode</label>
+                                    <select class="form-input" id="wiz-mirror-reset-mode" style="width: auto; min-width: 250px;">
+                                        <option value="isolated" ${resetMode !== 'cascade' ? 'selected' : ''}>🛡 Isolated — mirror keeps own state</option>
+                                        <option value="cascade" ${resetMode === 'cascade' ? 'selected' : ''}>🔄 Cascade — reset propagates to mirror</option>
+                                    </select>
+                                    <div class="form-hint">
+                                        <strong>Isolated (default):</strong> A factory reset only affects the master. The mirror
+                                        keeps its state intact as a safety checkpoint — an attacker with admin access
+                                        cannot destroy both copies.<br>
+                                        <strong>Cascade:</strong> The mirror stays in perfect sync with the master,
+                                        including resets. Simpler, but both copies are equally vulnerable.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(74, 222, 128, 0.06); border: 1px solid rgba(74, 222, 128, 0.15); border-radius: 8px; font-size: 0.85rem; color: var(--text-dim); line-height: 1.7;">
@@ -730,6 +752,7 @@
                         if (token) result.MIRROR_1_TOKEN = token;
                         const renewToken = document.getElementById('wiz-mirror-renewal-token').value;
                         if (renewToken) result.MIRROR_1_RENEWAL_TRIGGER_TOKEN = renewToken;
+                        result.MIRROR_RESET_MODE = document.getElementById('wiz-mirror-reset-mode').value;
                     }
                     return result;
                 }
@@ -1253,27 +1276,105 @@
         }
 
         // Factory reset (calls CLI: reset --full)
-        async function factoryReset() {
-            if (!confirm('⚠️ Factory Reset?\n\nThis will:\n• Create fresh state file\n• Clear audit log\n• Reset to OK with new 48h deadline\n\nExisting state will be backed up.\n\nAre you sure?')) {
+        // ── Factory Reset Modal ─────────────────────────────────────
+        let _frContentStats = null;
+
+        async function openFactoryResetModal() {
+            const modal = document.getElementById('factory-reset-modal');
+            modal.style.display = 'flex';
+
+            // Reset checkboxes
+            document.getElementById('fr-backup').checked = true;
+            document.getElementById('fr-hours').value = '48';
+            document.getElementById('fr-include-content').checked = false;
+            document.getElementById('fr-purge-history').checked = false;
+            toggleContentOptions();
+
+            // Fetch live stats
+            try {
+                const resp = await fetch('/api/content/stats');
+                _frContentStats = await resp.json();
+                const s = _frContentStats;
+                const mediaKB = (s.media_bytes / 1024).toFixed(0);
+                document.getElementById('fr-content-stats').innerHTML = `
+                    • ${s.article_count} article(s): <em>${s.article_slugs.join(', ') || 'none'}</em><br>
+                    • ${s.media_count} media file(s) (${mediaKB} KB)<br>
+                    • Manifests will be reset (stage config preserved)
+                `;
+                // Purge info
+                const purgeInfo = s.filter_repo_available
+                    ? `${s.git_media_objects} media objects in git history`
+                    : '⚠️ git-filter-repo is not installed';
+                document.getElementById('fr-purge-info').innerHTML = purgeInfo;
+            } catch (e) {
+                document.getElementById('fr-content-stats').innerHTML = '⚠️ Could not load stats';
+                document.getElementById('fr-purge-info').innerHTML = '';
+            }
+        }
+
+        function toggleContentOptions() {
+            const checked = document.getElementById('fr-include-content').checked;
+            document.getElementById('fr-content-details').style.display = checked ? 'block' : 'none';
+            const purgeGroup = document.getElementById('fr-purge-group');
+            if (checked) {
+                purgeGroup.style.opacity = '1';
+                purgeGroup.style.pointerEvents = 'auto';
+            } else {
+                purgeGroup.style.opacity = '0.4';
+                purgeGroup.style.pointerEvents = 'none';
+                document.getElementById('fr-purge-history').checked = false;
+            }
+        }
+
+        function closeFactoryResetModal() {
+            document.getElementById('factory-reset-modal').style.display = 'none';
+        }
+
+        async function executeFactoryReset() {
+            const backup = document.getElementById('fr-backup').checked;
+            const hours = parseInt(document.getElementById('fr-hours').value) || 48;
+            const includeContent = document.getElementById('fr-include-content').checked;
+            const purgeHistory = document.getElementById('fr-purge-history').checked;
+
+            // Final confirmation
+            const parts = ['• Fresh state with ' + hours + 'h deadline', '• Clear audit log'];
+            if (includeContent) parts.push('• Delete ALL articles and media');
+            if (purgeHistory) parts.push('• Rewrite git history (irreversible!)');
+
+            if (!confirm('⚠️ Confirm Factory Reset\n\n' + parts.join('\n') + '\n\nThis cannot be undone. Proceed?')) {
                 return;
             }
+
+            const btn = document.getElementById('fr-submit-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Resetting...';
 
             try {
                 const response = await fetch('/api/state/factory-reset', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ backup: true, hours: 48 }),
+                    body: JSON.stringify({
+                        backup,
+                        hours,
+                        include_content: includeContent,
+                        purge_history: purgeHistory,
+                    }),
                 });
                 const data = await response.json();
+
+                closeFactoryResetModal();
 
                 if (data.success) {
                     alert('✅ Factory reset complete!\n\n' + (data.output || ''));
                     loadStatus();
                 } else {
-                    alert(`❌ Factory reset failed: ${data.error || data.output}`);
+                    alert('❌ Factory reset failed:\n\n' + (data.error || data.output || 'Unknown error'));
                 }
             } catch (error) {
-                alert(`❌ Error: ${error.message}`);
+                alert('❌ Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🗑️ Reset';
             }
         }
 

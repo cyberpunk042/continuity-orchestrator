@@ -256,12 +256,21 @@ def api_factory_reset():
     data = request.json or {}
     backup = data.get("backup", True)
     hours = data.get("hours", 48)
+    include_content = data.get("include_content", False)
+    purge_history = data.get("purge_history", False)
 
     cmd = ["python", "-m", "src.main", "reset", "--full", "-y", "--hours", str(hours)]
     if backup:
         cmd.append("--backup")
     else:
         cmd.append("--no-backup")
+    if include_content:
+        cmd.append("--include-content")
+    if purge_history:
+        cmd.append("--purge-history")
+
+    # History purge via git filter-repo may take longer
+    timeout = 120 if purge_history else 30
 
     try:
         result = subprocess.run(
@@ -269,7 +278,7 @@ def api_factory_reset():
             cwd=str(project_root),
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout,
         )
         return jsonify({
             "success": result.returncode == 0,

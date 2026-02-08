@@ -95,6 +95,7 @@ SYNCABLE_VARS = [
     "ADAPTER_MOCK_MODE",  # cron.yml line 51 — 'true' while slave
     "ARCHIVE_ENABLED",    # Auto-archive to archive.org after publish
     "ARCHIVE_URL",        # Custom archive URL (optional)
+    "MIRROR_RESET_MODE",  # isolated / cascade — factory reset protection
 ]
 
 

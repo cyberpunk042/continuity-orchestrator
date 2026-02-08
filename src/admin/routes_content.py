@@ -12,6 +12,7 @@ Routes:
     POST /api/content/articles/<slug>/decrypt    # Decrypt this article
     GET  /api/content/encryption-status          # Key availability
     POST /api/content/keygen                     # Generate new key
+    GET  /api/content/stats                       # Content stats for reset modal
 """
 
 from __future__ import annotations
@@ -650,3 +651,41 @@ def api_keygen():
 
     key = generate_key()
     return jsonify({"key": key})
+
+
+@content_bp.route("/stats", methods=["GET"])
+def api_content_stats():
+    """Return article and media counts for the factory reset modal."""
+    import shutil
+    import subprocess
+
+    articles_dir = _articles_dir()
+    media_dir = _project_root() / "content" / "media"
+
+    articles = list(articles_dir.glob("*.json")) if articles_dir.exists() else []
+    media_files = list(media_dir.glob("*.enc")) if media_dir.exists() else []
+    media_bytes = sum(f.stat().st_size for f in media_files)
+
+    # Count media objects in git history
+    git_media_objects = 0
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--objects", "--all", "--", "content/media/"],
+            cwd=str(_project_root()),
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            git_media_objects = len(
+                [line for line in result.stdout.strip().split("\n") if line.strip()]
+            )
+    except Exception:
+        pass
+
+    return jsonify({
+        "article_count": len(articles),
+        "article_slugs": [f.stem for f in sorted(articles)],
+        "media_count": len(media_files),
+        "media_bytes": media_bytes,
+        "git_media_objects": git_media_objects,
+        "filter_repo_available": shutil.which("git-filter-repo") is not None,
+    })

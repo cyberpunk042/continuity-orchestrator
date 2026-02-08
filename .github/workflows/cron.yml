@@ -157,6 +157,7 @@ jobs:
         env:
           MIRROR_ENABLED: ${{ vars.MIRROR_ENABLED }}
           MIRROR_1_REPO: ${{ vars.MIRROR_1_REPO }}
+          MIRROR_RESET_MODE: ${{ vars.MIRROR_RESET_MODE }}
           MIRROR_1_TOKEN: ${{ secrets.MIRROR_1_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           # All secrets that mirror-sync pushes to the slave
