@@ -139,6 +139,7 @@ if (!confirm('You have unsaved changes. Discard and switch article?')) return;
 
 contentSelectedSlug = slug;
 contentDirty = false;
+contentEditorReady = false;
 const statusEl = document.getElementById('content-save-status');
 if (statusEl) statusEl.style.opacity = '0';
 renderContentList();
@@ -282,12 +283,16 @@ toolConfig.image = {
 };
 }
 
+let contentEditorReady = false;
+
 contentEditor = new EditorJS({
 holder: 'content-editorjs',
 data: data,
 tools: toolConfig,
 placeholder: 'Start writing your article...',
 onChange: () => {
+    // Ignore onChange events fired during editor initialization
+    if (!contentEditorReady) return;
     contentDirty = true;
     const statusEl = document.getElementById('content-save-status');
     if (statusEl) statusEl.style.opacity = '0';
@@ -297,8 +302,11 @@ minHeight: 300,
 
 try {
 await contentEditor.isReady;
+// Small delay to let any final init onChange events settle
+setTimeout(() => { contentEditorReady = true; }, 300);
 } catch (e) {
 console.warn('Editor.js ready warning:', e);
+contentEditorReady = true;
 }
 }
 
