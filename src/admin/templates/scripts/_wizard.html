@@ -1357,6 +1357,7 @@
             // Close handler: refresh env data + re-render wizard step
             function dismissAndRefresh() {
                 overlay.remove();
+                secretsLoaded = false;  // env changed — Secrets tab will re-fetch
                 loadStatus().then(() => renderWizard());
             }
 

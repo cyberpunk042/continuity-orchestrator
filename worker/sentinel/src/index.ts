@@ -257,9 +257,10 @@ async function handleScheduled(env: Env): Promise<void> {
 
     // ── Dispatch ──────────────────────────────────────────────────
 
-    // Acquire lock (TTL 90 seconds to prevent double dispatch)
-    await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: 90 });
-    console.log(`[cron] Lock acquired, dispatching to ${config.repo}/${config.workflowFile}...`);
+    // Acquire lock (TTL = backoff window so the key survives until next dispatch is allowed)
+    const lockTtlSeconds = Math.max(config.maxBackoffMinutes * 60, 120);
+    await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: lockTtlSeconds });
+    console.log(`[cron] Lock acquired (TTL=${lockTtlSeconds}s), dispatching to ${config.repo}/${config.workflowFile}...`);
 
     const success = await dispatchWorkflow(config, env.GITHUB_TOKEN, decision.reason);
 
