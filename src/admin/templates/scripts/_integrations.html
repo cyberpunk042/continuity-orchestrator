@@ -157,61 +157,60 @@
                 return;
             }
 
-            // Container status grid
+            // Container status + URLs — single aligned table
             const containers = dockerData.containers || [];
-            if (containers.length > 0) {
-                html += `<div style="display: flex; flex-direction: column; gap: 0.4rem;">`;
-                for (const c of containers) {
-                    const isRunning = c.status === 'running';
-                    const icon = isRunning ? '✅' : (c.status === 'exited' ? '⏹' : '⚪');
-                    const stateText = c.state || (c.status === 'not_found' ? 'Not started' : c.status);
-                    const profileBadge = c.profile
-                        ? `<span style="font-size: 0.72rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: rgba(99,102,241,0.15); color: var(--info);">${c.profile}</span>`
-                        : '';
-                    html += `
-                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <span>${icon}</span>
-                            <span style="font-family: monospace; color: var(--text);">${c.name}</span>
-                            ${profileBadge}
-                            <span style="margin-left: auto; color: var(--text-dim);">${stateText}</span>
-                        </div>`;
-                }
-                html += `</div>`;
-            }
-
-            // Access URLs
             const nginxContainer = containers.find(c => c.name === 'continuity-nginx');
             const nginxRunning = nginxContainer?.status === 'running';
             const tunnelToken = envData?.CLOUDFLARE_TUNNEL_TOKEN;
             const tunnelContainer = containers.find(c => c.name === 'continuity-tunnel');
             const tunnelRunning = tunnelContainer?.status === 'running';
 
-            html += `<div style="display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.5rem;">`;
-            // Local URL
-            html += `
-                <div class="status-row">
-                    <span class="status-label">Local URL</span>
-                    <span class="status-value">
-                        ${nginxRunning
-                            ? `<a href="http://localhost:8080" target="_blank" style="color: var(--accent);">http://localhost:8080 🔗</a>`
-                            : `<span style="color: var(--text-dim);">http://localhost:8080 (not running)</span>`
-                        }
-                    </span>
-                </div>`;
-            // Tunnel URL
-            if (tunnelToken) {
+            if (containers.length > 0) {
+                html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">`;
+                for (const c of containers) {
+                    const isRunning = c.status === 'running';
+                    const icon = isRunning ? '✅' : (c.status === 'exited' ? '⏹' : '⚪');
+                    const stateText = c.state || (c.status === 'not_found' ? 'Not started' : c.status);
+                    const profileBadge = c.profile
+                        ? ` <span style="font-size: 0.7rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: rgba(99,102,241,0.15); color: var(--info); vertical-align: middle;">${c.profile}</span>`
+                        : '';
+                    html += `
+                        <tr style="line-height: 1.8;">
+                            <td style="width: 1.5rem; text-align: center;">${icon}</td>
+                            <td style="font-family: monospace; color: var(--text); white-space: nowrap;">${c.name}${profileBadge}</td>
+                            <td style="text-align: right; color: var(--text-dim); white-space: nowrap;">${stateText}</td>
+                        </tr>`;
+                }
+                // Separator
+                html += `<tr><td colspan="3" style="padding: 0.3rem 0;"><hr style="border: none; border-top: 1px solid var(--border); margin: 0;"></td></tr>`;
+                // Local URL row
                 html += `
-                    <div class="status-row">
-                        <span class="status-label">Tunnel</span>
-                        <span class="status-value">
-                            ${tunnelRunning
-                                ? `<span style="color: var(--accent);">🌐 Active (Cloudflare)</span>`
-                                : `<span style="color: var(--text-dim);">🌐 Token configured, not running</span>`
+                    <tr style="line-height: 1.8;">
+                        <td style="text-align: center;">🌐</td>
+                        <td style="color: var(--text-dim);">Local</td>
+                        <td style="text-align: right;">
+                            ${nginxRunning
+                                ? `<a href="http://localhost:8080" target="_blank" style="color: var(--accent);">localhost:8080 🔗</a>`
+                                : `<span style="color: var(--text-dim);">localhost:8080</span>`
                             }
-                        </span>
-                    </div>`;
+                        </td>
+                    </tr>`;
+                // Tunnel URL row
+                if (tunnelToken) {
+                    html += `
+                        <tr style="line-height: 1.8;">
+                            <td style="text-align: center;">🔒</td>
+                            <td style="color: var(--text-dim);">Tunnel</td>
+                            <td style="text-align: right;">
+                                ${tunnelRunning
+                                    ? `<span style="color: var(--accent);">Active (Cloudflare)</span>`
+                                    : `<span style="color: var(--text-dim);">Not running</span>`
+                                }
+                            </td>
+                        </tr>`;
+                }
+                html += `</table>`;
             }
-            html += `</div>`;
 
             // Git sync config
             const cfg = dockerData.git_sync_config;
