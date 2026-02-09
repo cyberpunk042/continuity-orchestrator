@@ -135,6 +135,25 @@ def api_push_secrets():
             for key, value in sorted(existing.items()):
                 f.write(f"{key}={value}\n")
 
+        # If PROJECT_NAME was updated, also patch state/current.json so the
+        # change is reflected immediately on the dashboard and published site
+        # (otherwise it only takes effect on the next tick or factory reset).
+        new_project_name = all_values.get("PROJECT_NAME", "")
+        if new_project_name:
+            import json
+            state_file = project_root / "state" / "current.json"
+            if state_file.exists():
+                try:
+                    state_data = json.loads(state_file.read_text())
+                    old_name = state_data.get("meta", {}).get("project", "")
+                    if old_name != new_project_name:
+                        state_data.setdefault("meta", {})["project"] = new_project_name
+                        state_file.write_text(
+                            json.dumps(state_data, indent=2, default=str)
+                        )
+                except Exception:
+                    pass  # Non-critical — tick will sync it later
+
     # Then push to GitHub if requested
     if push_to_github:
         from ..config.system_status import check_tool

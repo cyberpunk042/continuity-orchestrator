@@ -41,6 +41,7 @@ The tick is the atomic unit of execution. Each tick:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -139,6 +140,14 @@ def run_tick(
     # Reset per-tick ephemeral flags — these only remain true if
     # a renewal actually happens during THIS tick's lifecycle.
     state.renewal.renewed_this_tick = False
+
+    # Sync project name from environment if it has changed
+    env_project = os.environ.get("PROJECT_NAME")
+    if env_project and env_project != state.meta.project:
+        logger.info(
+            f"Project name updated: '{state.meta.project}' → '{env_project}'"
+        )
+        state.meta.project = env_project
 
     state_id = state.meta.state_id
 
