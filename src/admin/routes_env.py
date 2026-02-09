@@ -75,6 +75,12 @@ def api_env_write():
         for key, value in sorted(existing.items()):
             f.write(f"{key}={value}\n")
 
+    # Update os.environ so the running process sees changes immediately
+    import os as _os
+    for name, value in secrets.items():
+        if value:
+            _os.environ[name] = value.strip("'\"")
+
     return jsonify({
         "success": True,
         "updated": list(secrets.keys()),
@@ -134,6 +140,17 @@ def api_push_secrets():
         with open(env_file, "w") as f:
             for key, value in sorted(existing.items()):
                 f.write(f"{key}={value}\n")
+
+        # Update os.environ so the running process sees changes immediately
+        # (without this, os.environ.get() returns stale startup-time values)
+        import os as _os
+        for name, value in all_values.items():
+            if value:
+                # Strip quotes that were added for .env file format
+                clean = value.strip("'\"")
+                _os.environ[name] = clean
+        for name in deletions:
+            _os.environ.pop(name, None)
 
         # If PROJECT_NAME was updated, also patch state/current.json so the
         # change is reflected immediately on the dashboard and published site
