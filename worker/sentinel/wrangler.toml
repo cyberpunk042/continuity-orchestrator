@@ -1,0 +1,24 @@
+name = "continuity-sentinel"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# ─── Cron Trigger ─────────────────────────────────────────────────
+# Fires the scheduled() handler every minute.
+# This is the sentinel's heartbeat — each invocation is ~1ms CPU.
+[triggers]
+crons = ["* * * * *"]
+
+# ─── KV Namespace ─────────────────────────────────────────────────
+# Created by:  wrangler kv namespace create SENTINEL_KV
+# Replace the id below with the actual namespace ID after creation.
+[[kv_namespaces]]
+binding = "SENTINEL_KV"
+id = "c74bb851edb84a84a587008d8ac6ce60"
+
+[vars]
+GITHUB_REPO = "cyberpunk042/continuity-orchestrator"
+ENVIRONMENT = "production"
+
+# ─── Secrets (set via wrangler secret put) ────────────────────────
+# SENTINEL_TOKEN   — Bearer token for authenticating engine POST calls
+# GITHUB_TOKEN     — Fine-grained PAT with actions:write scope

@@ -104,6 +104,11 @@ def tick(
         click.echo(f"\nSaving state to {state_path}")
         save_state(state, state_path)
         click.secho("✓ State persisted", fg="green")
+
+        # Notify sentinel (fire-and-forget)
+        from .sentinel import notify_sentinel
+        if notify_sentinel(state, result):
+            click.secho("✓ Sentinel notified", fg="green")
     else:
         click.secho("\n(Dry run — no changes persisted)", fg="cyan")
 

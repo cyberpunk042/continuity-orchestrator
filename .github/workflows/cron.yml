@@ -111,6 +111,8 @@ jobs:
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
           LOG_FORMAT: json
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
@@ -181,10 +183,37 @@ jobs:
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
           MIRROR_1_RENEWAL_TRIGGER_TOKEN: ${{ secrets.MIRROR_1_RENEWAL_TRIGGER_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m src.main mirror-sync || echo "::warning::Mirror sync failed"
+
+      # ── Notify Sentinel ─────────────────────────────────────
+      # Fire-and-forget POST to the Cloudflare Worker so it knows
+      # the tick completed. If SENTINEL_URL is not set, this no-ops.
+      - name: Notify sentinel
+        if: |
+          steps.role.outputs.mirror_role != 'SLAVE' &&
+          inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
+        run: |
+          if [ -n "$SENTINEL_URL" ]; then
+            python -c "
+from src.sentinel import notify_sentinel
+from src.persistence.state_file import load_state
+from pathlib import Path
+state = load_state(Path('state/current.json'))
+result = notify_sentinel(state)
+print('✅ Sentinel notified' if result else '⚠️ Sentinel unreachable (non-critical)')
+            "
+          else
+            echo "ℹ️ Sentinel not configured — skipping"
+          fi
 
       # Only rebuild site if state changed OR if force_deploy is requested
       - name: Build static site

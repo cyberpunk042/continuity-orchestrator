@@ -48,6 +48,9 @@
                     <button class="btn" onclick="runCmd('simulate')" style="width: 100%;">
                         🔮 Simulate Timeline
                     </button>
+                    <button class="btn" onclick="openSimulatorModal()" style="width: 100%;">
+                        ⏩ What-If Simulator
+                    </button>
                 </div>
             </div>
 
@@ -104,3 +107,5 @@
             </div>
         </div>
     </div>
+
+{% include "modals/_simulator.html" %}

@@ -1,0 +1,140 @@
+<!-- Audit Log Modal ──────────────────────────────────────────────── -->
+<div id="audit-log-modal" style="
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    padding: 2rem; overflow-y: auto;
+    justify-content: center; align-items: flex-start;
+" onclick="if(event.target===this) closeAuditLogModal()">
+    <div style="
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; max-width: 720px; width: 100%;
+        padding: 2rem; margin: 2rem auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    ">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <h2 style="margin: 0; font-size: 1.3rem; flex: 1;">📋 Audit Log</h2>
+            <button onclick="closeAuditLogModal()" style="
+                background: none; border: none; color: var(--text-dim);
+                font-size: 1.2rem; cursor: pointer; padding: 0.25rem;
+                border-radius: 4px; line-height: 1;
+            " title="Close">&times;</button>
+        </div>
+        <p id="audit-subtitle" style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem; line-height: 1.6;">
+            Loading audit trail…
+        </p>
+
+        <!-- Loading state -->
+        <div id="audit-loading" style="text-align: center; padding: 2rem; color: var(--text-dim);">
+            ⏳ Loading audit log…
+        </div>
+
+        <!-- Modal body (hidden until loaded) -->
+        <div id="audit-body" style="display: none;">
+
+            <!-- Summary cards -->
+            <div style="
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: 0.6rem; margin-bottom: 1.25rem;
+            ">
+                <div id="audit-stat-ticks" class="audit-stat-card" style="
+                    background: var(--bg-input); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 0.75rem 0.85rem; text-align: center;
+                ">
+                    <div style="font-size: 1.4rem; font-weight: 700; color: var(--text);">—</div>
+                    <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem;">🔄 Ticks</div>
+                </div>
+                <div id="audit-stat-renewals" class="audit-stat-card" style="
+                    background: var(--bg-input); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 0.75rem 0.85rem; text-align: center;
+                ">
+                    <div style="font-size: 1.4rem; font-weight: 700; color: var(--success);">—</div>
+                    <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem;">✅ Renewals</div>
+                </div>
+                <div id="audit-stat-transitions" class="audit-stat-card" style="
+                    background: var(--bg-input); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 0.75rem 0.85rem; text-align: center;
+                ">
+                    <div style="font-size: 1.4rem; font-weight: 700; color: var(--info);">—</div>
+                    <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem;">🔀 Transitions</div>
+                </div>
+                <div id="audit-stat-releases" class="audit-stat-card" style="
+                    background: var(--bg-input); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 0.75rem 0.85rem; text-align: center;
+                ">
+                    <div style="font-size: 1.4rem; font-weight: 700; color: var(--error);">—</div>
+                    <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem;">🔴 Releases</div>
+                </div>
+            </div>
+
+            <!-- Filter bar -->
+            <div style="
+                display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+                margin-bottom: 1rem;
+            ">
+                <select id="audit-filter-type" onchange="filterAuditEvents()" style="
+                    padding: 0.4rem 0.6rem;
+                    background: var(--bg-input); border: 1px solid var(--border);
+                    border-radius: 6px; color: var(--text); font-size: 0.85rem;
+                    min-width: 130px;
+                ">
+                    <option value="">All events</option>
+                    <option value="tick_start,tick_end,rule_matched">🔄 Ticks</option>
+                    <option value="renewal">✅ Renewals</option>
+                    <option value="state_transition">🔀 Transitions</option>
+                    <option value="manual_release">🔴 Releases</option>
+                    <option value="factory_reset">🗑️ Resets</option>
+                </select>
+                <div style="flex: 1; position: relative; min-width: 120px;">
+                    <input type="text" id="audit-filter-search" placeholder="Search…"
+                           oninput="filterAuditEvents()" style="
+                        width: 100%; padding: 0.4rem 0.6rem 0.4rem 1.8rem;
+                        background: var(--bg-input); border: 1px solid var(--border);
+                        border-radius: 6px; color: var(--text); font-size: 0.85rem;
+                        box-sizing: border-box;
+                    ">
+                    <span style="
+                        position: absolute; left: 0.6rem; top: 50%;
+                        transform: translateY(-50%); font-size: 0.8rem;
+                        color: var(--text-dim); pointer-events: none;
+                    ">🔍</span>
+                </div>
+                <label style="
+                    display: flex; align-items: center; gap: 0.35rem;
+                    font-size: 0.78rem; color: var(--text-dim); cursor: pointer;
+                    white-space: nowrap;
+                ">
+                    <input type="checkbox" id="audit-group-ticks"
+                           onchange="filterAuditEvents()"
+                           style="accent-color: var(--accent); width: 14px; height: 14px;">
+                    Group ticks
+                </label>
+                <button onclick="refreshAuditLog()" style="
+                    background: none; border: 1px solid var(--border);
+                    border-radius: 6px; color: var(--text-dim);
+                    padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.85rem;
+                " title="Refresh">↻</button>
+            </div>
+
+            <!-- Event list -->
+            <div id="audit-event-list" style="
+                max-height: 50vh; overflow-y: auto;
+                background: var(--bg-input); border: 1px solid var(--border);
+                border-radius: 10px; padding: 0.5rem;
+            ">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Visible count -->
+            <div id="audit-visible-count" style="
+                font-size: 0.78rem; color: var(--text-dim);
+                margin-top: 0.5rem; text-align: center;
+            "></div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+            <button class="btn" onclick="closeAuditLogModal()" style="min-width: 90px;">Close</button>
+        </div>
+    </div>
+</div>

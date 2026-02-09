@@ -60,3 +60,5 @@ content/media/*
 # Large media files (> 2MB) go to large/ — backed up via GitHub Releases
 !content/media/large/
 content/media/large/*
+
+node_modules/

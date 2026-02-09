@@ -1,0 +1,107 @@
+<!-- What-If Simulator Modal ──────────────────────────────────────── -->
+<div id="simulator-modal" style="
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    padding: 2rem; overflow-y: auto;
+    justify-content: center; align-items: flex-start;
+" onclick="if(event.target===this) closeSimulatorModal()">
+    <div style="
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; max-width: 700px; width: 100%;
+        padding: 2rem; margin: 2rem auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    ">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem;">
+            <h2 style="margin: 0; font-size: 1.3rem; flex: 1;">⏩ What-If Simulator</h2>
+            <button onclick="closeSimulatorModal()" style="
+                background: none; border: none; color: var(--text-dim);
+                font-size: 1.2rem; cursor: pointer; padding: 0.25rem;
+                border-radius: 4px; line-height: 1;
+            " title="Close">&times;</button>
+        </div>
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem;">
+            What happens if you don't renew? Drag the cursor to explore.
+        </p>
+
+        <!-- Duration picker -->
+        <div style="
+            display: flex; gap: 0.35rem; align-items: center;
+            margin-bottom: 1.25rem; flex-wrap: wrap;
+        ">
+            <span style="color: var(--text-dim); font-size: 0.82rem; margin-right: 0.25rem;">
+                Simulate:
+            </span>
+            <button class="sim-dur-btn" data-hours="24" onclick="runSimulation(24)" style="
+                padding: 0.3rem 0.7rem; border-radius: 16px; font-size: 0.78rem;
+                border: 1px solid var(--border); background: var(--bg-input);
+                color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+            ">24h</button>
+            <button class="sim-dur-btn" data-hours="48" onclick="runSimulation(48)" style="
+                padding: 0.3rem 0.7rem; border-radius: 16px; font-size: 0.78rem;
+                border: 1px solid var(--border); background: var(--bg-input);
+                color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+            ">48h</button>
+            <button class="sim-dur-btn sim-dur-active" data-hours="72" onclick="runSimulation(72)" style="
+                padding: 0.3rem 0.7rem; border-radius: 16px; font-size: 0.78rem;
+                border: 1px solid var(--accent); background: var(--accent);
+                color: #fff; cursor: pointer; transition: all 0.15s;
+                font-weight: 600;
+            ">72h</button>
+            <button class="sim-dur-btn" data-hours="168" onclick="runSimulation(168)" style="
+                padding: 0.3rem 0.7rem; border-radius: 16px; font-size: 0.78rem;
+                border: 1px solid var(--border); background: var(--bg-input);
+                color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+            ">1 week</button>
+        </div>
+
+        <!-- Loading -->
+        <div id="sim-loading" style="
+            text-align: center; padding: 1.5rem; color: var(--text-dim);
+        ">
+            ⏳ Simulating…
+        </div>
+
+        <!-- Results body (hidden until loaded) -->
+        <div id="sim-body" style="display: none;">
+
+            <!-- Timeline bar (extra padding for labels) -->
+            <div id="sim-timeline-bar" style="
+                background: var(--bg-input); border: 1px solid var(--border);
+                border-radius: 10px; padding: 1rem 1.25rem;
+                margin-bottom: 1rem; overflow: visible;
+                cursor: crosshair; user-select: none;
+                -webkit-user-select: none;
+            ">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Cursor timestamp readout -->
+            <div id="sim-cursor-readout" style="
+                font-size: 0.78rem; color: var(--text-dim); text-align: center;
+                margin-top: -0.5rem; margin-bottom: 0.75rem;
+            "></div>
+
+            <!-- Transition events -->
+            <div id="sim-events" style="
+                margin-bottom: 1rem;
+            ">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Summary warning -->
+            <div id="sim-warning" style="
+                padding: 0.75rem 1rem; border-radius: 8px;
+                font-size: 0.88rem; font-weight: 600;
+                margin-bottom: 0.5rem;
+            ">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+            <button class="btn" onclick="closeSimulatorModal()" style="min-width: 90px;">Close</button>
+        </div>
+    </div>
+</div>

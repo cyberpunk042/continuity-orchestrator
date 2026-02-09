@@ -248,6 +248,12 @@
                     </div>
                 </div>
                 
+                <div class="card" id="sentinel-card">
+                    <h2><span class="icon">🛰️</span> Sentinel
+                        <span id="sentinel-badge" style="font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: 0.5rem; background: var(--bg-input); color: var(--text-dim);">loading…</span>
+                    </h2>
+                    <div id="sentinel-body" style="color: var(--text-dim); font-size: 0.85rem;">Loading…</div>
+                </div>
 
                 <div class="card">
                     <h2><span class="icon">⚡</span> Quick Actions</h2>
@@ -265,4 +271,105 @@
 
             // Load git status into the Tools card
             loadGitStatus();
+            // Load sentinel status into the Sentinel card
+            loadSentinelStatus();
+        }
+
+        async function loadSentinelStatus() {
+            const badge = document.getElementById('sentinel-badge');
+            const body = document.getElementById('sentinel-body');
+            if (!badge || !body) return;
+
+            try {
+                const resp = await fetch('/api/sentinel/status');
+                const data = await resp.json();
+
+                if (!data.configured) {
+                    badge.textContent = 'not configured';
+                    badge.style.background = 'var(--bg-input)';
+                    badge.style.color = 'var(--text-dim)';
+                    body.innerHTML = `
+                        <p style="margin-bottom: 0.75rem;">The sentinel Worker is not configured. The system uses the GitHub Actions cron schedule (every 30 min).</p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn primary" onclick="setupSentinel(true)"
+                                    style="padding: 0.3rem 0.75rem; font-size: 0.8rem;">▶️ Run Setup</button>
+                            <button class="btn" onclick="switchTab('wizard'); setTimeout(() => goToWizardStep('sentinel'), 100);"
+                                    style="padding: 0.3rem 0.75rem; font-size: 0.8rem;">🧙 Wizard →</button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (!data.reachable) {
+                    badge.textContent = 'unreachable';
+                    badge.style.background = 'var(--warning)';
+                    badge.style.color = '#000';
+                    body.innerHTML = `
+                        <p style="color: var(--warning);">Sentinel is configured but the Worker is not reachable.</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.25rem;">${data.error || 'Connection failed'}</p>
+                    `;
+                    return;
+                }
+
+                // Sentinel is live
+                const state = data.state || {};
+                const lastDecision = data.last_decision || {};
+                const config = data.config || {};
+
+                badge.textContent = 'active';
+                badge.style.background = 'rgba(74, 222, 128, 0.15)';
+                badge.style.color = 'var(--accent)';
+
+                let rows = '';
+
+                if (lastDecision.action) {
+                    const action = lastDecision.action === 'tick' ? '🟢 tick' :
+                                   lastDecision.action === 'skip' ? '⏭️ skip' :
+                                   lastDecision.action;
+                    rows += `<div class="status-row"><span class="status-label">Last Decision</span><span class="status-value">${action}</span></div>`;
+
+                    if (lastDecision.reason) {
+                        rows += `<div class="status-row"><span class="status-label">Reason</span><span class="status-value" style="font-size: 0.82rem;">${lastDecision.reason}</span></div>`;
+                    }
+                }
+
+                if (lastDecision.at) {
+                    const ago = _timeAgo(new Date(lastDecision.at));
+                    rows += `<div class="status-row"><span class="status-label">Checked</span><span class="status-value" style="font-size: 0.82rem;">${ago}</span></div>`;
+                }
+
+                if (lastDecision.nextDueAt) {
+                    const nextDue = new Date(lastDecision.nextDueAt);
+                    const now = new Date();
+                    const diffMin = Math.round((nextDue - now) / 60000);
+                    const when = diffMin > 0 ? `in ${diffMin}m` : 'now';
+                    rows += `<div class="status-row"><span class="status-label">Next Due</span><span class="status-value">${when}</span></div>`;
+                }
+
+                if (state.stage) {
+                    rows += `<div class="status-row"><span class="status-label">Worker Stage</span><span class="status-value">${state.stage}</span></div>`;
+                }
+
+                if (config.repo) {
+                    rows += `<div class="status-row"><span class="status-label">Dispatches to</span><span class="status-value" style="font-size: 0.82rem;" translate="no">${config.repo}</span></div>`;
+                }
+
+                body.innerHTML = rows || '<p>Sentinel is active. Waiting for first decision…</p>';
+
+            } catch (err) {
+                badge.textContent = 'error';
+                badge.style.background = 'var(--danger)';
+                badge.style.color = '#fff';
+                body.innerHTML = `<p style="color: var(--danger);">Failed to load sentinel status: ${err.message}</p>`;
+            }
+        }
+
+        function _timeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+            if (seconds < 60) return `${seconds}s ago`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            return `${Math.floor(hours / 24)}d ago`;
         }

@@ -74,6 +74,10 @@ SYNCABLE_SECRETS = [
     # Persistence
     "PERSISTENCE_API_URL",
     "PERSISTENCE_API_KEY",
+
+    # Sentinel Worker
+    "SENTINEL_URL",
+    "SENTINEL_TOKEN",
 ]
 
 # Per-mirror secrets that are stored on the MASTER with a mirror-specific name

@@ -1,0 +1,246 @@
+/**
+ * Continuity Sentinel — Cloudflare Worker Entry Point
+ *
+ * Two handlers:
+ *   fetch()     — HTTP API for receiving state/signals + serving status
+ *   scheduled() — Cron trigger (every minute) that decides whether to dispatch
+ */
+
+import { unauthorized, validateBearer } from "./auth";
+import { computeNextDueAt, shouldDispatch } from "./decide";
+import { dispatchWorkflow } from "./dispatch";
+import type { DecisionLog, Env, SentinelConfig, SentinelState, Signal } from "./types";
+
+// ─── CORS headers for dashboard access ──────────────────────────
+const CORS_HEADERS: Record<string, string> = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+function json(data: unknown, status = 200): Response {
+    return new Response(JSON.stringify(data), {
+        status,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    });
+}
+
+// ─── HTTP Handler ───────────────────────────────────────────────
+async function handleFetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+
+    // CORS preflight
+    if (method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
+    // ── Public endpoints ──────────────────────────────────────────
+
+    if (method === "GET" && path === "/health") {
+        return json({ ok: true, worker: "continuity-sentinel", ts: new Date().toISOString() });
+    }
+
+    if (method === "GET" && path === "/status") {
+        return handleStatus(env);
+    }
+
+    // ── Protected endpoints ───────────────────────────────────────
+
+    if (!validateBearer(request, env.SENTINEL_TOKEN)) {
+        return unauthorized();
+    }
+
+    if (method === "POST" && path === "/state") {
+        return handlePostState(request, env);
+    }
+
+    if (method === "POST" && path === "/signal") {
+        return handlePostSignal(request, env);
+    }
+
+    if (method === "POST" && path === "/config") {
+        return handlePostConfig(request, env);
+    }
+
+    // ── 404 ───────────────────────────────────────────────────────
+    return json({ error: "Not found" }, 404);
+}
+
+
+// ── POST /state — Engine pushes latest state ────────────────────
+async function handlePostState(request: Request, env: Env): Promise<Response> {
+    try {
+        const state = await request.json() as SentinelState;
+
+        // Basic validation
+        if (!state.lastTickAt || !state.deadline || !state.stage) {
+            return json({ error: "Missing required fields: lastTickAt, deadline, stage" }, 400);
+        }
+
+        await env.SENTINEL_KV.put("state", JSON.stringify(state));
+
+        console.log(`[state] Received: stage=${state.stage} deadline=${state.deadline}`);
+        return json({ ok: true, received: state.stage });
+
+    } catch (err) {
+        return json({ error: "Invalid JSON body" }, 400);
+    }
+}
+
+
+// ── POST /signal — Renew/release/urgent signal ──────────────────
+async function handlePostSignal(request: Request, env: Env): Promise<Response> {
+    try {
+        const signal = await request.json() as Signal;
+
+        if (!signal.type || !signal.at) {
+            return json({ error: "Missing required fields: type, at" }, 400);
+        }
+
+        await env.SENTINEL_KV.put("signal", JSON.stringify(signal));
+
+        console.log(`[signal] Received: type=${signal.type} at=${signal.at}`);
+        return json({ ok: true, received: signal.type });
+
+    } catch (err) {
+        return json({ error: "Invalid JSON body" }, 400);
+    }
+}
+
+
+// ── POST /config — CLI wizard writes config ─────────────────────
+async function handlePostConfig(request: Request, env: Env): Promise<Response> {
+    try {
+        const config = await request.json() as SentinelConfig;
+
+        if (!config.repo || !config.workflowFile) {
+            return json({ error: "Missing required fields: repo, workflowFile" }, 400);
+        }
+
+        await env.SENTINEL_KV.put("config", JSON.stringify(config));
+
+        console.log(`[config] Updated: repo=${config.repo} cadence=${config.defaultCadenceMinutes}m`);
+        return json({ ok: true, repo: config.repo });
+
+    } catch (err) {
+        return json({ error: "Invalid JSON body" }, 400);
+    }
+}
+
+
+// ── GET /status — Public observability endpoint ─────────────────
+async function handleStatus(env: Env): Promise<Response> {
+    const [stateRaw, signalRaw, configRaw, decisionRaw, dispatchLock] = await Promise.all([
+        env.SENTINEL_KV.get("state"),
+        env.SENTINEL_KV.get("signal"),
+        env.SENTINEL_KV.get("config"),
+        env.SENTINEL_KV.get("last_decision"),
+        env.SENTINEL_KV.get("dispatch_lock"),
+    ]);
+
+    const state: SentinelState | null = stateRaw ? JSON.parse(stateRaw) : null;
+    const signal: Signal | null = signalRaw ? JSON.parse(signalRaw) : null;
+    const config: SentinelConfig | null = configRaw ? JSON.parse(configRaw) : null;
+    const lastDecision: DecisionLog | null = decisionRaw ? JSON.parse(decisionRaw) : null;
+
+    return json({
+        healthy: true,
+        configured: !!config,
+        // State summary
+        lastTickAt: state?.lastTickAt ?? null,
+        stage: state?.stage ?? null,
+        deadline: state?.deadline ?? null,
+        stateChanged: state?.stateChanged ?? null,
+        // Decision info
+        lastDecision: lastDecision ? {
+            at: lastDecision.at,
+            dispatch: lastDecision.dispatch,
+            reason: lastDecision.reason,
+        } : null,
+        lastDispatchAt: dispatchLock ?? null,
+        nextDueAt: config && state ? computeNextDueAt(state, config) : null,
+        // Signal info
+        pendingSignal: signal ? { type: signal.type, at: signal.at } : null,
+        // Config summary
+        config: config ? {
+            repo: config.repo,
+            mirrorRepo: config.mirrorRepo ?? null,
+            cadenceMinutes: config.defaultCadenceMinutes,
+            thresholdCount: config.thresholds.length,
+        } : null,
+    });
+}
+
+
+// ─── Cron Handler ───────────────────────────────────────────────
+async function handleScheduled(env: Env): Promise<void> {
+    // Read all KV keys in parallel
+    const [stateRaw, signalRaw, configRaw, dispatchLock] = await Promise.all([
+        env.SENTINEL_KV.get("state"),
+        env.SENTINEL_KV.get("signal"),
+        env.SENTINEL_KV.get("config"),
+        env.SENTINEL_KV.get("dispatch_lock"),
+    ]);
+
+    const state: SentinelState | null = stateRaw ? JSON.parse(stateRaw) : null;
+    const signal: Signal | null = signalRaw ? JSON.parse(signalRaw) : null;
+    const config: SentinelConfig | null = configRaw ? JSON.parse(configRaw) : null;
+
+    // No config = not set up yet, nothing to do
+    if (!config) {
+        console.log("[cron] No config found — skipping (run setup wizard first)");
+        return;
+    }
+
+    const now = new Date();
+    const decision = shouldDispatch(state, signal, config, now, dispatchLock);
+
+    // Log the decision for observability
+    const decisionLog: DecisionLog = {
+        at: now.toISOString(),
+        dispatch: decision.dispatch,
+        reason: decision.reason,
+        state,
+        signal,
+        nextDueAt: computeNextDueAt(state, config),
+    };
+    await env.SENTINEL_KV.put("last_decision", JSON.stringify(decisionLog));
+
+    console.log(`[cron] Decision: dispatch=${decision.dispatch} reason=${decision.reason}`);
+
+    if (!decision.dispatch) {
+        return;
+    }
+
+    // ── Dispatch ──────────────────────────────────────────────────
+
+    // Acquire lock (TTL 90 seconds to prevent double dispatch)
+    await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: 90 });
+
+    const success = await dispatchWorkflow(config, env.GITHUB_TOKEN, decision.reason);
+
+    if (success) {
+        // Clear the consumed signal
+        if (signal) {
+            await env.SENTINEL_KV.delete("signal");
+        }
+    } else {
+        // Release lock on failure so we retry next minute
+        await env.SENTINEL_KV.delete("dispatch_lock");
+        console.error("[cron] Dispatch failed — lock released for retry");
+    }
+}
+
+
+// ─── Export ─────────────────────────────────────────────────────
+export default {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        return handleFetch(request, env);
+    },
+
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        ctx.waitUntil(handleScheduled(env));
+    },
+};

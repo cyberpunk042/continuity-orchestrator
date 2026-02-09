@@ -24,6 +24,7 @@
                         <li>🤖 Reddit posting <em style="opacity:0.6;">— optional</em></li>
                         <li>🔐 Security secrets</li>
                         <li>🔁 Repo Mirror <em style="opacity:0.6;">— optional</em></li>
+                        <li>🛰️ Sentinel Worker <em style="opacity:0.6;">— optional</em></li>
                         <li>🚀 Push to GitHub</li>
                     </ul>
                     <p style="color: var(--text-dim); margin-top: 1rem; font-size: 0.9rem;">
@@ -847,6 +848,126 @@
                 }
             },
             {
+                id: 'sentinel',
+                title: 'Sentinel',
+                content: () => {
+                    const sentinelUrl = getSecretValue('SENTINEL_URL');
+                    const sentinelToken = getSecretValue('SENTINEL_TOKEN');
+                    const isConfigured = !!(sentinelUrl && sentinelToken);
+
+                    return `
+                        <h2 style="margin-bottom: 1rem;">🛰️ Sentinel Worker</h2>
+                        <p style="color: var(--text-dim); margin-bottom: 1.25rem;">
+                            <em>Optional</em> — Upgrades your tick schedule from "every 30 minutes via GitHub cron"
+                            to "every 60 seconds via Cloudflare". Free tier, zero maintenance.
+                        </p>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; opacity: 0.7;">Without sentinel</div>
+                                <ul style="color: var(--text-dim); font-size: 0.82rem; line-height: 1.8; margin: 0 0 0 1rem;">
+                                    <li>Cron ticks every <strong>30 minutes</strong></li>
+                                    <li>Renewals take up to 30 min to register</li>
+                                    <li>No external health monitoring</li>
+                                </ul>
+                            </div>
+                            <div style="background: rgba(74, 222, 128, 0.06); border: 1px solid rgba(74, 222, 128, 0.15); border-radius: 10px; padding: 1rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--accent);">With sentinel</div>
+                                <ul style="color: var(--text-dim); font-size: 0.82rem; line-height: 1.8; margin: 0 0 0 1rem;">
+                                    <li>Checks every <strong>60 seconds</strong></li>
+                                    <li>Renewals + releases respond in <strong>~1 min</strong></li>
+                                    <li>Dashboard shows live Worker status</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        ${isConfigured ? '<div style="margin-bottom: 1.5rem; padding: 0.75rem 1rem; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.2); border-radius: 8px;"><strong style="color: var(--accent);">✅ Sentinel is configured</strong> — the engine notifies it after every tick and state change.</div>' : ''}
+
+                        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+                            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem;">🚀 Automated setup</div>
+                            <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+                                The setup script handles everything end-to-end — creates the KV namespace, generates tokens,
+                                deploys the Worker, and writes the config to <code>.env</code>.
+                            </p>
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                                <div style="flex: 1; background: var(--surface); padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; font-size: 0.85rem;">
+                                    $ ./manage.sh sentinel
+                                </div>
+                                <button class="btn" onclick="setupSentinel(false)" style="padding: 0.4rem 1rem; white-space: nowrap;" title="Interactive — confirms each step">
+                                    ▶️ Run
+                                </button>
+                                <button class="btn primary" onclick="setupSentinel(true)" style="padding: 0.4rem 1rem; white-space: nowrap;" title="Auto-confirm all steps (-y flag)">
+                                    ⚡ Auto-Run
+                                </button>
+                            </div>
+                            <p style="color: var(--text-dim); font-size: 0.78rem; opacity: 0.7;">
+                                Requires: <a href="https://dash.cloudflare.com/sign-up" target="_blank" style="color: var(--info);">Cloudflare account</a>
+                                + <a href="https://nodejs.org" target="_blank" style="color: var(--info);">Node.js</a>
+                                + a <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color: var(--info);">GitHub PAT</a> with Actions (write) scope.
+                                The script will prompt for anything missing.
+                            </p>
+                        </div>
+
+                        <details style="margin-bottom: 1.5rem;">
+                            <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem; padding: 0.5rem 0;">
+                                🔧 I prefer to do it manually…
+                            </summary>
+                            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 0 0 10px 10px; padding: 1.25rem; margin-top: 0.5rem;">
+                                <ol style="color: var(--text-dim); line-height: 2; margin: 0 0 0 1.25rem; font-size: 0.85rem;">
+                                    <li>Install Wrangler: <code>npm install -g wrangler</code> then <code>wrangler login</code></li>
+                                    <li>Create KV: <code>wrangler kv namespace create SENTINEL_KV</code></li>
+                                    <li>Patch <code>worker/sentinel/wrangler.toml</code> with the KV namespace ID</li>
+                                    <li>Generate a token: <code>openssl rand -hex 32</code></li>
+                                    <li>Set Worker secrets: <code>wrangler secret put AUTH_TOKEN</code> and <code>wrangler secret put GITHUB_TOKEN</code></li>
+                                    <li>Deploy: <code>cd worker/sentinel && wrangler deploy</code></li>
+                                    <li>Paste the Worker URL and auth token below</li>
+                                </ol>
+                            </div>
+                        </details>
+
+                        <div style="border-top: 1px solid var(--border); padding-top: 1.25rem;">
+                            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem;">Connection details</div>
+                            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 1rem;">
+                                ${isConfigured ? 'Already configured — update below if needed.' : 'After deploying, paste the Worker URL and auth token here.'}
+                            </p>
+                            <div class="form-group">
+                                <label class="form-label">Sentinel Worker URL</label>
+                                <input type="text" class="form-input" id="wiz-sentinel-url"
+                                       placeholder="https://continuity-sentinel.you.workers.dev"
+                                       value="${sentinelUrl}">
+                                <div class="form-hint">
+                                    The URL from <code>wrangler deploy</code> output (no trailing slash).
+                                    ${sentinelUrl ? '<span style="color: var(--accent);"> ✓ Set</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Sentinel Auth Token</label>
+                                <input type="password" class="form-input" id="wiz-sentinel-token"
+                                       placeholder="${sentinelToken ? '••••••••' : 'The token you set as AUTH_TOKEN on the Worker'}"
+                                       value="">
+                                <div class="form-hint">
+                                    Must match the Worker's <code>AUTH_TOKEN</code> secret.
+                                    ${sentinelToken ? '<span style="color: var(--accent);"> ✓ Set</span>' : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        <p style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-dim);">
+                            💡 Leave both fields empty to skip — the system uses the GitHub Actions cron as fallback.
+                        </p>
+                    `;
+                },
+                validate: () => true,
+                collect: () => {
+                    const result = {};
+                    const url = document.getElementById('wiz-sentinel-url')?.value?.trim()?.replace(/\/+$/, '');
+                    const token = document.getElementById('wiz-sentinel-token')?.value?.trim();
+                    if (url) result.SENTINEL_URL = url;
+                    if (token) result.SENTINEL_TOKEN = token;
+                    return result;
+                }
+            },
+            {
                 id: 'push',
                 title: 'Push',
                 content: () => {
@@ -1052,6 +1173,162 @@
                     alert(`❌ ${data.message}`);
                 }
             } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Run Sentinel Worker setup - opens terminal, polls for completion
+        async function setupSentinel(autoRun = false) {
+            let pollTimer = null;
+            let overlay = null;
+
+            function removeOverlay() {
+                if (pollTimer) clearInterval(pollTimer);
+                if (overlay) overlay.remove();
+                pollTimer = null;
+                overlay = null;
+            }
+
+            try {
+                const response = await fetch('/api/sentinel/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ autoRun }),
+                });
+                const data = await response.json();
+
+                if (data.fallback || data.command) {
+                    // No terminal emulator — show fallback modal
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                    modal.innerHTML = `
+                        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:700px;width:90%;max-height:80vh;overflow:auto;">
+                            <h2 style="margin-bottom:1rem;">🛰️ Sentinel Setup</h2>
+                            <p style="color:var(--text-dim);margin-bottom:1rem;">${data.message}</p>
+                            <pre style="background:var(--bg-input);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;line-height:1.4;white-space:pre-wrap;">${data.command}</pre>
+                            <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                                <button class="btn primary" onclick="navigator.clipboard.writeText(this.dataset.cmd);this.textContent='✓ Copied!'" data-cmd="${data.command.replace(/"/g, '&quot;')}">📋 Copy</button>
+                                <button class="btn" onclick="this.closest('div').parentElement.remove()">Close</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                    return;
+                }
+
+                if (!data.success) {
+                    alert(`❌ ${data.message}`);
+                    return;
+                }
+
+                // Terminal spawned — show polling overlay
+                const startTime = Date.now();
+                overlay = document.createElement('div');
+                overlay.id = 'sentinel-setup-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                overlay.innerHTML = `
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:2.5rem;margin-bottom:1rem;" id="sentinel-spinner">🛰️</div>
+                        <h2 style="margin-bottom:0.5rem;">Sentinel Setup Running</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1.5rem;font-size:0.85rem;">
+                            A terminal window has been opened. Complete the setup there.<br>
+                            This will auto-detect when the configuration is ready.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+                            <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;margin-bottom:0.75rem;">
+                                <div class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                                <span style="color:var(--text-dim);font-size:0.85rem;" id="sentinel-poll-status">Waiting for setup to complete…</span>
+                            </div>
+                            <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);" id="sentinel-elapsed">0s elapsed</div>
+                        </div>
+                        <div style="display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;">
+                            <button class="btn" id="sentinel-cancel-btn" style="padding:0.4rem 1.25rem;">
+                                ✕ Cancel Waiting
+                            </button>
+                        </div>
+                        <p style="color:var(--text-dim);font-size:0.75rem;margin-top:1.25rem;opacity:0.6;">
+                            💡 Having trouble? Try running <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh sentinel -y</code> directly in your terminal for better troubleshooting.
+                        </p>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                // Add spin keyframes if not already present
+                if (!document.getElementById('sentinel-spin-style')) {
+                    const style = document.createElement('style');
+                    style.id = 'sentinel-spin-style';
+                    style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+                    document.head.appendChild(style);
+                }
+
+                // Cancel button
+                document.getElementById('sentinel-cancel-btn').addEventListener('click', () => {
+                    removeOverlay();
+                });
+
+                // Poll for completion
+                const emojis = ['🛰️', '📡', '⚡', '🔄'];
+                let emojiIdx = 0;
+                pollTimer = setInterval(async () => {
+                    // Update elapsed time
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const mins = Math.floor(elapsed / 60);
+                    const secs = elapsed % 60;
+                    const elapsedEl = document.getElementById('sentinel-elapsed');
+                    if (elapsedEl) elapsedEl.textContent = mins > 0 ? `${mins}m ${secs}s elapsed` : `${secs}s elapsed`;
+
+                    // Animate spinner
+                    const spinnerEl = document.getElementById('sentinel-spinner');
+                    if (spinnerEl) { emojiIdx = (emojiIdx + 1) % emojis.length; spinnerEl.textContent = emojis[emojiIdx]; }
+
+                    // Check if env has sentinel config now
+                    try {
+                        const envRes = await fetch('/api/env/read');
+                        const envData = await envRes.json();
+                        if (envData.success && envData.env) {
+                            const url = envData.env.SENTINEL_URL;
+                            const token = envData.env.SENTINEL_TOKEN;
+                            if (url && token) {
+                                // Success! Auto-populate fields
+                                removeOverlay();
+
+                                // Update the wizard inputs if they exist
+                                const urlInput = document.getElementById('wiz-sentinel-url');
+                                const tokenInput = document.getElementById('wiz-sentinel-token');
+                                if (urlInput) urlInput.value = url;
+                                if (tokenInput) tokenInput.value = token;
+
+                                // Show success notification
+                                const successOverlay = document.createElement('div');
+                                successOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                                successOverlay.innerHTML = `
+                                    <div style="background:var(--bg-card);border:1px solid rgba(74,222,128,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                                        <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
+                                        <h2 style="color:var(--accent);margin-bottom:0.5rem;">Sentinel Deployed!</h2>
+                                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                                            The Worker is live and the configuration has been saved.
+                                        </p>
+                                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.8rem;">
+                                            <div style="margin-bottom:0.4rem;"><strong>URL:</strong> <code>${url}</code></div>
+                                            <div><strong>Token:</strong> <code>${token.substring(0, 8)}…</code></div>
+                                        </div>
+                                        <button class="btn primary" onclick="this.closest('div').parentElement.remove()" style="padding:0.5rem 2rem;">
+                                            Continue →
+                                        </button>
+                                    </div>
+                                `;
+                                document.body.appendChild(successOverlay);
+                                successOverlay.addEventListener('click', (e) => { if (e.target === successOverlay) successOverlay.remove(); });
+                            }
+                        }
+                    } catch (e) {
+                        // Ignore poll errors
+                    }
+                }, 3000);
+
+            } catch (error) {
+                removeOverlay();
                 alert(`❌ Error: ${error.message}`);
             }
         }
@@ -1790,4 +2067,8 @@
         });
 
         {% include "scripts/modals/_policy.js.html" %}
+
+        {% include "scripts/modals/_audit_log.js.html" %}
+
+        {% include "scripts/modals/_simulator.js.html" %}
 

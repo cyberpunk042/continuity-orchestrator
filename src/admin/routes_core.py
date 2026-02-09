@@ -13,10 +13,12 @@ Routes:
     /api/state/set-deadline
     /api/state/reset
     /api/state/factory-reset
+    /api/audit
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -473,3 +475,191 @@ def api_policy_constants_update():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ── Audit Log ────────────────────────────────────────────────────
+
+# Event type metadata for normalization and display
+_AUDIT_TYPE_META = {
+    "tick_start":       {"group": "ticks"},
+    "tick_end":         {"group": "ticks"},
+    "rule_matched":     {"group": "ticks"},
+    "state_transition": {"group": "transitions"},
+    "renewal":          {"group": "renewals"},
+    "manual_release":   {"group": "releases"},
+    "factory_reset":    {"group": "resets"},
+}
+
+# Fields that belong to the envelope, not to details
+_AUDIT_ENVELOPE_KEYS = frozenset({
+    "ts_iso", "timestamp", "event_id", "tick_id", "type", "event_type",
+    "level", "escalation_state", "state_id", "policy_version", "plan_id",
+    "details",
+})
+
+
+def _normalise_audit_entry(raw: dict) -> dict:
+    """Normalise both old-format and new-format audit entries.
+
+    Old format (from CLI):  {event_type, timestamp, ...}
+    New format (AuditWriter): {type, ts_iso, event_id, ...}
+
+    Returns a unified shape that the frontend can rely on.
+    """
+    entry = {
+        "timestamp": raw.get("ts_iso") or raw.get("timestamp", ""),
+        "event_id":  raw.get("event_id", ""),
+        "tick_id":   raw.get("tick_id", ""),
+        "type":      raw.get("type") or raw.get("event_type", "unknown"),
+        "level":     raw.get("level", "info"),
+        "state":     (raw.get("escalation_state")
+                      or raw.get("new_state")
+                      or raw.get("previous_state")
+                      or ""),
+        "details":   dict(raw.get("details") or {}),
+    }
+
+    # Merge remaining top-level keys into details so nothing is lost
+    for key, value in raw.items():
+        if key not in _AUDIT_ENVELOPE_KEYS and key not in entry["details"]:
+            entry["details"][key] = value
+
+    return entry
+
+
+def _build_audit_summary(entries: list) -> dict:
+    """Compute summary statistics from normalised entries."""
+    summary: dict = {
+        "total_events": len(entries),
+        "total_ticks": 0,
+        "total_renewals": 0,
+        "total_transitions": 0,
+        "total_releases": 0,
+        "total_resets": 0,
+    }
+
+    for entry in entries:
+        meta = _AUDIT_TYPE_META.get(entry["type"])
+        if not meta:
+            continue
+        group = meta["group"]
+        if group == "ticks" and entry["type"] == "tick_end":
+            summary["total_ticks"] += 1
+        elif group == "renewals":
+            summary["total_renewals"] += 1
+        elif group == "transitions":
+            summary["total_transitions"] += 1
+        elif group == "releases":
+            summary["total_releases"] += 1
+        elif group == "resets":
+            summary["total_resets"] += 1
+
+    # Find latest timestamps (entries are already newest-first)
+    for entry in entries:
+        if entry["type"] == "tick_end" and "last_tick_at" not in summary:
+            summary["last_tick_at"] = entry["timestamp"]
+        if entry["type"] == "renewal" and "last_renewal_at" not in summary:
+            summary["last_renewal_at"] = entry["timestamp"]
+        if summary.get("last_tick_at") and summary.get("last_renewal_at"):
+            break  # Found both, stop scanning
+
+    return summary
+
+
+@core_bp.route("/api/audit")
+def api_audit():
+    """Read the audit ledger and return normalised entries + summary.
+
+    Query params:
+        limit (int): Max entries to return (default 500, max 2000).
+    """
+    project_root = _project_root()
+    audit_path = project_root / "audit" / "ledger.ndjson"
+    limit = min(request.args.get("limit", 500, type=int), 2000)
+
+    if not audit_path.exists():
+        return jsonify({"entries": [], "total": 0, "summary": {
+            "total_events": 0, "total_ticks": 0, "total_renewals": 0,
+            "total_transitions": 0, "total_releases": 0, "total_resets": 0,
+        }})
+
+    # Parse all lines
+    entries = []
+    for line in audit_path.read_text(encoding="utf-8").strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            raw = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        entries.append(_normalise_audit_entry(raw))
+
+    # Newest first
+    entries.reverse()
+
+    summary = _build_audit_summary(entries)
+
+    return jsonify({
+        "entries": entries[:limit],
+        "total": len(entries),
+        "summary": summary,
+    })
+
+
+# ── Simulation ───────────────────────────────────────────────────
+
+@core_bp.route("/api/simulate", methods=["POST"])
+def api_simulate():
+    """Run escalation simulation and return the predicted timeline.
+
+    Body (JSON):
+        hours (int): Duration to simulate (default 72, max 720).
+
+    Returns JSON with ``simulation`` metadata and ``events`` list.
+    """
+    from pathlib import Path
+
+    from ..cli.deploy import _run_simulation
+    from ..persistence.state_file import load_state
+
+    project_root = _project_root()
+    data = request.json or {}
+    hours = min(max(int(data.get("hours", 72)), 1), 720)
+
+    state_path = project_root / "state" / "current.json"
+    if not state_path.exists():
+        return jsonify({"error": "No state file found"}), 404
+
+    state = load_state(state_path)
+    policy_path = project_root / "policy"
+
+    try:
+        result = _run_simulation(state, policy_path, hours=hours)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Sentinel Status ──────────────────────────────────────────────
+@core_bp.route("/api/sentinel/status")
+def api_sentinel_status():
+    """Proxy the sentinel Worker /status endpoint for the dashboard."""
+    import os
+
+    url = os.environ.get("SENTINEL_URL", "").rstrip("/")
+    if not url:
+        return jsonify({"configured": False})
+
+    try:
+        import requests as _requests
+
+        resp = _requests.get(f"{url}/status", timeout=3)
+        data = resp.json()
+        data["configured"] = True
+        data["reachable"] = True
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({
+            "configured": True,
+            "reachable": False,
+            "error": str(e),
+        })

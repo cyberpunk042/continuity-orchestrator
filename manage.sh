@@ -56,6 +56,7 @@ show_menu() {
     echo -e "  ${RED}!)${NC}  trigger-release Emergency disclosure trigger"
     echo ""
     echo -e "  ${CYAN}h)${NC}  help           Show all CLI commands"
+    echo -e "  ${CYAN}n)${NC}  sentinel       Deploy/update Sentinel Worker"
     echo -e "  ${CYAN}q)${NC}  quit           Exit"
     echo ""
 }
@@ -135,7 +136,27 @@ run_trigger_release() {
 }
 
 show_help() {
-    echo -e "\n${BOLD}=== CLI Help ===${NC}\n"
+    echo -e "\n${BOLD}=== Manager Commands ===${NC}\n"
+    echo -e "  ${BOLD}./manage.sh ${GREEN}<command>${NC} [options]"
+    echo ""
+    echo -e "  ${GREEN}status${NC}             Show current system status"
+    echo -e "  ${GREEN}tick${NC}               Run a single tick (evaluate + execute)"
+    echo -e "  ${GREEN}tick --dry-run${NC}      Preview tick without changes"
+    echo -e "  ${YELLOW}renew${NC}              Extend deadline (interactive)"
+    echo -e "  ${YELLOW}set-deadline${NC}       Set specific deadline"
+    echo -e "  ${YELLOW}reset${NC}              Reset escalation state to OK"
+    echo -e "  ${YELLOW}reset --full${NC}        Full factory reset (with backup)"
+    echo -e "  ${BLUE}build-site${NC}         Generate static site"
+    echo -e "  ${BLUE}test${NC}               Test adapters/integrations"
+    echo -e "  ${BLUE}setup${NC}              Run setup wizard (reconfigure)"
+    echo -e "  ${BLUE}secrets${NC}            Push all secrets to GitHub repo"
+    echo -e "  ${CYAN}web${NC}                Open web admin panel (--debug for verbose)"
+    echo -e "  ${CYAN}config-status${NC}      Show comprehensive status"
+    echo -e "  ${CYAN}sentinel [-y]${NC}      Deploy/update Sentinel Worker"
+    echo -e "    ${DIM}-y, --yes        Auto-confirm all prompts${NC}"
+    echo -e "  ${RED}trigger-release${NC}    Emergency disclosure trigger"
+    echo ""
+    echo -e "${BOLD}=== Python CLI ===${NC}\n"
     python -m src.main --help
     echo ""
     echo -e "${BOLD}Command details:${NC}"
@@ -363,6 +384,7 @@ main() {
             trigger|trigger-release) run_trigger_release ;;
             setup|wizard) run_setup ;;
             secrets|push-secrets) run_push_secrets ;;
+            sentinel) shift; ./scripts/setup-sentinel.sh "$@" ;;
             web|admin) shift; run_admin "$@" ;;
             config-status|cs) run_config_status ;;
             help) show_help ;;
@@ -395,6 +417,7 @@ main() {
             c|config-status|cs) run_config_status ;;
             '!'|trigger) run_trigger_release ;;
             h|help) show_help ;;
+            n|sentinel) ./scripts/setup-sentinel.sh ;;
             q|quit|exit) 
                 echo "Goodbye!"
                 exit 0

@@ -1,0 +1,478 @@
+        // ── What-If Simulator Modal ──────────────────────────────────
+
+        let _simCurrentHours = 72;
+        let _simData = null;        // Cached API response
+        let _simDragging = false;   // Drag state
+        let _simCursorPct = 0;      // 0–100, cursor position %
+
+        // ── Stage visual metadata ───────────────────────────────────
+        const SIM_STAGE_META = {
+            'OK':          { color: '#22c55e', label: 'OK',          icon: '✅' },
+            'REMIND_1':    { color: '#eab308', label: 'Remind 1',    icon: '⚠️' },
+            'REMIND_2':    { color: '#f97316', label: 'Remind 2',    icon: '⚠️' },
+            'PRE_RELEASE': { color: '#ef4444', label: 'Pre-Release', icon: '🔔' },
+            'PARTIAL':     { color: '#ef4444', label: 'Partial',     icon: '🚨' },
+            'FULL':        { color: '#dc2626', label: 'Full',        icon: '💀' },
+        };
+
+        // ── Open / Close ────────────────────────────────────────────
+
+        function openSimulatorModal() {
+            document.getElementById('simulator-modal').style.display = 'block';
+            runSimulation(_simCurrentHours);
+        }
+
+        function closeSimulatorModal() {
+            document.getElementById('simulator-modal').style.display = 'none';
+        }
+
+        // ── Run simulation ──────────────────────────────────────────
+
+        async function runSimulation(hours) {
+            _simCurrentHours = hours;
+
+            // Update pill buttons
+            document.querySelectorAll('.sim-dur-btn').forEach(btn => {
+                const h = parseInt(btn.dataset.hours);
+                if (h === hours) {
+                    btn.style.border = '1px solid var(--accent)';
+                    btn.style.background = 'var(--accent)';
+                    btn.style.color = '#fff';
+                    btn.style.fontWeight = '600';
+                } else {
+                    btn.style.border = '1px solid var(--border)';
+                    btn.style.background = 'var(--bg-input)';
+                    btn.style.color = 'var(--text-dim)';
+                    btn.style.fontWeight = 'normal';
+                }
+            });
+
+            const loading = document.getElementById('sim-loading');
+            const body = document.getElementById('sim-body');
+            loading.style.display = 'block';
+            body.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/simulate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hours }),
+                });
+
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+
+                _simData = data;
+
+                // Reset cursor to NOW position
+                const simFrom = new Date(data.simulation.from);
+                const simTo = new Date(data.simulation.to);
+                const now = new Date();
+                _simCursorPct = Math.max(0, Math.min(100, ((now - simFrom) / (simTo - simFrom)) * 100));
+
+                _renderSim();
+
+                loading.style.display = 'none';
+                body.style.display = 'block';
+
+                // Bind drag events after body is shown
+                _simBindDrag();
+
+            } catch (err) {
+                loading.innerHTML = `<span style="color: var(--error);">❌ ${err.message}</span>`;
+            }
+        }
+
+        // ── Master render (called on load + every drag update) ──────
+
+        function _renderSim() {
+            if (!_simData) return;
+            _renderSimTimeline(_simData);
+            _renderSimEvents(_simData);
+            _renderSimWarning(_simData);
+            _renderSimCursorReadout(_simData);
+        }
+
+        // ── Timeline bar ────────────────────────────────────────────
+
+        function _renderSimTimeline(data) {
+            const container = document.getElementById('sim-timeline-bar');
+            if (!container) return;
+
+            const simFrom = new Date(data.simulation.from);
+            const simTo = new Date(data.simulation.to);
+            const totalMs = simTo - simFrom;
+            const events = data.events || [];
+            const currentState = data.simulation.current_state;
+
+            // Build segments
+            const segments = [];
+            let lastTime = simFrom;
+            let lastState = currentState;
+
+            for (const ev of events) {
+                const evTime = new Date(ev.time);
+                const durationMs = evTime - lastTime;
+                if (durationMs > 0) {
+                    segments.push({ state: lastState, durationMs, from: lastTime, to: evTime });
+                }
+                lastState = ev.to;
+                lastTime = evTime;
+            }
+
+            const remainingMs = simTo - lastTime;
+            if (remainingMs > 0) {
+                segments.push({ state: lastState, durationMs: remainingMs, from: lastTime, to: simTo });
+            }
+
+            if (segments.length === 0) {
+                segments.push({ state: currentState, durationMs: totalMs, from: simFrom, to: simTo });
+            }
+
+            // Deadline position
+            const deadlineTime = new Date(data.simulation.deadline);
+            const deadlinePct = Math.max(0, Math.min(100, ((deadlineTime - simFrom) / totalMs) * 100));
+
+            // Build bar segments
+            let segHtml = '';
+            for (const seg of segments) {
+                const pct = Math.max(0.5, (seg.durationMs / totalMs) * 100);
+                const meta = SIM_STAGE_META[seg.state] || { color: '#6b7280', label: seg.state };
+                segHtml += `
+                    <div style="
+                        width: ${pct}%; height: 100%;
+                        background: ${meta.color}30;
+                        border-right: 1px solid ${meta.color}50;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 0.65rem; font-weight: 600; color: ${meta.color};
+                        overflow: hidden; white-space: nowrap;
+                    " title="${meta.label}: ${_simFormatDuration(seg.durationMs)}">${pct > 10 ? meta.label : ''}</div>
+                `;
+            }
+
+            // Cursor %
+            const curPct = _simCursorPct;
+
+            container.innerHTML = `
+                <div style="position: relative; padding: 28px 0 24px;" id="sim-timeline-track">
+                    <!-- Segment bar -->
+                    <div style="position: relative; height: 30px; border-radius: 6px; overflow: hidden; display: flex;">
+                        ${segHtml}
+                    </div>
+
+                    <!-- Deadline marker -->
+                    <div style="
+                        position: absolute; left: ${deadlinePct}%; top: 28px; bottom: 24px;
+                        width: 0; border-left: 2px dashed var(--error);
+                        pointer-events: none; z-index: 2; opacity: 0.6;
+                    "></div>
+                    <div style="
+                        position: absolute; left: ${deadlinePct}%; bottom: 0;
+                        transform: translateX(-50%);
+                        font-size: 0.65rem; color: var(--error); pointer-events: none;
+                        opacity: 0.85; font-weight: 600; letter-spacing: 0.03em;
+                        white-space: nowrap;
+                    ">⏰ DEADLINE</div>
+
+                    <!-- Draggable cursor -->
+                    <div id="sim-cursor" style="
+                        position: absolute; left: ${curPct}%; top: 0; bottom: 0;
+                        width: 0; z-index: 5;
+                        pointer-events: none;
+                    ">
+                        <!-- Vertical line -->
+                        <div style="
+                            position: absolute; left: -1px; top: 0; bottom: 24px;
+                            width: 2px; background: var(--text);
+                            border-radius: 1px;
+                        "></div>
+                        <!-- Top label -->
+                        <div style="
+                            position: absolute; left: 50%; top: -2px;
+                            transform: translate(-50%, -100%);
+                            font-size: 0.62rem; font-weight: 700; color: var(--text);
+                            text-transform: uppercase; letter-spacing: 0.05em;
+                            white-space: nowrap;
+                            background: var(--bg-input); padding: 1px 5px;
+                            border-radius: 3px; border: 1px solid var(--border);
+                        " id="sim-cursor-label">▼ NOW</div>
+                        <!-- Drag handle (invisible but bigger for grabbing) -->
+                        <div style="
+                            position: absolute; left: -10px; top: 0; bottom: 0;
+                            width: 20px; cursor: ew-resize;
+                            pointer-events: all;
+                        " id="sim-drag-handle"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ── Cursor readout ──────────────────────────────────────────
+
+        function _renderSimCursorReadout(data) {
+            const el = document.getElementById('sim-cursor-readout');
+            if (!el || !data) return;
+
+            const simFrom = new Date(data.simulation.from);
+            const simTo = new Date(data.simulation.to);
+            const totalMs = simTo - simFrom;
+            const cursorTime = new Date(simFrom.getTime() + (totalMs * _simCursorPct / 100));
+            const now = new Date();
+            const deltaMs = cursorTime - now;
+
+            // Find what state we're in at cursor time
+            let stateAtCursor = data.simulation.current_state;
+            for (const ev of (data.events || [])) {
+                if (new Date(ev.time) <= cursorTime) {
+                    stateAtCursor = ev.to;
+                } else {
+                    break;
+                }
+            }
+
+            const meta = SIM_STAGE_META[stateAtCursor] || { color: '#6b7280', label: stateAtCursor };
+            const timeStr = cursorTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                + ' ' + cursorTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+            const deltaStr = Math.abs(deltaMs) < 60000
+                ? 'now'
+                : (deltaMs > 0 ? '+' : '-') + _simFormatDelta(Math.abs(deltaMs));
+
+            el.innerHTML = `
+                <span style="color: ${meta.color}; font-weight: 600;">${meta.icon} ${meta.label}</span>
+                <span style="margin: 0 0.4rem;">·</span>
+                ${timeStr}
+                <span style="margin: 0 0.4rem;">·</span>
+                <span style="opacity: 0.7;">${deltaStr}</span>
+            `;
+        }
+
+        // ── Drag interaction ────────────────────────────────────────
+
+        function _simBindDrag() {
+            const container = document.getElementById('sim-timeline-bar');
+            if (!container) return;
+
+            // Remove old listeners (simple approach — re-clone)
+            const track = document.getElementById('sim-timeline-track');
+            if (!track) return;
+
+            function getPercent(clientX) {
+                const rect = track.getBoundingClientRect();
+                return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+            }
+
+            function updateCursor(pct) {
+                _simCursorPct = pct;
+
+                // Fast update: just move the cursor + update readout + events
+                const cursor = document.getElementById('sim-cursor');
+                if (cursor) cursor.style.left = pct + '%';
+
+                // Update label text
+                const label = document.getElementById('sim-cursor-label');
+                if (label) {
+                    const now = new Date();
+                    const simFrom = new Date(_simData.simulation.from);
+                    const simTo = new Date(_simData.simulation.to);
+                    const totalMs = simTo - simFrom;
+                    const cursorTime = new Date(simFrom.getTime() + (totalMs * pct / 100));
+                    const deltaMs = Math.abs(cursorTime - now);
+
+                    if (deltaMs < 60000) {
+                        label.textContent = '▼ NOW';
+                    } else {
+                        const offset = cursorTime > now
+                            ? '+' + _simFormatDelta(cursorTime - now)
+                            : '-' + _simFormatDelta(now - cursorTime);
+                        label.textContent = '▼ ' + offset;
+                    }
+                }
+
+                _renderSimCursorReadout(_simData);
+                _renderSimEvents(_simData);
+                _renderSimWarning(_simData);
+            }
+
+            // Mouse events
+            container.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                _simDragging = true;
+                updateCursor(getPercent(e.clientX));
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!_simDragging) return;
+                e.preventDefault();
+                updateCursor(getPercent(e.clientX));
+            });
+
+            document.addEventListener('mouseup', () => {
+                _simDragging = false;
+            });
+
+            // Touch events
+            container.addEventListener('touchstart', (e) => {
+                _simDragging = true;
+                updateCursor(getPercent(e.touches[0].clientX));
+            }, { passive: true });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!_simDragging) return;
+                updateCursor(getPercent(e.touches[0].clientX));
+            }, { passive: true });
+
+            document.addEventListener('touchend', () => {
+                _simDragging = false;
+            });
+        }
+
+        // ── Event list ──────────────────────────────────────────────
+
+        function _renderSimEvents(data) {
+            const container = document.getElementById('sim-events');
+            if (!container) return;
+
+            const events = data.events || [];
+
+            if (events.length === 0) {
+                container.innerHTML = `
+                    <div style="
+                        text-align: center; padding: 1.25rem;
+                        color: var(--success); font-size: 0.9rem;
+                        background: var(--bg-input); border-radius: 8px;
+                    ">
+                        ✅ No escalation changes in this window.<br>
+                        <span style="color: var(--text-dim); font-size: 0.82rem;">
+                            System stays at <strong>${data.simulation.current_state}</strong>.
+                        </span>
+                    </div>`;
+                return;
+            }
+
+            // Determine cursor time for past/future styling
+            const simFrom = new Date(data.simulation.from);
+            const simTo = new Date(data.simulation.to);
+            const totalMs = simTo - simFrom;
+            const cursorTime = new Date(simFrom.getTime() + (totalMs * _simCursorPct / 100));
+
+            container.innerHTML = events.map(ev => {
+                const evTime = new Date(ev.time);
+                const isPast = evTime <= cursorTime;
+                const delta = evTime - cursorTime;
+                const deltaStr = isPast ? _simFormatDelta(Math.abs(delta)) + ' ago' : 'in ' + _simFormatDelta(delta);
+                const meta = SIM_STAGE_META[ev.to] || { color: '#6b7280', icon: '⚙️' };
+                const ruleShort = ev.rule.replace(/^R\d+_/, '').replace(/_/g, ' ').toLowerCase();
+                const opacity = isPast ? '0.45' : '1';
+
+                return `
+                    <div style="
+                        display: flex; align-items: center; gap: 0.6rem;
+                        padding: 0.55rem 0.75rem; margin-bottom: 4px;
+                        background: ${meta.color}${isPast ? '05' : '08'};
+                        border-left: 3px solid ${meta.color};
+                        border-radius: 0 8px 8px 0;
+                        opacity: ${opacity};
+                        transition: opacity 0.15s ease;
+                    ">
+                        <span style="font-size: 0.9rem; flex-shrink: 0;">${isPast ? '✓' : meta.icon}</span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text);
+                                        ${isPast ? 'text-decoration: line-through; text-decoration-color: ' + meta.color + '40;' : ''}">
+                                ${ev.from} → ${ev.to}
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.1rem;">
+                                ${evTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                ${evTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                · <span style="font-style: italic;">${ruleShort}</span>
+                            </div>
+                        </div>
+                        <div style="
+                            font-size: 0.78rem; font-weight: 600;
+                            color: ${isPast ? 'var(--text-dim)' : meta.color};
+                            white-space: nowrap; text-align: right;
+                        ">
+                            ${Math.abs(delta) < 60000 ? '← now' : deltaStr}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ── Warning footer ──────────────────────────────────────────
+
+        function _renderSimWarning(data) {
+            const container = document.getElementById('sim-warning');
+            if (!container) return;
+
+            const events = data.events || [];
+
+            if (events.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            container.style.display = 'block';
+
+            // Find the next upcoming event relative to cursor
+            const simFrom = new Date(data.simulation.from);
+            const simTo = new Date(data.simulation.to);
+            const totalMs = simTo - simFrom;
+            const cursorTime = new Date(simFrom.getTime() + (totalMs * _simCursorPct / 100));
+
+            const upcoming = events.filter(ev => new Date(ev.time) > cursorTime);
+            const finalEvent = events[events.length - 1];
+
+            if (upcoming.length === 0) {
+                // All events are in the past (cursor is beyond all transitions)
+                const meta = SIM_STAGE_META[finalEvent.to] || { color: '#6b7280' };
+                container.style.background = `${meta.color}15`;
+                container.style.color = meta.color;
+                container.innerHTML = `Currently at <strong>${finalEvent.to}</strong> — all transitions have occurred`;
+                return;
+            }
+
+            const nextEvent = upcoming[0];
+            const nextTime = new Date(nextEvent.time);
+            const deltaStr = _simFormatDelta(nextTime - cursorTime);
+
+            // Also show final state info
+            if (finalEvent.to === 'FULL') {
+                const fullTime = new Date(finalEvent.time);
+                const fullDelta = _simFormatDelta(fullTime - cursorTime);
+                container.style.background = 'rgba(220, 38, 38, 0.12)';
+                container.style.color = '#ef4444';
+                container.innerHTML = `⚠️ FULL disclosure in <strong>${fullDelta}</strong> · Next: <strong>${nextEvent.to}</strong> in ${deltaStr}`;
+            } else if (['PARTIAL', 'PRE_RELEASE'].includes(finalEvent.to)) {
+                container.style.background = 'rgba(234, 179, 8, 0.12)';
+                container.style.color = '#eab308';
+                container.innerHTML = `⚠️ Reaches <strong>${finalEvent.to}</strong> · Next: <strong>${nextEvent.to}</strong> in ${deltaStr}`;
+            } else {
+                container.style.background = 'rgba(34, 197, 94, 0.12)';
+                container.style.color = '#22c55e';
+                container.innerHTML = `ℹ️ Next: <strong>${nextEvent.to}</strong> in ${deltaStr}`;
+            }
+        }
+
+        // ── Helpers ─────────────────────────────────────────────────
+
+        function _simFormatDelta(ms) {
+            if (ms < 0) return 'already past';
+            const totalMin = Math.floor(ms / 60000);
+            const days = Math.floor(totalMin / (24 * 60));
+            const remaining = totalMin % (24 * 60);
+            const hrs = Math.floor(remaining / 60);
+            const mins = remaining % 60;
+            const parts = [];
+            if (days) parts.push(`${days}d`);
+            if (hrs) parts.push(`${hrs}h`);
+            if (mins || !parts.length) parts.push(`${mins}m`);
+            return parts.join(' ');
+        }
+
+        function _simFormatDuration(ms) {
+            const hrs = Math.round(ms / 3600000 * 10) / 10;
+            if (hrs >= 24) return `${Math.round(hrs / 24 * 10) / 10} days`;
+            return `${hrs}h`;
+        }

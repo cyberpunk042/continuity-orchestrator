@@ -367,3 +367,50 @@ read -p "Press Enter to close..."
         "message": "Unsupported OS",
         "command": "# Visit https://cli.github.com/",
     })
+
+
+@secrets_bp.route("/sentinel/setup", methods=["POST"])
+def api_sentinel_setup():
+    """Spawn terminal to run the Sentinel Worker setup script."""
+    project_root = _project_root()
+    script_path = project_root / "scripts" / "setup-sentinel.sh"
+
+    if not script_path.exists():
+        return jsonify({
+            "success": False,
+            "message": "scripts/setup-sentinel.sh not found",
+        }), 404
+
+    # Check if auto-run mode requested
+    data = request.json or {}
+    auto_run = data.get("autoRun", False)
+    y_flag = " -y" if auto_run else ""
+
+    # Wrap the script so the terminal stays open after completion
+    wrapper = f'bash {script_path}{y_flag}; echo ""; read -p "Press Enter to close…"'
+
+    # Try to open in a terminal
+    terminal_cmds = [
+        ["gnome-terminal", "--", "bash", "-c", wrapper],
+        ["xterm", "-e", f"bash -c '{wrapper}'"],
+        ["konsole", "-e", f"bash -c '{wrapper}'"],
+        ["x-terminal-emulator", "-e", f"bash -c '{wrapper}'"],
+    ]
+
+    for cmd in terminal_cmds:
+        try:
+            subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True)
+            return jsonify({
+                "success": True,
+                "message": "Terminal opened. The setup script will walk you through deploying the Sentinel Worker.",
+            })
+        except FileNotFoundError:
+            continue
+
+    # Fallback: return the command
+    return jsonify({
+        "success": False,
+        "fallback": True,
+        "command": "./scripts/setup-sentinel.sh",
+        "message": "Could not open terminal. Run this in your terminal:",
+    })

@@ -1,0 +1,410 @@
+        // ── Audit Log Modal ──────────────────────────────────────────
+
+        let _auditEntries = [];  // Raw entries from API
+        let _auditFiltered = []; // After filtering
+
+        // ── Type → visual metadata ─────────────────────────────────
+        const AUDIT_TYPE_META = {
+            tick_start:       { icon: '🔄', label: 'Tick Start',      color: 'var(--text-dim)',  group: 'tick' },
+            tick_end:         { icon: '🔄', label: 'Tick End',        color: 'var(--text-dim)',  group: 'tick' },
+            rule_matched:     { icon: '⚡', label: 'Rule Matched',    color: 'var(--warning)',   group: 'tick' },
+            state_transition: { icon: '🔀', label: 'Transition',     color: 'var(--info)',      group: 'transition' },
+            renewal:          { icon: '✅', label: 'Renewal',         color: 'var(--success)',   group: 'renewal' },
+            manual_release:   { icon: '🔴', label: 'Release',         color: 'var(--error)',     group: 'release' },
+            factory_reset:    { icon: '🗑️', label: 'Factory Reset',  color: 'var(--text-dim)',  group: 'reset' },
+        };
+
+        const AUDIT_FALLBACK_META = { icon: '📝', label: 'Event', color: 'var(--text-dim)', group: 'other' };
+
+        // ── Open / Close ────────────────────────────────────────────
+
+        async function openAuditLogModal() {
+            const modal = document.getElementById('audit-log-modal');
+            const loading = document.getElementById('audit-loading');
+            const body = document.getElementById('audit-body');
+
+            modal.style.display = 'block';
+            loading.style.display = 'block';
+            body.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/audit?limit=500');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+
+                _auditEntries = data.entries || [];
+
+                // Update subtitle
+                const subtitle = document.getElementById('audit-subtitle');
+                const lastTick = data.summary.last_tick_at
+                    ? _auditRelativeTime(data.summary.last_tick_at)
+                    : 'never';
+                subtitle.textContent = `${data.total} events · Last tick: ${lastTick}`;
+
+                // Update stat cards
+                _updateStatCard('audit-stat-ticks', data.summary.total_ticks);
+                _updateStatCard('audit-stat-renewals', data.summary.total_renewals);
+                _updateStatCard('audit-stat-transitions', data.summary.total_transitions);
+                _updateStatCard('audit-stat-releases',
+                    data.summary.total_releases + (data.summary.total_resets || 0));
+
+                // Render events
+                filterAuditEvents();
+
+                loading.style.display = 'none';
+                body.style.display = 'block';
+
+            } catch (err) {
+                loading.innerHTML = `<span style="color: var(--error);">❌ ${err.message}</span>`;
+            }
+        }
+
+        function closeAuditLogModal() {
+            document.getElementById('audit-log-modal').style.display = 'none';
+        }
+
+        function refreshAuditLog() {
+            openAuditLogModal();
+        }
+
+        // ── Filtering ───────────────────────────────────────────────
+
+        function filterAuditEvents() {
+            const typeFilter = document.getElementById('audit-filter-type')?.value || '';
+            const searchText = (document.getElementById('audit-filter-search')?.value || '').toLowerCase();
+            const groupTicks = document.getElementById('audit-group-ticks')?.checked || false;
+
+            const allowedTypes = typeFilter ? new Set(typeFilter.split(',')) : null;
+
+            let filtered = _auditEntries;
+
+            // Type filter
+            if (allowedTypes) {
+                filtered = filtered.filter(e => allowedTypes.has(e.type));
+            }
+
+            // Text search
+            if (searchText) {
+                filtered = filtered.filter(e => {
+                    const haystack = [
+                        e.type, e.tick_id, e.event_id, e.state,
+                        JSON.stringify(e.details),
+                    ].join(' ').toLowerCase();
+                    return haystack.includes(searchText);
+                });
+            }
+
+            _auditFiltered = filtered;
+
+            if (groupTicks) {
+                _renderGroupedAuditEvents(filtered);
+            } else {
+                _renderFlatAuditEvents(filtered);
+            }
+        }
+
+        // ── Flat rendering (default) ────────────────────────────────
+
+        function _renderFlatAuditEvents(entries) {
+            const container = document.getElementById('audit-event-list');
+            if (!container) return;
+
+            if (entries.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0.88rem;">
+                        No events match the current filter.
+                    </div>`;
+                _updateVisibleCount(0, _auditEntries.length);
+                return;
+            }
+
+            container.innerHTML = entries.map((e, i) => _renderEventRow(e, i)).join('');
+            _updateVisibleCount(entries.length, _auditEntries.length);
+        }
+
+        function _renderEventRow(entry, index) {
+            const meta = AUDIT_TYPE_META[entry.type] || AUDIT_FALLBACK_META;
+            const time = _auditFormatTime(entry.timestamp);
+            const summary = _auditSummaryText(entry);
+            const stateBadge = entry.state
+                ? `<span style="
+                    display: inline-block; padding: 0.1rem 0.4rem;
+                    border-radius: 4px; font-size: 0.68rem; font-weight: 600;
+                    background: ${_stateColor(entry.state)}15;
+                    color: ${_stateColor(entry.state)};
+                    letter-spacing: 0.02em;
+                ">${entry.state}</span>`
+                : '';
+
+            const detailId = `audit-detail-${index}`;
+            const hasDetails = entry.details && Object.keys(entry.details).length > 0;
+
+            return `
+                <div style="
+                    padding: 0.5rem 0.6rem; margin-bottom: 2px;
+                    border-radius: 6px; cursor: ${hasDetails ? 'pointer' : 'default'};
+                    transition: background 0.15s;
+                " onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                   onmouseout="this.style.background='transparent'"
+                   ${hasDetails ? `onclick="toggleAuditDetail('${detailId}')"` : ''}>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; min-height: 1.4em;">
+                        <span style="font-size: 0.85rem; flex-shrink: 0;">${meta.icon}</span>
+                        <span style="
+                            font-size: 0.75rem; color: var(--text-dim);
+                            font-family: monospace; min-width: 3.6em; flex-shrink: 0;
+                        ">${time}</span>
+                        <span style="
+                            font-size: 0.78rem; font-weight: 600;
+                            color: ${meta.color}; min-width: 6em; flex-shrink: 0;
+                        ">${meta.label}</span>
+                        ${stateBadge}
+                        <span style="
+                            font-size: 0.8rem; color: var(--text);
+                            flex: 1; overflow: hidden; text-overflow: ellipsis;
+                            white-space: nowrap;
+                        ">${summary}</span>
+                        ${hasDetails ? `<span style="
+                            font-size: 0.7rem; color: var(--text-dim);
+                            flex-shrink: 0; transition: transform 0.2s;
+                        " id="${detailId}-arrow">▸</span>` : ''}
+                    </div>
+                    ${hasDetails ? `
+                    <div id="${detailId}" style="
+                        display: none; margin-top: 0.5rem; padding: 0.6rem 0.75rem;
+                        background: var(--bg-card); border: 1px solid var(--border);
+                        border-radius: 6px; font-size: 0.78rem;
+                    ">
+                        ${entry.tick_id ? `<div style="margin-bottom: 0.3rem;">
+                            <span style="color: var(--text-dim);">Tick:</span>
+                            <code style="color: var(--accent); font-size: 0.75rem;">${entry.tick_id}</code>
+                        </div>` : ''}
+                        ${entry.event_id ? `<div style="margin-bottom: 0.3rem;">
+                            <span style="color: var(--text-dim);">Event:</span>
+                            <code style="color: var(--text); font-size: 0.75rem;">${entry.event_id}</code>
+                        </div>` : ''}
+                        <pre style="
+                            margin: 0.4rem 0 0; padding: 0.5rem;
+                            background: rgba(0,0,0,0.2); border-radius: 4px;
+                            overflow-x: auto; font-size: 0.72rem; line-height: 1.5;
+                            color: var(--text-dim);
+                        ">${JSON.stringify(entry.details, null, 2)}</pre>
+                    </div>` : ''}
+                </div>`;
+        }
+
+        // ── Grouped rendering (tick grouping) ───────────────────────
+
+        function _renderGroupedAuditEvents(entries) {
+            const container = document.getElementById('audit-event-list');
+            if (!container) return;
+
+            // Group consecutive entries by tick_id
+            const groups = [];
+            let current = null;
+
+            for (const entry of entries) {
+                const isTickEvent = ['tick_start', 'tick_end', 'rule_matched'].includes(entry.type);
+
+                if (isTickEvent && entry.tick_id) {
+                    if (current && current.tick_id === entry.tick_id) {
+                        current.entries.push(entry);
+                    } else {
+                        if (current) groups.push(current);
+                        current = { tick_id: entry.tick_id, entries: [entry], isGroup: true };
+                    }
+                } else {
+                    if (current) { groups.push(current); current = null; }
+                    groups.push({ entries: [entry], isGroup: false });
+                }
+            }
+            if (current) groups.push(current);
+
+            if (groups.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0.88rem;">
+                        No events match the current filter.
+                    </div>`;
+                _updateVisibleCount(0, _auditEntries.length);
+                return;
+            }
+
+            let html = '';
+            let idx = 0;
+
+            for (const group of groups) {
+                if (!group.isGroup || group.entries.length <= 1) {
+                    // Render as normal row
+                    html += _renderEventRow(group.entries[0], idx++);
+                } else {
+                    // Render as collapsed tick group
+                    const tickEnd = group.entries.find(e => e.type === 'tick_end');
+                    const ruleCount = group.entries.filter(e => e.type === 'rule_matched').length;
+                    const time = _auditFormatTime(group.entries[0].timestamp);
+                    const state = tickEnd?.state || group.entries[0].state || '';
+                    const duration = tickEnd?.details?.duration_ms != null
+                        ? `${tickEnd.details.duration_ms}ms`
+                        : '';
+                    const groupId = `audit-group-${idx}`;
+
+                    html += `
+                    <div style="
+                        padding: 0.5rem 0.6rem; margin-bottom: 2px;
+                        border-radius: 6px; cursor: pointer;
+                        transition: background 0.15s;
+                        border-left: 3px solid var(--border);
+                    " onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                       onmouseout="this.style.background='transparent'"
+                       onclick="toggleAuditDetail('${groupId}')">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.85rem;">🔄</span>
+                            <span style="
+                                font-size: 0.75rem; color: var(--text-dim);
+                                font-family: monospace; min-width: 3.6em;
+                            ">${time}</span>
+                            <span style="font-size: 0.78rem; font-weight: 600; color: var(--text);">
+                                Tick
+                            </span>
+                            ${state ? `<span style="
+                                display: inline-block; padding: 0.1rem 0.4rem;
+                                border-radius: 4px; font-size: 0.68rem; font-weight: 600;
+                                background: ${_stateColor(state)}15;
+                                color: ${_stateColor(state)};
+                            ">${state}</span>` : ''}
+                            <span style="font-size: 0.78rem; color: var(--text-dim);">
+                                ${ruleCount} rule${ruleCount !== 1 ? 's' : ''}
+                                ${duration ? `· ${duration}` : ''}
+                            </span>
+                            <span style="flex: 1;"></span>
+                            <span style="
+                                font-size: 0.68rem; color: var(--text-dim);
+                                background: var(--bg-card); padding: 0.15rem 0.4rem;
+                                border-radius: 4px; font-family: monospace;
+                            ">${group.entries.length}</span>
+                            <span style="font-size: 0.7rem; color: var(--text-dim);"
+                                  id="${groupId}-arrow">▸</span>
+                        </div>
+                        <div id="${groupId}" style="display: none; margin-top: 0.4rem;
+                             padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                            ${group.entries.map((e, j) => _renderEventRow(e, idx + j)).join('')}
+                        </div>
+                    </div>`;
+                    idx += group.entries.length;
+                }
+            }
+
+            container.innerHTML = html;
+            _updateVisibleCount(entries.length, _auditEntries.length);
+        }
+
+        // ── Detail toggle ───────────────────────────────────────────
+
+        function toggleAuditDetail(id) {
+            const detail = document.getElementById(id);
+            const arrow = document.getElementById(id + '-arrow');
+            if (!detail) return;
+
+            const isHidden = detail.style.display === 'none';
+            detail.style.display = isHidden ? 'block' : 'none';
+            if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+        }
+
+        // ── Helpers ─────────────────────────────────────────────────
+
+        function _updateStatCard(id, value) {
+            const card = document.getElementById(id);
+            if (!card) return;
+            const numEl = card.querySelector('div');
+            if (numEl) numEl.textContent = value ?? 0;
+        }
+
+        function _updateVisibleCount(shown, total) {
+            const el = document.getElementById('audit-visible-count');
+            if (!el) return;
+            if (shown === total) {
+                el.textContent = `Showing all ${total} events`;
+            } else {
+                el.textContent = `Showing ${shown} of ${total} events`;
+            }
+        }
+
+        function _auditFormatTime(isoStr) {
+            if (!isoStr) return '—';
+            try {
+                const d = new Date(isoStr);
+                const h = String(d.getHours()).padStart(2, '0');
+                const m = String(d.getMinutes()).padStart(2, '0');
+                return `${h}:${m}`;
+            } catch { return '—'; }
+        }
+
+        function _auditRelativeTime(isoStr) {
+            if (!isoStr) return 'unknown';
+            try {
+                const d = new Date(isoStr);
+                const now = new Date();
+                const diffMs = now - d;
+                const diffMin = Math.floor(diffMs / 60000);
+
+                if (diffMin < 1) return 'just now';
+                if (diffMin < 60) return `${diffMin}m ago`;
+                const diffHr = Math.floor(diffMin / 60);
+                if (diffHr < 24) return `${diffHr}h ago`;
+                const diffDays = Math.floor(diffHr / 24);
+                return `${diffDays}d ago`;
+            } catch { return 'unknown'; }
+        }
+
+        function _auditSummaryText(entry) {
+            const d = entry.details || {};
+
+            switch (entry.type) {
+                case 'tick_start':
+                    return '';
+                case 'tick_end': {
+                    const rules = d.matched_rules || [];
+                    const parts = [];
+                    if (d.duration_ms != null) parts.push(`${d.duration_ms}ms`);
+                    if (d.actions_executed) parts.push(`${d.actions_executed} action${d.actions_executed > 1 ? 's' : ''}`);
+                    if (rules.length) parts.push(rules.join(', '));
+                    return parts.join(' · ');
+                }
+                case 'rule_matched':
+                    return d.rule_id || '';
+                case 'state_transition':
+                    return d.from && d.to ? `${d.from} → ${d.to}` : '';
+                case 'renewal': {
+                    const hrs = d.hours || d.renewal_hours || '';
+                    const count = d.renewal_count || '';
+                    const parts = [];
+                    if (hrs) parts.push(`+${hrs}h`);
+                    if (count) parts.push(`#${count}`);
+                    return parts.join(' · ');
+                }
+                case 'manual_release': {
+                    const parts = [];
+                    if (d.silent) parts.push('shadow');
+                    if (d.delay_minutes != null) parts.push(`${d.delay_minutes}m delay`);
+                    if (d.trigger) parts.push(d.trigger);
+                    return parts.join(' · ');
+                }
+                case 'factory_reset': {
+                    const hrs = d.hours || '';
+                    return hrs ? `+${hrs}h deadline` : '';
+                }
+                default:
+                    return '';
+            }
+        }
+
+        function _stateColor(state) {
+            const colors = {
+                'OK':          '#22c55e',
+                'REMIND_1':    '#eab308',
+                'REMIND_2':    '#f97316',
+                'PRE_RELEASE': '#ef4444',
+                'PARTIAL':     '#ef4444',
+                'FULL':        '#dc2626',
+                'LOCKOUT':     '#6b7280',
+            };
+            return colors[state] || '#9ca3af';
+        }

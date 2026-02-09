@@ -126,6 +126,25 @@ jobs:
           
           git push
       
+      # ── Signal Sentinel ─────────────────────────────────────
+      - name: Signal sentinel
+        continue-on-error: true
+        env:
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
+        run: |
+          if [ -n "$SENTINEL_URL" ]; then
+            ACTION="${{ steps.validate.outputs.action }}"
+            python -c "
+from src.sentinel import signal_sentinel
+signal_type = '${ACTION}' if '${ACTION}' == 'release' else 'renewal'
+result = signal_sentinel(signal_type)
+print(f'✅ Sentinel signaled: {signal_type}' if result else '⚠️ Sentinel unreachable (non-critical)')
+            "
+          else
+            echo "ℹ️ Sentinel not configured — skipping"
+          fi
+
       # Rebuild site for all actions (renewals show OK, releases show DELAYED)
       - name: Build updated site
         env:

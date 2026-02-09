@@ -232,6 +232,10 @@ SECRET_DEFINITIONS = {
 
     # Cloudflare Tunnel
     "CLOUDFLARE_TUNNEL_TOKEN": {"required_for": ["tunnel"], "guidance": "Token from Cloudflare Zero Trust → Networks → Tunnels. Required for --profile tunnel."},
+
+    # Sentinel Worker
+    "SENTINEL_URL": {"required_for": [], "guidance": "Cloudflare Worker URL (e.g. https://my-project-sentinel.you.workers.dev)"},
+    "SENTINEL_TOKEN": {"required_for": [], "guidance": "Bearer token for authenticating with the sentinel Worker"},
 }
 
 

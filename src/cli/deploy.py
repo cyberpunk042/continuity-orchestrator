@@ -265,16 +265,104 @@ def explain_stages(ctx: click.Context, policy_dir: str, stage: str):
     click.echo()
 
 
+def _run_simulation(
+    state,
+    policy_dir,
+    hours: int = 72,
+    step_minutes: int = 15,
+):
+    """Run simulated ticks forward in time and return transition events.
+
+    Deep-copies the state and steps forward in ``step_minutes`` increments,
+    evaluating policy rules at each step.  Only state transitions (set_state)
+    are applied — no adapter actions are executed.
+
+    Args:
+        state: Current State object (will NOT be mutated).
+        policy_dir: Path to the policy directory.
+        hours: How many hours to simulate.
+        step_minutes: Resolution of the simulation (minutes per step).
+
+    Returns:
+        dict with ``simulation`` metadata and ``events`` list.
+    """
+    import copy
+    from datetime import timedelta
+
+    from ..engine.rules import evaluate_rules
+    from ..engine.state import apply_rule_mutation
+    from ..engine.time_eval import compute_time_fields
+    from ..policy.loader import load_rules
+
+    rules_policy = load_rules(policy_dir)
+    sim_state = copy.deepcopy(state)
+
+    # Clear the renewal flag — we're simulating "what if you DON'T renew"
+    sim_state.renewal.renewed_this_tick = False
+
+    now = datetime.now(timezone.utc)
+    events = []
+
+    for minute in range(0, hours * 60 + 1, step_minutes):
+        sim_time = now + timedelta(minutes=minute)
+
+        # Recompute time-derived fields for the simulated instant
+        compute_time_fields(sim_state, sim_time)
+
+        # Evaluate every enabled rule
+        matched = evaluate_rules(sim_state, rules_policy)
+
+        # Apply only state mutations (set_state) — skip adapter actions
+        for rule in matched:
+            result = apply_rule_mutation(sim_state, rule, sim_time)
+            if result["state_changed"]:
+                events.append({
+                    "minute": minute,
+                    "time": sim_time.isoformat().replace("+00:00", "Z"),
+                    "from_state": result.get("fields_cleared", []),  # unused
+                    "from": events[-1]["to"] if events else state.escalation.state,
+                    "to": result["new_state"],
+                    "rule": rule.id,
+                })
+
+        # Once we hit FULL, nothing further happens
+        if sim_state.escalation.state == "FULL":
+            break
+
+    # Re-derive 'from' properly from event chain
+    for i, ev in enumerate(events):
+        if i == 0:
+            ev["from"] = state.escalation.state
+        else:
+            ev["from"] = events[i - 1]["to"]
+        ev.pop("from_state", None)  # Clean up temp field
+
+    return {
+        "simulation": {
+            "from": now.isoformat().replace("+00:00", "Z"),
+            "to": (now + timedelta(hours=hours)).isoformat().replace("+00:00", "Z"),
+            "hours": hours,
+            "current_state": state.escalation.state,
+            "deadline": state.timer.deadline_iso,
+        },
+        "events": events,
+    }
+
+
 @click.command("simulate")
 @click.option("--hours", "-h", default=72, help="Hours to simulate")
 @click.option("--state-file", default="state/current.json", help="Path to state file")
 @click.option("--policy-dir", default="policy", help="Path to policy directory")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON for API consumption")
 @click.pass_context
-def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_dir: str):
+def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_dir: str, as_json: bool):
     """Simulate the escalation timeline from now.
 
-    Shows what would happen if you don't renew - when each stage would trigger.
+    Shows what would happen if you don't renew — when each stage would trigger.
+    Uses actual policy rules and current state for accurate predictions.
     """
+    import json as _json
+
     from ..persistence.state_file import load_state
 
     root = ctx.obj["root"]
@@ -286,51 +374,96 @@ def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_di
         raise SystemExit(1)
 
     state = load_state(state_path)
+    policy_path = root / policy_dir
+
+    result = _run_simulation(state, policy_path, hours=hours)
+
+    # JSON mode — machine-readable output for the API / admin UI
+    if as_json:
+        click.echo(_json.dumps(result, indent=2))
+        return
+
+    # ── Pretty CLI output ──────────────────────────────────────
+    now = datetime.now(timezone.utc)
+    deadline_str = state.timer.deadline_iso
+    if isinstance(deadline_str, str):
+        from dateutil.parser import parse
+        deadline_dt = parse(deadline_str)
+    else:
+        deadline_dt = deadline_str
 
     click.echo()
     click.secho("🔮 Escalation Timeline Simulation", bold=True)
     click.echo()
-
-    deadline = state.timer.deadline_iso
-    now = datetime.now(timezone.utc)
-
-    # Handle deadline being a string or datetime
-    if isinstance(deadline, str):
-        from dateutil.parser import parse
-        deadline = parse(deadline)
-
     click.echo(f"   Current time:  {now.strftime('%Y-%m-%d %H:%M UTC')}")
-    click.echo(f"   Deadline:      {deadline.strftime('%Y-%m-%d %H:%M UTC')}")
+    click.echo(f"   Deadline:      {deadline_dt.strftime('%Y-%m-%d %H:%M UTC')}")
     click.echo(f"   Current stage: {state.escalation.state}")
+    click.echo(f"   Simulating:    {hours}h window")
     click.echo()
 
-    # Show escalation stages below
+    events = result["events"]
 
-    click.secho("   If you DON'T renew:", bold=True)
-    click.echo()
+    if not events:
+        click.secho("   ✅ No state changes in this window.", fg="green")
+        click.echo("      System stays at " + state.escalation.state + ".")
+    else:
+        click.secho("   If you DON'T renew:", bold=True)
+        click.echo()
 
-    # These are approximate based on typical rule configuration
-    stages = [
-        ("OK", "Always", "green"),
-        ("REMIND_1", "When < 24h remaining", "yellow"),
-        ("REMIND_2", "When < 6h remaining", "yellow"),
-        ("PRE_RELEASE", "When < 1h remaining", "yellow"),
-        ("PARTIAL", "When deadline passes", "red"),
-        ("FULL", "When 24h overdue", "red"),
-    ]
+        # Stage colors
+        stage_colors = {
+            "OK": "green", "REMIND_1": "yellow", "REMIND_2": "yellow",
+            "PRE_RELEASE": "yellow", "PARTIAL": "red", "FULL": "red",
+        }
 
-    for stage_name, when, color in stages:
-        if stage_name == state.escalation.state:
-            click.secho(f"   → {stage_name}", fg=color, bold=True, nl=False)
-            click.echo(" ← YOU ARE HERE")
+        for ev in events:
+            from dateutil.parser import parse as dt_parse
+            ev_time = dt_parse(ev["time"])
+            delta = ev_time - now
+            delta_str = _format_delta(delta)
+
+            color = stage_colors.get(ev["to"], "white")
+            click.echo(f"   ", nl=False)
+            click.secho(f"{ev['from']} → {ev['to']}", fg=color, bold=True, nl=False)
+            click.echo(f"  at {ev_time.strftime('%a %d %b %H:%M UTC')}  ({delta_str})")
+            click.echo(f"      Rule: {ev['rule']}")
+
+        click.echo()
+
+        # Summary warning
+        final_state = events[-1]["to"]
+        final_time = events[-1]["time"]
+        from dateutil.parser import parse as dt_parse2
+        final_delta = dt_parse2(final_time) - now
+        final_delta_str = _format_delta(final_delta)
+
+        if final_state == "FULL":
+            click.secho(f"   ⚠️  FULL disclosure in {final_delta_str}!", fg="red", bold=True)
+        elif final_state in ("PARTIAL", "PRE_RELEASE"):
+            click.secho(f"   ⚠️  Reaches {final_state} in {final_delta_str}", fg="yellow", bold=True)
         else:
-            click.secho(f"     {stage_name}", fg=color, nl=False)
-            click.echo(f" — {when}")
+            click.secho(f"   ℹ️  Reaches {final_state} in {final_delta_str}", fg="cyan")
 
-    click.echo()
-    click.echo("   To see what happens at each stage:")
-    click.echo("     python -m src.main explain")
     click.echo()
     click.echo("   To renew and reset the deadline:")
     click.echo("     python -m src.main renew --hours 48")
     click.echo()
+
+
+def _format_delta(delta) -> str:
+    """Format a timedelta as a human-readable string like '2d 5h 30m'."""
+    total_minutes = int(delta.total_seconds() / 60)
+    if total_minutes < 0:
+        return "already past"
+    days = total_minutes // (24 * 60)
+    remaining = total_minutes % (24 * 60)
+    hrs = remaining // 60
+    mins = remaining % 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hrs:
+        parts.append(f"{hrs}h")
+    if mins or not parts:
+        parts.append(f"{mins}m")
+    return " ".join(parts)

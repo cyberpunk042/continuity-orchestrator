@@ -160,6 +160,10 @@ def reset(
 
         save_state(new_state, state_path)
 
+        # Notify sentinel (fire-and-forget)
+        from ..sentinel import notify_sentinel
+        notify_sentinel(new_state)
+
         # Clear audit log (write init entry)
         audit_path.parent.mkdir(exist_ok=True)
         init_entry = {
@@ -413,6 +417,10 @@ def reset(
 
         save_state(state, state_path)
 
+        # Notify sentinel (fire-and-forget)
+        from ..sentinel import notify_sentinel
+        notify_sentinel(state)
+
         # Append to audit log
         audit_entry = {
             "event_type": "manual_reset",
@@ -489,6 +497,10 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     state.meta.updated_at_iso = now.isoformat()
 
     save_state(state, state_path)
+
+    # Signal sentinel: renewal (fire-and-forget)
+    from ..sentinel import signal_sentinel
+    signal_sentinel("renewal")
 
     # Append to audit log
     audit_path = root / "audit" / "ledger.ndjson"
@@ -601,6 +613,10 @@ def trigger_release(
     state.meta.updated_at_iso = now.isoformat()
 
     save_state(state, state_path)
+
+    # Signal sentinel: release (fire-and-forget)
+    from ..sentinel import signal_sentinel
+    signal_sentinel("release")
 
     # Append to audit log
     audit_path = root / "audit" / "ledger.ndjson"
