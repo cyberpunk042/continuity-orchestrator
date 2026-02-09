@@ -278,16 +278,33 @@ def docker_status():
 
 @docker_bp.route("/restart", methods=["POST"])
 def docker_restart():
-    """Restart services using auto-detected profiles."""
+    """Restart services: down + up --build (re-reads compose, rebuilds if needed)."""
     if not _docker_available():
         return jsonify({"success": False, "error": "Docker CLI not found"}), 400
 
-    result = _run_compose("restart", timeout=60)
+    # Detect active profiles BEFORE tearing down
+    profile_flags = _detect_active_profiles()
+    # Convert flags ['--profile', 'git-sync', ...] to list ['git-sync', ...]
+    active = [profile_flags[i + 1]
+              for i in range(0, len(profile_flags), 2)]
+
+    # Step 1: down
+    down = _run_compose("down", profiles=active, timeout=60)
+    if not down["success"]:
+        return jsonify({
+            "success": False,
+            "output": down["output"],
+            "error": f"down failed: {down['error']}",
+        })
+
+    # Step 2: up --build with the same profiles
+    up = _run_compose("up", "-d", "--build",
+                      profiles=active, timeout=300)
 
     return jsonify({
-        "success": result["success"],
-        "output": result["output"],
-        "error": result["error"],
+        "success": up["success"],
+        "output": up["output"],
+        "error": up["error"],
     })
 
 
@@ -306,7 +323,7 @@ def docker_start():
     if not _docker_available():
         return jsonify({"success": False, "error": "Docker CLI not found"}), 400
 
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     profiles = data.get("profiles", [])
 
     # Validate profiles
@@ -340,7 +357,7 @@ def docker_build():
     if not _docker_available():
         return jsonify({"success": False, "error": "Docker CLI not found"}), 400
 
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     profiles = data.get("profiles", [])
     no_cache = data.get("no_cache", False)
 
@@ -377,7 +394,7 @@ def docker_stop():
     if not _docker_available():
         return jsonify({"success": False, "error": "Docker CLI not found"}), 400
 
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     remove_volumes = data.get("remove_volumes", False)
     remove_images = data.get("remove_images", False)
 

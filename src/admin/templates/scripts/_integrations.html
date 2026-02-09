@@ -375,6 +375,7 @@
                 const resp = await fetch(`/api/docker/${action}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
                 });
                 const data = await resp.json();
 
