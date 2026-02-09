@@ -218,6 +218,7 @@ def api_push_secrets():
 
     # ── DEPLOY_MODE → enable/disable GitHub workflows ──────────────
     workflow_results = []
+    pages_result = None
     deploy_mode = all_values.get("DEPLOY_MODE", "").strip().lower()
     if deploy_mode in ("docker", "github-pages"):
         from ..config.system_status import check_tool
@@ -250,10 +251,49 @@ def api_push_secrets():
                         "error": str(e),
                     })
 
+            # Auto-enable GitHub Pages (build_type=workflow) when mode is github-pages
+            if deploy_mode == "github-pages":
+                try:
+                    # First try PUT (update existing Pages config)
+                    result = subprocess.run(
+                        ["gh", "api", "-X", "PUT",
+                         "repos/{owner}/{repo}/pages",
+                         "-f", "build_type=workflow"] + repo_flag,
+                        cwd=str(project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    if result.returncode != 0 and "Not Found" in (result.stderr + result.stdout):
+                        # Pages not yet enabled — create it
+                        result = subprocess.run(
+                            ["gh", "api", "-X", "POST",
+                             "repos/{owner}/{repo}/pages",
+                             "-f", "build_type=workflow",
+                             "-f", "source[branch]=main",
+                             "-f", "source[path]=/"] + repo_flag,
+                            cwd=str(project_root),
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                        )
+                    pages_result = {
+                        "action": "enable",
+                        "success": result.returncode == 0,
+                        "error": result.stderr.strip() if result.returncode != 0 else None,
+                    }
+                except Exception as e:
+                    pages_result = {
+                        "action": "enable",
+                        "success": False,
+                        "error": str(e),
+                    }
+
     return jsonify({
         "env_saved": save_to_env,
         "deletions_applied": deletions_applied,
         "results": results,
         "workflow_results": workflow_results,
+        "pages_result": pages_result,
         "all_success": all_ok,
     })
