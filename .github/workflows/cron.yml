@@ -63,6 +63,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure git credentials
+        run: |
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
       
       - name: Pull latest state
         run: |
@@ -96,10 +102,19 @@ jobs:
         #   - src/mirror/github_sync.py    → SYNCABLE_SECRETS list
         env:
           CONTINUITY_CONFIG: ${{ secrets.CONTINUITY_CONFIG }}
+          # Core settings
+          PROJECT_NAME: ${{ secrets.PROJECT_NAME }}
+          OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
+          OPERATOR_SMS: ${{ secrets.OPERATOR_SMS }}
+          ADAPTER_MOCK_MODE: ${{ vars.ADAPTER_MOCK_MODE || 'false' }}
+          # Email (Resend)
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          # SMS (Twilio)
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          # Social (X / Reddit)
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
@@ -108,8 +123,10 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          # Persistence
           PERSISTENCE_API_URL: ${{ secrets.PERSISTENCE_API_URL }}
           PERSISTENCE_API_KEY: ${{ secrets.PERSISTENCE_API_KEY }}
+          # Sentinel
           SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
           SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
           LOG_FORMAT: json
