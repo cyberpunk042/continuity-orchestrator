@@ -11,10 +11,14 @@ permissions:
   
 jobs:
   watch:
+    # Only run on repos that have explicitly opted in as a mirror.
+    # Without this guard, the master repo (where MIRROR_ROLE is unset)
+    # would default to 'SLAVE' and try to watch itself.
+    if: vars.MIRROR_ROLE == 'SLAVE' || vars.MIRROR_ROLE == 'TEMPORARY_MASTER'
     runs-on: ubuntu-latest
     env:
       MASTER_REPO: ${{ vars.MASTER_REPO }}
-      MIRROR_ROLE: ${{ vars.MIRROR_ROLE || 'SLAVE' }}
+      MIRROR_ROLE: ${{ vars.MIRROR_ROLE }}
       SENTINEL_FAILURES: ${{ vars.SENTINEL_FAILURES || '0' }}
       FAILURE_THRESHOLD: ${{ vars.SENTINEL_THRESHOLD || '3' }}
       STALENESS_SECONDS: 7200  # 2 hours — if no push for this long, master is down
