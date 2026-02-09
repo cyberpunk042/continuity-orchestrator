@@ -136,6 +136,10 @@ def run_tick(
     )
 
     # --- Phase 1: Initialization ---
+    # Reset per-tick ephemeral flags — these only remain true if
+    # a renewal actually happens during THIS tick's lifecycle.
+    state.renewal.renewed_this_tick = False
+
     state_id = state.meta.state_id
 
     # Emit tick_start audit
