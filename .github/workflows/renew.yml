@@ -139,6 +139,54 @@ jobs:
         with:
           path: ./public
       
+      - name: Cancel stuck Pages deployments
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List recent Pages deployments and cancel any stuck in "in_progress"
+          echo "Checking for stuck Pages deployments..."
+          DEPLOYMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages/deployments?per_page=5" 2>/dev/null || echo "[]")
+          
+          echo "$DEPLOYMENTS" | python3 -c "
+          import sys, json
+          try:
+              deps = json.load(sys.stdin)
+              if not isinstance(deps, list): deps = []
+              stuck = [d for d in deps if d.get('status') == 'in_progress']
+              if stuck:
+                  print(f'Found {len(stuck)} stuck deployment(s)')
+                  for d in stuck:
+                      print(f'  → {d.get(\"id\", \"unknown\")} (status: {d.get(\"status\")})')
+              else:
+                  print('No stuck deployments found')
+          except: print('Could not parse deployments')
+          " || true
+          
+          # Cancel any in-progress deployments
+          echo "$DEPLOYMENTS" | python3 -c "
+          import sys, json, subprocess
+          try:
+              deps = json.load(sys.stdin)
+              if not isinstance(deps, list): deps = []
+              for d in deps:
+                  if d.get('status') == 'in_progress':
+                      dep_id = d.get('id', '')
+                      if dep_id:
+                          print(f'Cancelling stuck deployment: {dep_id}')
+                          subprocess.run([
+                              'curl', '-s', '-X', 'POST',
+                              '-H', 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}',
+                              '-H', 'Accept: application/vnd.github+json',
+                              f'https://api.github.com/repos/${{ github.repository }}/pages/deployments/{dep_id}/cancel'
+                          ], timeout=15)
+          except Exception as e: print(f'Cleanup skipped: {e}')
+          " || true
+          
+          # Brief pause to let GitHub process cancellations
+          sleep 3
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

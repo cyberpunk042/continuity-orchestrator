@@ -208,6 +208,34 @@ jobs:
         with:
           path: ./public
       
+      - name: Cancel stuck Pages deployments
+        if: steps.build.outputs.site_built == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPLOYMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages/deployments?per_page=5" 2>/dev/null || echo "[]")
+          echo "$DEPLOYMENTS" | python3 -c "
+          import sys, json, subprocess
+          try:
+              deps = json.load(sys.stdin)
+              if not isinstance(deps, list): deps = []
+              for d in deps:
+                  if d.get('status') == 'in_progress':
+                      dep_id = d.get('id', '')
+                      if dep_id:
+                          print(f'Cancelling stuck deployment: {dep_id}')
+                          subprocess.run([
+                              'curl', '-s', '-X', 'POST',
+                              '-H', 'Authorization: Bearer $GITHUB_TOKEN',
+                              '-H', 'Accept: application/vnd.github+json',
+                              f'https://api.github.com/repos/${{ github.repository }}/pages/deployments/{dep_id}/cancel'
+                          ], env={**__import__('os').environ}, timeout=15)
+          except Exception as e: print(f'Cleanup skipped: {e}')
+          " || true
+          sleep 3
+
       - name: Deploy to GitHub Pages
         if: steps.build.outputs.site_built == 'true'
         id: deployment
