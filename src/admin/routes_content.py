@@ -695,18 +695,24 @@ def api_content_stats():
     media_files = list(media_dir.glob("*.enc")) if media_dir.exists() else []
     media_bytes = sum(f.stat().st_size for f in media_files)
 
-    # Count media objects in git history
+    # Count distinct media files ever committed to git history
+    # (files with extensions like .enc, .jpg, .png — not directories or commits)
     git_media_objects = 0
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--objects", "--all", "--", "content/media/"],
+            ["git", "log", "--all", "--diff-filter=A", "--name-only",
+             "--pretty=format:", "--", "content/media/*.enc",
+             "content/media/*.jpg", "content/media/*.png",
+             "content/media/*.mp4", "content/media/*.webm",
+             "content/media/*.mp3", "content/media/*.pdf"],
             cwd=str(_project_root()),
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
-            git_media_objects = len(
-                [line for line in result.stdout.strip().split("\n") if line.strip()]
-            )
+            # Deduplicate — same file added multiple times counts once
+            files = {line.strip() for line in result.stdout.strip().split("\n")
+                     if line.strip()}
+            git_media_objects = len(files)
     except Exception:
         pass
 

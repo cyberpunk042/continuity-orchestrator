@@ -1,51 +1,11 @@
 {
-  "time": 1770583780694,
-  "version": "2.28.2",
-  "blocks": [
-    {
-      "type": "paragraph",
-      "data": {
-        "text": "This project implements a continuity orchestration system designed for scheduled operations with escalating disclosure."
-      }
-    },
-    {
-      "type": "header",
-      "data": {
-        "text": "How It Works",
-        "level": 2
-      }
-    },
-    {
-      "type": "paragraph",
-      "data": {
-        "text": "The system operates on a simple principle: maintain regular check-ins to confirm continuity. If check-ins stop, the system escalates through defined stages."
-      }
-    },
-    {
-      "type": "list",
-      "data": {
-        "style": "ordered",
-        "items": [
-          "<b>OK</b> — Normal operation. All systems go.",
-          "<b>REMIND</b> — Deadline approaching. Reminders sent.",
-          "<b>PRE_RELEASE</b> — Final warning before escalation.",
-          "<b>PARTIAL</b> — Limited disclosure begins.",
-          "<b>FULL</b> — Complete disclosure activated."
-        ]
-      }
-    },
-    {
-      "type": "header",
-      "data": {
-        "text": "Renewal Process",
-        "level": 2
-      }
-    },
-    {
-      "type": "paragraph",
-      "data": {
-        "text": "To extend the deadline and reset the timer, use the Check In feature on the countdown page. You will need your renewal code and can choose how many hours to extend."
-      }
-    }
-  ]
+    "encrypted": true,
+    "version": 1,
+    "algorithm": "aes-256-gcm",
+    "kdf": "pbkdf2-sha256",
+    "kdf_iterations": 100000,
+    "salt": "xCkHarcS/0k9hwhRWcuPzQ==",
+    "iv": "sBda+AWHVhS8Xz7u",
+    "tag": "Z41mFiaiZjm7mFo/GPRikA==",
+    "ciphertext": "ticSv8SsBE7ga8ejPqquidqh4lxIzTF5tQFgmFnwRaOU1czH1xJgliU4QP+R3o5JZkEZCVoV/g9bsp0nBJTE4ZnK75W9bZ8LhV/29UR6gsOaPS+m2yuE2ikD8yVZLfygfnAAYMS6/SHYuZnBGllOxbTk09sKIxHPFOLvinTde/a5+hgIINrdhQ+RwS24UVzZTM+jsXBygNXM31Sf1hOwQqtZl1VsxzK1vUfBNABQujSrmQM/NGENdEE1asLEgG8cN7A5b1ejlClgVHtN3a1oPZmNPz0zPU7fCMb6T//QGGXIxvj+2JWTyjvJU9P+V/MyhROYxrs0ewnhWEGakYIwmviuNP3waSoh29H4IRBILJYOS4L4Ubm7wWt/O6X68nKzUL8q/ALASlL+8WJgLmFQwU2OJQ4D7YvXD/Sy1IlF5Iwg7ek5EhOBKTjesmQqkwEfq76ZyzUm+Z9heeZTo31Uc3U3waFaN35EZEm6Fa+t+5Bx3XSzdaMeG2fjHj4n1WK0ESkU626ZHEfFskNOdFHMdScjetWxMI83MP3d4GwUb+TKNI4S8BFXzoQ2r+62uAXpUJoMjk/bMcS/acLdJUQdWMNFvsNo/Zhu4IkSARgs2IAUHexYm81SPxI9BMnzH2QdovwEpG/DwDACFM/8rZcJ3w0D6xcYhcoAZ+3j+sRoCVNeaRrE8R47UEI8Aq1oFGtoHSRshDbLxqxA0Nksrwq2/F/Jw0U80T92l+lGGmB47IRtCTHUUvQpcKxV+U9DGJXY+KY01wykETsk+n7SLk7Y+uPQN1Weqc/rnkxTts8SZ6MutILsSN7leXsipXcBjovo2vhQ9ZKjgUPJIc6jqKuF2yOAJGsw/t9fsJ6cRQ0h9fY9Af6f8p57OjD4tZgQl2/1yDrvaTeHfDfQ4fGrtoNNugqIr+LtbwdF0l+G81JvkbqJ4s1yQoNUltTiqa30NAR/Y4SCR2DWr+Z3eMg6cB8wC3hVUI1U9POePW7D5WcxIymRux5393Kf5luLZDdA78BCGyATr0zqkCwRifMaoMtKeY8Z8gM6VbBpfDneRS73kBYzepQBZ/8KHo37qXiCSvtgYspcwRiN0K0oTjD/Yj61KKEyk2kndJBKH4qyiDQFgePW1tOM9HhszX2eXnxcgHEjnCiCJOzTkZ+2HqDZVo0LQNJiuRnNlK2a6bPMLJOTVdqtQElV3Aizo6cQEdC1swXq3cGfm9dvESyWkn/4J5LrBjQORU37c8QPcAPh1ZT56qikiO6wtspZzQ3XPZkGqMQSj8tqCaCYZkKKabAKyw2vh6oPgOYIRspD3l1rSYSxyMBEBpKJQH/xC/1oQX9r8KLAceUb28ZDYHGbzsWcyBywPpU3olxtm08YrGNHSYiCU4em6u5E8dNEmA=="
 }
