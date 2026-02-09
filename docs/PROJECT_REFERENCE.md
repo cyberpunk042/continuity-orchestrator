@@ -9,7 +9,7 @@ Everything in this project and where to configure it.
 ```
 .
 ├── setup.sh            ← START HERE (interactive wizard)
-├── manage.sh           ← Daily operations (menu)
+├── manage.sh           ← Daily operations (menu + CLI)
 ├── demo.sh             ← See it work (30 seconds)
 │
 ├── .env                ← Your credentials (created by setup.sh)
@@ -25,13 +25,27 @@ Everything in this project and where to configure it.
 │
 ├── content/            ← Your disclosure content
 │   ├── articles/       ← Documents to publish (Editor.js JSON)
+│   ├── media/          ← Uploaded media (encrypted, tiered storage)
+│   │   ├── *.enc       ← Git-tracked encrypted files (<50 MB)
+│   │   └── large/      ← GitHub Release-backed files (>50 MB)
 │   └── manifest.yaml   ← What gets published when
 │
 ├── templates/          ← Message templates
-│   ├── html/           ← Site templates
-│   └── operator/       ← Email/SMS templates
+│   ├── html/           ← Site templates (countdown, articles)
+│   ├── operator/       ← Email/SMS reminder templates
+│   ├── custodians/     ← Pre-release notice templates
+│   ├── public/         ← Public announcement templates
+│   └── articles/       ← Long-form content templates
 │
-└── public/             ← Generated site (built from content/)
+├── public/             ← Generated site (built from content/)
+│
+├── src/admin/          ← Web admin dashboard (Flask)
+│   ├── server.py       ← App factory, blueprint registration
+│   ├── routes_*.py     ← 12 API route blueprints
+│   ├── templates/      ← Jinja2 HTML + JS partials
+│   └── static/css/     ← Admin stylesheet
+│
+└── tests/              ← Test suite (639 tests)
 ```
 
 ---
@@ -54,6 +68,7 @@ cp .env.example .env
 | `ADAPTER_MOCK_MODE` | `true` = testing, `false` = live |
 | `RENEWAL_SECRET` | Code to extend deadline |
 | `RELEASE_SECRET` | Code to trigger disclosure |
+| `CONTENT_ENCRYPTION_KEY` | Key for media/article encryption at rest |
 
 See `.env.example` for all available settings with full documentation.
 
@@ -100,15 +115,16 @@ stages:
 
 ### `content/articles/` — Your Documents
 
-Place Editor.js JSON files here to publish on disclosure:
+Author documents in the admin dashboard (Editor.js) or place JSON files directly:
 
 ```
 content/articles/
 ├── full_disclosure.json    # Your main document
-└── about.json              # About page
+├── about.json              # About page
+└── notice.json             # Formal notice
 ```
 
-See `content/README.md` for format and examples.
+See `content/README.md` for format and the [Authoring Guide](AUTHORING.md) for block types.
 
 ---
 
@@ -120,8 +136,47 @@ Controls which articles are visible at which stage:
 articles:
   - slug: full_disclosure
     title: "Full Disclosure"
-    publish_at_stage: FINAL
+    visibility:
+      min_stage: FULL
+      include_in_nav: true
 ```
+
+---
+
+### `content/media/` — Uploaded Media
+
+Media files uploaded through the admin dashboard:
+
+| Storage Tier | Location | Size Limit | Sync |
+|-------------|----------|------------|------|
+| `git` | `content/media/*.enc` | <50 MB | Normal git push |
+| `large` | `content/media/large/*.enc` | <1 GB | GitHub Release (`media-vault` tag) |
+
+Media is auto-optimized on upload (images → WebP, video → H.264, audio → AAC).
+
+---
+
+## Admin Dashboard
+
+The web admin runs locally at `http://localhost:5050`:
+
+```bash
+./manage.sh web        # Start admin server
+./manage.sh web --debug  # With debug logging
+```
+
+| Feature | Description |
+|---------|-------------|
+| **Dashboard** | System status, git info, health |
+| **Content Editor** | Author articles with Editor.js |
+| **Media Manager** | Upload, preview, encrypt media |
+| **Secrets** | Push GitHub secrets from browser |
+| **Policy Editor** | Edit rules/plans with timeline preview |
+| **Backup/Restore** | Export/import system state |
+| **Mirror Sync** | Multi-repo streaming sync |
+| **Git Operations** | Commit, push from browser |
+| **Docker** | Container management |
+| **Vault** | Encrypt/decrypt .env on disk |
 
 ---
 
@@ -148,6 +203,8 @@ Walks through each adapter and saves to `.env`.
 | Resend | [resend.com/api-keys](https://resend.com/api-keys) | Email notifications |
 | Twilio | [console.twilio.com](https://console.twilio.com) | SMS alerts |
 | GitHub | [github.com/settings/tokens](https://github.com/settings/tokens) | Publishing & state sync |
+| X (Twitter) | [developer.x.com](https://developer.x.com) | Social posting |
+| Reddit | [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) | Social posting |
 
 ---
 
@@ -167,6 +224,8 @@ Use the management menu:
 | reset | Start fresh |
 | build-site | Generate HTML |
 | test | Verify integrations work |
+| web | Launch admin dashboard |
+| backup | Create/restore backups |
 
 ---
 
@@ -186,6 +245,8 @@ Use the management menu:
 ./scripts/docker-sync.sh      # Production with Git sync
 ```
 
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full details.
+
 ---
 
 ## File Reference Index
@@ -197,10 +258,12 @@ Use the management menu:
 | `policy/rules.yaml` | Escalation rules | `policy/README.md` |
 | `policy/states.yaml` | Stage definitions | `policy/README.md` |
 | `policy/plans/*.yaml` | Actions per stage | `policy/README.md` |
-| `content/articles/*.json` | Your documents | `content/README.md` |
+| `content/articles/*.json` | Your documents | [AUTHORING.md](AUTHORING.md) |
+| `content/media/manifest.json` | Media registry | Auto-managed |
 | `content/manifest.yaml` | Publication schedule | `content/README.md` |
 | `templates/operator/*.md` | Email/SMS templates | `templates/README.md` |
 | `templates/html/*.html` | Site templates | `templates/README.md` |
+| `src/admin/routes_*.py` | Admin API routes | [DEVELOPMENT.md](DEVELOPMENT.md) |
 
 ---
 

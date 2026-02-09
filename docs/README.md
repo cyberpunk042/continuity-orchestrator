@@ -21,9 +21,21 @@
 
 ---
 
+## Writing Content
+
+| Document | Description |
+|----------|-------------|
+| [AUTHORING.md](AUTHORING.md) | How to author articles (Editor.js format) |
+
+---
+
 ## Configuration
 
-Each directory has its own README:
+| Document | Description |
+|----------|-------------|
+| [CONFIGURATION.md](CONFIGURATION.md) | All settings, adapters, and policy reference |
+
+Each directory also has its own README:
 
 | Directory | What it configures |
 |-----------|-------------------|
@@ -46,9 +58,21 @@ Each directory has its own README:
 
 | Document | Description |
 |----------|-------------|
-| [RELEASE_TRIGGER.md](RELEASE_TRIGGER.md) | Manual disclosure trigger |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the engine works |
-| [CONFIGURATION.md](CONFIGURATION.md) | Detailed configuration options |
+| [RELEASE_TRIGGER.md](RELEASE_TRIGGER.md) | Manual disclosure trigger |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Developer setup, testing, and codebase guide |
+| [ROADMAP.md](ROADMAP.md) | Development phases and current status |
+
+---
+
+## Specs (Engine Internals)
+
+| Document | Description |
+|----------|-------------|
+| [specs/engine.spec.md](specs/engine.spec.md) | Tick lifecycle specification |
+| [specs/state-schema.spec.md](specs/state-schema.spec.md) | State JSON schema |
+| [specs/adapters.spec.md](specs/adapters.spec.md) | Adapter interface contract |
+| [specs/templates.spec.md](specs/templates.spec.md) | Template system specification |
 
 ---
 

@@ -109,11 +109,21 @@ Runs in test mode. Open http://localhost:8080 to see the dashboard.
 
 ```
 continuity-orchestrator/
-├── src/                    # Core engine
-│   ├── engine/             # Tick processor, rule evaluation
-│   ├── adapters/           # Email, SMS, X, Reddit, webhooks
-│   ├── models/             # State, rules, actions
-│   └── site_generator/     # Static site builder
+├── src/                    # Python source (89 modules, 22k+ lines)
+│   ├── engine/             # Tick processor, rule evaluation, time calc
+│   ├── adapters/           # 10 adapters (email, SMS, X, Reddit, etc.)
+│   ├── admin/              # Flask web admin (12 route blueprints)
+│   ├── cli/                # CLI commands (10 modules)
+│   ├── content/            # Media management, encryption
+│   ├── config/             # Config loader, validator
+│   ├── mirror/             # Multi-repo mirroring
+│   ├── models/             # Pydantic state & receipt schemas
+│   ├── site/               # Static site generator
+│   ├── persistence/        # State file + audit storage
+│   ├── reliability/        # Retry queue, circuit breakers
+│   ├── observability/      # Health checks, metrics
+│   ├── policy/             # Policy loader & models
+│   └── templates/          # Template resolution
 │
 ├── policy/                 # Configuration (YAML)
 │   ├── rules.yaml          # Escalation rules
@@ -127,7 +137,7 @@ continuity-orchestrator/
 │
 ├── examples/               # Ready-to-use configurations
 ├── scripts/                # Helper scripts
-├── tests/                  # Test suite (255 tests)
+├── tests/                  # Test suite (639 tests)
 └── docs/                   # Documentation
 ```
 
@@ -282,6 +292,10 @@ ruff check src
 | [QUICKSTART.md](docs/QUICKSTART.md) | 5-minute setup guide |
 | [FORKING_GUIDE.md](docs/FORKING_GUIDE.md) | Fork and deploy your own |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, GitHub Actions, production |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the engine works |
+| [AUTHORING.md](docs/AUTHORING.md) | Content authoring guide |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Developer setup, testing, codebase |
+| [ROADMAP.md](docs/ROADMAP.md) | Development phases & status |
 
 ---
 

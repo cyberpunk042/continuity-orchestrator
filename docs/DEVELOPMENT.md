@@ -44,26 +44,50 @@ pip install -e ".[dev]"
 
 ```
 continuity-orchestrator/
-├── src/                   # Python source code
+├── src/                   # Python source code (89 modules)
 │   ├── __init__.py       # Package root
 │   ├── main.py           # CLI entry point (thin, delegates to cli/)
 │   ├── cli/              # CLI command modules
 │   │   ├── core.py       # tick, status, reset, renew, set-deadline
 │   │   ├── mirror.py     # mirror-status, mirror-sync, mirror-clean
 │   │   ├── test.py       # test email/sms/webhook/github/all
-│   │   └── ...           # config, deploy, health, init, release, site
+│   │   ├── backup.py     # backup create/restore/list
+│   │   ├── config.py     # check-config
+│   │   ├── content.py    # content list/export
+│   │   ├── deploy.py     # export-secrets
+│   │   ├── init.py       # init wizard
+│   │   ├── ops.py        # trigger-release
+│   │   ├── policy.py     # policy info/validate
+│   │   └── site.py       # build-site
 │   ├── admin/            # Web admin dashboard (Flask)
-│   │   ├── server.py     # App factory
+│   │   ├── server.py     # App factory, blueprint registration
 │   │   ├── helpers.py    # Shared utilities
-│   │   ├── routes_*.py   # API route blueprints
+│   │   ├── vault.py      # Session encryption vault
+│   │   ├── routes_core.py       # Dashboard, status, factory reset
+│   │   ├── routes_content.py    # Article CRUD, encryption
+│   │   ├── routes_media.py      # Upload, preview, optimize, Editor.js
+│   │   ├── routes_media_vault.py # GitHub Release sync for large files
+│   │   ├── routes_git.py        # Git status, commit, push
+│   │   ├── routes_secrets.py    # GitHub secrets management
+│   │   ├── routes_env.py        # .env editing
+│   │   ├── routes_vault.py      # Session vault unlock/lock
+│   │   ├── routes_backup.py     # Export/import/restore
+│   │   ├── routes_archive.py    # Internet Archive integration
+│   │   ├── routes_mirror.py     # Multi-repo mirror sync
+│   │   ├── routes_docker.py     # Container management
 │   │   ├── templates/    # Jinja2 HTML + JS partials
 │   │   └── static/css/   # Stylesheet
 │   ├── adapters/         # External service integrations (10 adapters)
+│   ├── content/          # Media manifest, encryption, optimization
+│   ├── config/           # Config loader, validator, system status
 │   ├── engine/           # Core tick lifecycle
-│   ├── models/           # Pydantic schemas
+│   ├── mirror/           # Multi-repo mirroring (config, sync, state)
+│   ├── models/           # Pydantic schemas (state, receipt)
+│   ├── observability/    # Health checks, Prometheus metrics
 │   ├── persistence/      # State and audit storage
-│   ├── policy/           # Policy loading
-│   ├── site/             # Static site generator
+│   ├── policy/           # Policy loading and models
+│   ├── reliability/      # Retry queue, circuit breakers
+│   ├── site/             # Static site generator, token obfuscation
 │   └── templates/        # Template resolution
 ├── policy/               # YAML configuration
 │   ├── states.yaml       # Escalation state machine
@@ -73,6 +97,10 @@ continuity-orchestrator/
 │   └── current.json      # Current system state
 ├── audit/                # Audit trail
 │   └── ledger.ndjson     # Append-only event log
+├── content/              # Your disclosure content
+│   ├── articles/         # Editor.js JSON documents
+│   ├── media/            # Uploaded media (encrypted, tiered storage)
+│   └── manifest.yaml     # Article visibility rules
 ├── templates/            # Message templates
 │   ├── operator/         # Reminder messages
 │   ├── custodians/       # Pre-release notices
@@ -293,7 +321,7 @@ if not mock_mode:
 ## Testing
 
 ```bash
-# Run all tests (255 tests)
+# Run all tests (639 tests)
 pytest
 
 # Run with coverage
