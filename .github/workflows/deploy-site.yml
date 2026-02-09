@@ -32,10 +32,10 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skip in-progress for efficiency
+# Allow only one concurrent deployment — queue behind renew/cron (never cancel them)
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:

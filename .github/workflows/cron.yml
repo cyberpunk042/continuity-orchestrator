@@ -42,7 +42,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: continuity-tick
+  group: "pages"
   cancel-in-progress: false
 
 env:
@@ -212,3 +212,6 @@ jobs:
         if: steps.build.outputs.site_built == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+          error_count: 3

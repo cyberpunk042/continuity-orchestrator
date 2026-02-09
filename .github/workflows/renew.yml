@@ -36,8 +36,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: continuity-renew
-  cancel-in-progress: false
+  group: "pages"
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.12"
@@ -142,6 +142,9 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+          error_count: 3
       
       - name: Summary
         run: |
