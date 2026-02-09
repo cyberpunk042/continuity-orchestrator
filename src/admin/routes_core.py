@@ -306,6 +306,20 @@ def api_factory_reset():
             )
             if policy_result.returncode == 0:
                 output += "\n✅ Policy reset to defaults"
+                # Bundle the policy change into a git commit so it's not left dirty
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=str(project_root),
+                    capture_output=True, text=True, timeout=10,
+                )
+                commit_result = subprocess.run(
+                    ["git", "commit", "-m",
+                     "chore: factory reset — policy restored to defaults"],
+                    cwd=str(project_root),
+                    capture_output=True, text=True, timeout=15,
+                )
+                if commit_result.returncode == 0:
+                    output += "\n📦 Policy change committed to git"
             else:
                 output += f"\n⚠️ Policy reset failed: {policy_result.stderr}"
 
