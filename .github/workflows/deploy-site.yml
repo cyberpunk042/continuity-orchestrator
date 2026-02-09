@@ -79,7 +79,7 @@ jobs:
     
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy3.outputs.page_url || steps.deploy2.outputs.page_url || steps.deployment.outputs.page_url }}
     
     steps:
       - name: Checkout (for cleanup script)
@@ -95,6 +95,26 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Backoff before retry
+        if: steps.deployment.outcome == 'failure'
+        run: echo "⚠️ Deploy attempt 1 failed — waiting 30s..." && sleep 30
+
+      - name: Deploy to GitHub Pages (attempt 2)
+        if: steps.deployment.outcome == 'failure'
+        id: deploy2
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Backoff before final retry
+        if: steps.deployment.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: echo "⚠️ Deploy attempt 2 failed — waiting 90s..." && sleep 90
+
+      - name: Deploy to GitHub Pages (attempt 3)
+        if: steps.deployment.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        id: deploy3
         uses: actions/deploy-pages@v4
       
       # Archive step - archive all key pages if enabled

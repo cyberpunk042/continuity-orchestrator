@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy3.outputs.page_url || steps.deploy2.outputs.page_url || steps.deployment.outputs.page_url }}
     
     steps:
       - name: Checkout repository
@@ -258,6 +258,32 @@ jobs:
       - name: Deploy to GitHub Pages
         if: steps.build.outputs.site_built == 'true'
         id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+          error_count: 3
+        continue-on-error: true
+
+      - name: Backoff before retry
+        if: steps.build.outputs.site_built == 'true' && steps.deployment.outcome == 'failure'
+        run: echo "⚠️ Deploy attempt 1 failed — waiting 30s..." && sleep 30
+
+      - name: Deploy to GitHub Pages (attempt 2)
+        if: steps.build.outputs.site_built == 'true' && steps.deployment.outcome == 'failure'
+        id: deploy2
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+          error_count: 3
+        continue-on-error: true
+
+      - name: Backoff before final retry
+        if: steps.build.outputs.site_built == 'true' && steps.deployment.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: echo "⚠️ Deploy attempt 2 failed — waiting 90s..." && sleep 90
+
+      - name: Deploy to GitHub Pages (attempt 3)
+        if: steps.build.outputs.site_built == 'true' && steps.deployment.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        id: deploy3
         uses: actions/deploy-pages@v4
         with:
           timeout: 600000
