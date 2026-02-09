@@ -461,6 +461,71 @@ EOF
 
 echo -e "  ${GREEN}✓ SENTINEL_URL and SENTINEL_TOKEN written to .env${NC}"
 
+# ── Step 10b: Push config to Worker KV ──────────────────────────────
+echo ""
+echo -e "${BOLD}Pushing config to sentinel Worker…${NC}"
+
+# Extract thresholds from policy/rules.yaml
+RULES_FILE="$PROJECT_ROOT/policy/rules.yaml"
+THRESHOLDS="[]"
+if [[ -f "$RULES_FILE" ]] && command -v python3 &>/dev/null; then
+    THRESHOLDS=$(python3 -c "
+import yaml, json, sys
+try:
+    rules = yaml.safe_load(open('$RULES_FILE'))
+    constants = rules.get('constants', {})
+    thresholds = []
+    for rule in rules.get('rules', []):
+        then_block = rule.get('then', {})
+        target_state = then_block.get('set_state')
+        if not target_state:
+            continue
+        when_block = rule.get('when', {})
+        # Find any time_to_deadline_minutes_lte condition
+        for key, val in when_block.items():
+            if 'time_to_deadline_minutes_lte' in key:
+                # Resolve constant reference (e.g. 'constants.remind_1_at_minutes')
+                if isinstance(val, str) and val.startswith('constants.'):
+                    val = constants.get(val.split('.', 1)[1], val)
+                if isinstance(val, (int, float)):
+                    thresholds.append({'stage': target_state, 'minutesBefore': int(val)})
+                break
+    # Sort descending by minutesBefore (earliest stage first)
+    thresholds.sort(key=lambda t: -t['minutesBefore'])
+    print(json.dumps(thresholds))
+except Exception as e:
+    print('[]', file=sys.stderr)
+    print('[]')
+" 2>/dev/null) || THRESHOLDS="[]"
+    echo -e "  ${DIM}Extracted thresholds from policy/rules.yaml: ${THRESHOLDS}${NC}"
+else
+    echo -e "  ${YELLOW}⚠ Cannot read policy/rules.yaml — config will have no thresholds${NC}"
+fi
+
+CONFIG_PAYLOAD=$(cat <<ENDJSON
+{
+  "repo": "${GITHUB_REPO}",
+  "workflowFile": "cron.yml",
+  "defaultCadenceMinutes": 15,
+  "urgencyWindowMinutes": 10,
+  "maxBackoffMinutes": 5,
+  "thresholds": ${THRESHOLDS}
+}
+ENDJSON
+)
+
+CONFIG_RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SENTINEL_URL}/config" \
+  -H "Authorization: Bearer ${SENTINEL_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$CONFIG_PAYLOAD" 2>/dev/null || echo "000")
+
+if [[ "$CONFIG_RESP" == "200" ]]; then
+    echo -e "  ${GREEN}✓ Config pushed to Worker (repo=${GITHUB_REPO}, cadence=15m, ${THRESHOLDS})${NC}"
+else
+    echo -e "  ${YELLOW}⚠ Config push returned HTTP ${CONFIG_RESP} — you may need to POST config manually${NC}"
+    echo -e "  ${DIM}curl -X POST ${SENTINEL_URL}/config -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' -d '${CONFIG_PAYLOAD}'${NC}"
+fi
+
 # ── Step 11: Verify ─────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Verifying deployment…${NC}"
