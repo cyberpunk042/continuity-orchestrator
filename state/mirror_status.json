@@ -11,10 +11,10 @@
             "health": "unknown",
             "last_health_check_iso": null,
             "code": {
-                "last_sync_iso": "2026-02-09T19:50:06.064706+00:00",
+                "last_sync_iso": "2026-02-09T19:58:58.720301+00:00",
                 "status": "ok",
                 "last_error": null,
-                "detail": "052788c23086",
+                "detail": "d99f6cb3e3e1",
                 "fingerprint": null
             },
             "secrets": {
