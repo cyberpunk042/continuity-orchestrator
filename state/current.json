@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-09T19:48:01.670541Z",
+        "updated_at_iso": "2026-02-09T19:50:02.555644+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -31,50 +31,14 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "PARTIAL",
-        "state_entered_at_iso": "2026-02-09T19:48:01.620846Z",
-        "last_transition_rule_id": "R20_ESCALATE_TO_PARTIAL_ON_EXPIRY",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-09T19:50:02.555644+00:00",
+        "last_transition_rule_id": "MANUAL_RESET",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "notify_custodians_email": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T19:46:03.772987+00:00"
-            },
-            "notify_watchers_webhook": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T19:46:03.773266+00:00"
-            },
-            "post_x_notice": {
-                "status": "ok",
-                "last_delivery_id": "mock_dad1d84b",
-                "last_executed_iso": "2026-02-09T19:48:01.669094+00:00"
-            },
-            "post_reddit_notice": {
-                "status": "ok",
-                "last_delivery_id": "mock_b83f6208",
-                "last_executed_iso": "2026-02-09T19:48:01.669775+00:00"
-            },
-            "publish_github_document": {
-                "status": "ok",
-                "last_delivery_id": "mock_gh_be5d5fd6",
-                "last_executed_iso": "2026-02-09T19:48:01.670078+00:00"
-            },
-            "persist_partial_state": {
-                "status": "ok",
-                "last_delivery_id": "mock_90bb39f4",
-                "last_executed_iso": "2026-02-09T19:48:01.670365+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "post_x_notice",
-            "post_reddit_notice",
-            "publish_github_document",
-            "persist_partial_state"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
         "triggered": false,
