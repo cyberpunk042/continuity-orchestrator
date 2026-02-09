@@ -99,7 +99,12 @@ class TestShouldOptimize:
     """Test whether optimization is triggered."""
 
     def test_small_image_not_optimized(self):
-        assert should_optimize(500 * 1024, "image/png") is False
+        # 50KB is below the 100KB threshold → shouldn't optimize
+        assert should_optimize(50 * 1024, "image/png") is False
+
+    def test_above_threshold_optimized(self):
+        # 500KB is above the 100KB threshold → should optimize
+        assert should_optimize(500 * 1024, "image/png") is True
 
     def test_large_png_optimized(self):
         assert should_optimize(5 * 1024 * 1024, "image/png") is True

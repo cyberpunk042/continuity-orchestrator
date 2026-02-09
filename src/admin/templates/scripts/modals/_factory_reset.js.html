@@ -1,0 +1,120 @@
+        // Factory reset (calls CLI: reset --full)
+        // ── Factory Reset Modal ─────────────────────────────────────
+        let _frContentStats = null;
+
+        async function openFactoryResetModal() {
+            const modal = document.getElementById('factory-reset-modal');
+            modal.style.display = 'flex';
+
+            // Reset checkboxes
+            document.getElementById('fr-backup').checked = true;
+            document.getElementById('fr-hours').value = '48';
+            document.getElementById('fr-include-content').checked = false;
+            document.getElementById('fr-purge-history').checked = false;
+            document.getElementById('fr-reset-policy').checked = false;
+            toggleContentOptions();
+
+            // Fetch live stats
+            try {
+                const resp = await fetch('/api/content/stats');
+                _frContentStats = await resp.json();
+                const s = _frContentStats;
+                const mediaKB = (s.media_bytes / 1024).toFixed(0);
+                document.getElementById('fr-content-stats').innerHTML = `
+                    • ${s.article_count} article(s): <em>${s.article_slugs.join(', ') || 'none'}</em><br>
+                    • ${s.media_count} media file(s) (${mediaKB} KB)<br>
+                    • Manifests will be reset (stage config preserved)
+                `;
+                // Purge info
+                const purgeInfo = s.filter_repo_available
+                    ? `${s.git_media_objects} media objects in git history`
+                    : '⚠️ git-filter-repo is not installed';
+                document.getElementById('fr-purge-info').innerHTML = purgeInfo;
+            } catch (e) {
+                document.getElementById('fr-content-stats').innerHTML = '⚠️ Could not load stats';
+                document.getElementById('fr-purge-info').innerHTML = '';
+            }
+        }
+
+        function toggleContentOptions() {
+            const checked = document.getElementById('fr-include-content').checked;
+            const backupChecked = document.getElementById('fr-backup').checked;
+            document.getElementById('fr-content-details').style.display = checked ? 'block' : 'none';
+            const purgeGroup = document.getElementById('fr-purge-group');
+            const scaffoldGroup = document.getElementById('fr-scaffold-group');
+            const decryptGroup = document.getElementById('fr-decrypt-group');
+            if (checked) {
+                purgeGroup.style.opacity = '1';
+                purgeGroup.style.pointerEvents = 'auto';
+                scaffoldGroup.style.opacity = '1';
+                scaffoldGroup.style.pointerEvents = 'auto';
+                // Show decrypt option only when both backup and content are checked
+                decryptGroup.style.display = (backupChecked) ? 'block' : 'none';
+            } else {
+                purgeGroup.style.opacity = '0.4';
+                purgeGroup.style.pointerEvents = 'none';
+                document.getElementById('fr-purge-history').checked = false;
+                scaffoldGroup.style.opacity = '0.4';
+                scaffoldGroup.style.pointerEvents = 'none';
+                decryptGroup.style.display = 'none';
+            }
+        }
+
+        function closeFactoryResetModal() {
+            document.getElementById('factory-reset-modal').style.display = 'none';
+        }
+
+        async function executeFactoryReset() {
+            const backup = document.getElementById('fr-backup').checked;
+            const hours = parseInt(document.getElementById('fr-hours').value) || 48;
+            const includeContent = document.getElementById('fr-include-content').checked;
+            const purgeHistory = document.getElementById('fr-purge-history').checked;
+            const resetPolicy = document.getElementById('fr-reset-policy').checked;
+
+            // Final confirmation
+            const parts = ['• Fresh state with ' + hours + 'h deadline', '• Clear audit log'];
+            if (includeContent) parts.push('• Delete ALL articles and media');
+            if (purgeHistory) parts.push('• Rewrite git history (irreversible!)');
+            if (resetPolicy) parts.push('• Reset escalation policy to defaults');
+
+            if (!confirm('⚠️ Confirm Factory Reset\n\n' + parts.join('\n') + '\n\nThis cannot be undone. Proceed?')) {
+                return;
+            }
+
+            const btn = document.getElementById('fr-submit-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Resetting...';
+
+            try {
+                const response = await fetch('/api/state/factory-reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        backup,
+                        hours,
+                        include_content: includeContent,
+                        purge_history: purgeHistory,
+                        reset_policy: resetPolicy,
+                        scaffold: includeContent ? document.getElementById('fr-scaffold').checked : true,
+                        decrypt_content: includeContent && backup
+                            ? document.querySelector('input[name="fr-encrypt-mode"]:checked')?.value === 'decrypted'
+                            : false,
+                    }),
+                });
+                const data = await response.json();
+
+                closeFactoryResetModal();
+
+                if (data.success) {
+                    alert('✅ Factory reset complete!\n\n' + (data.output || ''));
+                    loadStatus();
+                } else {
+                    alert('❌ Factory reset failed:\n\n' + (data.error || data.output || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🗑️ Reset';
+            }
+        }

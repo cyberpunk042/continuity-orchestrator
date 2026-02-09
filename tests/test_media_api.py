@@ -309,8 +309,7 @@ class TestPreviewMedia:
     def test_preview_no_key(self, seeded_client):
         """Should return 400 without encryption key."""
         client, _ = seeded_client
-        with mock.patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        with mock.patch("src.content.crypto.get_encryption_key", return_value=None):
             rv = client.get("/api/content/media/img_001/preview")
 
         assert rv.status_code == 400
@@ -329,7 +328,7 @@ class TestDeleteMedia:
         with client.application.app_context():
             project_root = client.application.config["PROJECT_ROOT"]
 
-        rv = client.delete("/api/content/media/img_001")
+        rv = client.delete("/api/content/media/img_001?force=true")
         assert rv.status_code == 200
         data = rv.get_json()
         assert data["success"] is True
@@ -440,4 +439,4 @@ class TestMimePrefixMapping:
 
     def test_unknown_prefix(self):
         from src.admin.routes_media import _id_prefix_for_mime
-        assert _id_prefix_for_mime("application/octet-stream") == "media"
+        assert _id_prefix_for_mime("application/octet-stream") == "file"

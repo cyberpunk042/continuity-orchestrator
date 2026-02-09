@@ -1,0 +1,70 @@
+<!-- Secrets Vault Modal ───────────────────────────────────────── -->
+<div id="vault-modal" style="
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    padding: 2rem; overflow-y: auto;
+    justify-content: center; align-items: flex-start;
+" onclick="if(event.target===this) closeVaultModal()">
+    <div style="
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; max-width: 520px; width: 100%;
+        padding: 2rem; margin: 3rem auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    ">
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.3rem;">🔐 Secrets Vault</h2>
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.5rem; line-height: 1.6;">
+            Export your <code>.env</code> secrets as a password-protected vault file,
+            or import one to restore secrets on a new machine.<br>
+            <span style="color: var(--warning); font-size: 0.82rem;">⚠️ This file contains ALL your API keys and tokens. Guard it carefully.</span>
+        </p>
+
+        <!-- Export Vault -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">📥 Export</div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                <input type="password" id="vault-export-pw" placeholder="Password (min 8 chars)"
+                       style="flex: 1; min-width: 150px; padding: 0.5rem 0.7rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;"
+                       oninput="updateVaultPwStrength()">
+                <input type="password" id="vault-export-pw2" placeholder="Confirm"
+                       style="flex: 1; min-width: 120px; padding: 0.5rem 0.7rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;">
+            </div>
+            <div id="vault-pw-strength" style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.5rem; min-height: 1.2em;"></div>
+            <div style="text-align: right;">
+                <button class="btn" id="vault-export-btn" onclick="doVaultExport()" style="min-width: 160px;">
+                    🔐 Export &amp; Download
+                </button>
+            </div>
+        </div>
+
+        <!-- Import Vault -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">📤 Import</div>
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem;">
+                <label class="btn" style="cursor: pointer; min-width: 140px; text-align: center;">
+                    📁 Choose .vault file
+                    <input type="file" id="vault-import-file" accept=".vault,.json"
+                           style="display: none;" onchange="previewVaultUpload(this)">
+                </label>
+                <span id="vault-import-filename" style="font-size: 0.85rem; color: var(--text-dim);">No file selected</span>
+            </div>
+            <div id="vault-import-pw-row" style="display: none; margin-bottom: 0.75rem;">
+                <input type="password" id="vault-import-pw" placeholder="Vault password"
+                       style="width: 100%; padding: 0.5rem 0.7rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;">
+            </div>
+            <div id="vault-import-diff" style="display: none; margin-bottom: 0.75rem; padding: 0.75rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; max-height: 220px; overflow-y: auto; line-height: 1.7;"></div>
+            <div id="vault-import-actions" style="display: none; text-align: right; gap: 0.5rem;">
+                <button class="btn" style="min-width: 100px;" onclick="doVaultImportPreview()">
+                    👁️ Preview
+                </button>
+                <button class="btn" id="vault-import-btn" onclick="doVaultImport()" style="min-width: 160px;">
+                    📤 Import Secrets
+                </button>
+            </div>
+        </div>
+
+        <!-- Close -->
+        <div style="text-align: right; margin-top: 0.5rem;">
+            <button class="btn" onclick="closeVaultModal()" style="min-width: 90px;">Close</button>
+        </div>
+    </div>
+</div>

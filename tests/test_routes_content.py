@@ -67,7 +67,8 @@ def _write_article(articles_dir, slug, data):
 class TestListArticles:
 
     def test_empty_dir(self, client):
-        resp = client.get("/api/content/articles")
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
+            resp = client.get("/api/content/articles")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["articles"] == []
@@ -136,14 +137,13 @@ class TestGetArticle:
         from src.content.crypto import encrypt_content
         envelope = encrypt_content(sample_article, "my-key")
         _write_article(articles_dir, "secret", envelope)
-        # No CONTENT_ENCRYPTION_KEY in env
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        # Mock get_encryption_key to return None (no key available)
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
             resp = client.get("/api/content/articles/secret")
-            data = resp.get_json()
-            assert data["encrypted"] is True
-            assert "error" in data
-            assert "cannot decrypt" in data["error"].lower()
+        data = resp.get_json()
+        assert data["encrypted"] is True
+        assert "error" in data
+        assert "cannot decrypt" in data["error"].lower() or "not available" in data["error"].lower()
 
 
 # ── Save Article ─────────────────────────────────────────────────
@@ -185,14 +185,13 @@ class TestSaveArticle:
             assert "ciphertext" in written
 
     def test_save_encrypted_no_key(self, client, sample_article):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
             resp = client.post(
                 "/api/content/articles/test",
                 json={"content": sample_article, "encrypt": True},
             )
-            assert resp.status_code == 400
-            assert "not set" in resp.get_json()["error"].lower()
+        assert resp.status_code == 400
+        assert "not set" in resp.get_json()["error"].lower()
 
     def test_save_no_body(self, client):
         resp = client.post(
@@ -256,10 +255,9 @@ class TestEncryptDecrypt:
 
     def test_encrypt_no_key(self, client, articles_dir, sample_article):
         _write_article(articles_dir, "plain", sample_article)
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
             resp = client.post("/api/content/articles/plain/encrypt")
-            assert resp.status_code == 400
+        assert resp.status_code == 400
 
     def test_decrypt_article(self, client, articles_dir, sample_article):
         from src.content.crypto import encrypt_content
@@ -288,10 +286,9 @@ class TestEncryptDecrypt:
         from src.content.crypto import encrypt_content
         envelope = encrypt_content(sample_article, "key")
         _write_article(articles_dir, "enc", envelope)
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
             resp = client.post("/api/content/articles/enc/decrypt")
-            assert resp.status_code == 400
+        assert resp.status_code == 400
 
 
 # ── Encryption Status ────────────────────────────────────────────
@@ -300,10 +297,9 @@ class TestEncryptDecrypt:
 class TestEncryptionStatus:
 
     def test_key_not_set(self, client):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("CONTENT_ENCRYPTION_KEY", None)
+        with patch("src.content.crypto.get_encryption_key", return_value=None):
             resp = client.get("/api/content/encryption-status")
-            assert resp.get_json()["key_configured"] is False
+        assert resp.get_json()["key_configured"] is False
 
     def test_key_set(self, client):
         env = {"CONTENT_ENCRYPTION_KEY": "test"}

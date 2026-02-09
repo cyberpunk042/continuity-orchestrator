@@ -1,0 +1,121 @@
+<!-- Export / Import Modal ───────────────────────────────────────── -->
+<div id="backup-modal" style="
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    padding: 2rem; overflow-y: auto;
+    justify-content: center; align-items: flex-start;
+" onclick="if(event.target===this) closeBackupModal()">
+    <div style="
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; max-width: 600px; width: 100%;
+        padding: 2rem; margin: 2rem auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    ">
+        <h2 style="margin: 0 0 1.5rem; font-size: 1.3rem;">📦 Export / Import</h2>
+
+        <!-- ── Export Section ────────────────────────────────── -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">📥 Export</div>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.6;">
+                Create a portable <code>.tar.gz</code> snapshot. Download it to your machine for safekeeping.
+            </p>
+
+            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <input type="checkbox" id="bk-export-state" checked
+                       style="width: 17px; height: 17px; accent-color: var(--accent);">
+                State (current.json)
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <input type="checkbox" id="bk-export-audit" checked
+                       style="width: 17px; height: 17px; accent-color: var(--accent);">
+                Audit log (ledger.ndjson)
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <input type="checkbox" id="bk-export-policy"
+                       style="width: 17px; height: 17px; accent-color: var(--accent);">
+                Policy (rules.yaml, states, plans)
+            </label>
+
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 0.75rem 0;">
+
+            <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; margin-bottom: 0.25rem; font-size: 0.88rem;">
+                <input type="checkbox" id="bk-export-articles"
+                       style="width: 17px; height: 17px; margin-top: 2px; accent-color: var(--warning);"
+                       onchange="toggleExportMediaOption()">
+                 Content articles
+            </label>
+            <div id="bk-export-articles-info" style="margin-left: 2rem; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;"></div>
+
+            <div id="bk-export-media-group" style="opacity: 0.4; pointer-events: none;">
+                <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.88rem;">
+                    <input type="checkbox" id="bk-export-media"
+                           style="width: 17px; height: 17px; margin-top: 2px; accent-color: var(--warning);">
+                    Content media (.enc)
+                </label>
+                <div id="bk-export-media-info" style="margin-left: 2rem; font-size: 0.8rem; color: var(--text-dim);"></div>
+            </div>
+
+            <!-- Encryption toggle -->
+            <div id="bk-encryption-toggle" style="display: none; margin-top: 1rem; padding: 0.85rem; background: rgba(251, 191, 36, 0.06); border: 1px solid rgba(251, 191, 36, 0.15); border-radius: 8px;">
+                <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;">🔐 Export encryption</div>
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; margin-bottom: 0.4rem;">
+                    <input type="radio" name="bk-encrypt-mode" value="encrypted" checked
+                           style="accent-color: var(--accent);" onchange="updateEncryptionNotice()">
+                    🔒 Keep encrypted (requires <code>CONTENT_ENCRYPTION_KEY</code> for import)
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
+                    <input type="radio" name="bk-encrypt-mode" value="decrypted"
+                           style="accent-color: var(--warning);" onchange="updateEncryptionNotice()">
+                    🔓 Decrypt for export (plaintext — no key needed)
+                </label>
+                <div id="bk-encrypt-notice" style="font-size: 0.78rem; margin-top: 0.5rem; line-height: 1.6;">
+                </div>
+            </div>
+
+            <div style="margin-top: 1rem; text-align: right;">
+                <button class="btn" id="bk-export-btn" onclick="doExport()" style="min-width: 160px;">
+                    📥 Export &amp; Download
+                </button>
+            </div>
+        </div>
+
+        <!-- ── Import Section (additive) ─────────────────────── -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">📤 Import <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-dim);">(additive — existing items kept)</span></div>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.6;">
+                Upload an archive to <strong>add</strong> new articles and media. Items that already exist are skipped.
+            </p>
+
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <label class="btn" style="cursor: pointer; min-width: 140px; text-align: center;">
+                    📁 Choose file...
+                    <input type="file" id="bk-import-file" accept=".tar.gz,.gz"
+                           style="display: none;" onchange="previewUpload(this)">
+                </label>
+                <span id="bk-import-filename" style="font-size: 0.85rem; color: var(--text-dim);">No file selected</span>
+            </div>
+
+            <div id="bk-import-preview" style="display: none; margin-top: 1rem; padding: 0.85rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; line-height: 1.8;">
+            </div>
+
+            <div id="bk-import-actions" style="display: none; margin-top: 0.75rem; text-align: right;">
+                <button class="btn" id="bk-import-btn" onclick="doImport()" style="min-width: 140px;">
+                    📤 Import Content
+                </button>
+            </div>
+        </div>
+
+        <!-- ── Local Backups ─────────────────────────────────── -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">&#128193; Local Backups</div>
+            <div id="bk-local-list" style="font-size: 0.85rem; color: var(--text-dim); max-height: 300px; overflow-y: auto;">
+                Loading...
+            </div>
+        </div>
+
+        <!-- Close -->
+        <div style="text-align: right; margin-top: 0.5rem;">
+            <button class="btn" onclick="closeBackupModal()" style="min-width: 90px;">Close</button>
+        </div>
+    </div>
+</div>

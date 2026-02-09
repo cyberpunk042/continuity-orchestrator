@@ -1,0 +1,174 @@
+        // ── Secrets Vault ──────────────────────────────────────
+
+        function openVaultModal() {
+            document.getElementById('vault-modal').style.display = 'block';
+        }
+
+        function closeVaultModal() {
+            document.getElementById('vault-modal').style.display = 'none';
+        }
+
+        var _vaultFileData = null;  // Holds the parsed vault JSON for import
+
+        function updateVaultPwStrength() {
+            const pw = document.getElementById('vault-export-pw').value;
+            const el = document.getElementById('vault-pw-strength');
+            if (!pw) { el.innerHTML = ''; return; }
+            if (pw.length < 8) {
+                el.innerHTML = '<span style="color: var(--danger);">⚠️ Too short (min 8 chars)</span>';
+            } else if (pw.length < 12) {
+                el.innerHTML = '<span style="color: var(--warning);">🔸 Fair</span>';
+            } else if (pw.length < 16 || /[A-Z]/.test(pw) && /[0-9]/.test(pw) && /[^A-Za-z0-9]/.test(pw)) {
+                el.innerHTML = '<span style="color: var(--success);">🔒 Strong</span>';
+            } else {
+                el.innerHTML = '<span style="color: var(--success);">🔐 Very strong</span>';
+            }
+        }
+
+        async function doVaultExport() {
+            const pw = document.getElementById('vault-export-pw').value;
+            const pw2 = document.getElementById('vault-export-pw2').value;
+            if (!pw || pw.length < 8) { alert('Password must be at least 8 characters.'); return; }
+            if (pw !== pw2) { alert('Passwords do not match.'); return; }
+
+            const btn = document.getElementById('vault-export-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Encrypting...';
+
+            try {
+                const resp = await fetch('/api/vault/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw }),
+                });
+                const data = await resp.json();
+
+                if (data.success && data.vault) {
+                    // Download as .vault file
+                    const blob = new Blob([JSON.stringify(data.vault, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    a.download = `secrets_${ts}.vault`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    // Clear passwords
+                    document.getElementById('vault-export-pw').value = '';
+                    document.getElementById('vault-export-pw2').value = '';
+                    document.getElementById('vault-pw-strength').innerHTML = '';
+                    alert('✅ Vault exported and download started.\n\n⚠️ Keep this file and password safe!');
+                } else {
+                    alert('❌ Export failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔐 Export Vault';
+            }
+        }
+
+        function previewVaultUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            document.getElementById('vault-import-filename').textContent = file.name;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    _vaultFileData = JSON.parse(e.target.result);
+                    if (_vaultFileData.format !== 'continuity-vault-export-v1') {
+                        alert('❌ Not a valid vault file (wrong format).');
+                        _vaultFileData = null;
+                        return;
+                    }
+                    document.getElementById('vault-import-pw-row').style.display = 'block';
+                    document.getElementById('vault-import-actions').style.display = 'flex';
+                    const created = _vaultFileData.created_at ? new Date(_vaultFileData.created_at).toLocaleString() : 'unknown';
+                    document.getElementById('vault-import-diff').style.display = 'block';
+                    document.getElementById('vault-import-diff').innerHTML =
+                        '<strong>Vault info:</strong> Created ' + created +
+                        '<br>Enter password and click Preview to see changes.';
+                } catch (err) {
+                    alert('❌ Could not parse vault file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        async function doVaultImportPreview() {
+            if (!_vaultFileData) { alert('No vault file loaded.'); return; }
+            const pw = document.getElementById('vault-import-pw').value;
+            if (!pw) { alert('Enter the vault password.'); return; }
+
+            try {
+                const resp = await fetch('/api/vault/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vault: _vaultFileData, password: pw, dry_run: true }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    const diffEl = document.getElementById('vault-import-diff');
+                    let html = '<strong>Changes preview:</strong><br>';
+                    (data.changes || []).forEach(function(c) {
+                        const icon = c.action === 'added' ? '🟢' :
+                                     c.action === 'changed' ? '🟡' :
+                                     c.action === 'unchanged' ? '⚪' : '🔵';
+                        html += icon + ' <code>' + c.key + '</code> — ' + c.action + '<br>';
+                    });
+                    html += '<br><strong>' + (data.key_count || 0) + '</strong> keys total';
+                    diffEl.innerHTML = html;
+                    diffEl.style.display = 'block';
+                } else {
+                    alert('❌ Preview failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+
+        async function doVaultImport() {
+            if (!_vaultFileData) { alert('No vault file loaded.'); return; }
+            const pw = document.getElementById('vault-import-pw').value;
+            if (!pw) { alert('Enter the vault password.'); return; }
+            if (!confirm('⚠️ This will OVERWRITE your current .env file with the vault contents.\n\nProceed?')) return;
+
+            const btn = document.getElementById('vault-import-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Importing...';
+
+            try {
+                const resp = await fetch('/api/vault/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vault: _vaultFileData, password: pw, dry_run: false }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    const changed = (data.changes || []).filter(c => c.action !== 'unchanged').length;
+                    alert(`✅ Secrets restored!\n\n${data.key_count} keys written, ${changed} changed.\n\n⚠️ Restart the server for changes to take effect.`);
+                    // Reset UI
+                    document.getElementById('vault-import-pw').value = '';
+                    document.getElementById('vault-import-pw-row').style.display = 'none';
+                    document.getElementById('vault-import-diff').style.display = 'none';
+                    document.getElementById('vault-import-actions').style.display = 'none';
+                    document.getElementById('vault-import-filename').textContent = 'No file selected';
+                    _vaultFileData = null;
+                } else {
+                    alert('❌ Import failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Import Secrets';
+            }
+        }

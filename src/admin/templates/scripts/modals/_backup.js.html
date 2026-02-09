@@ -1,0 +1,317 @@
+        // ── Export / Import Modal ──────────────────────────────────
+        let _bkContentStats = null;
+        let _bkUploadedFilename = null;
+
+        async function openBackupModal() {
+            const modal = document.getElementById('backup-modal');
+            modal.style.display = 'flex';
+
+            // Reset state
+            document.getElementById('bk-export-state').checked = true;
+            document.getElementById('bk-export-audit').checked = true;
+            document.getElementById('bk-export-articles').checked = false;
+            document.getElementById('bk-export-media').checked = false;
+            document.getElementById('bk-export-policy').checked = false;
+            document.getElementById('bk-import-file').value = '';
+            document.getElementById('bk-import-filename').textContent = 'No file selected';
+            document.getElementById('bk-import-preview').style.display = 'none';
+            document.getElementById('bk-import-actions').style.display = 'none';
+            _bkUploadedFilename = null;
+            toggleExportMediaOption();
+
+            // Reset encryption toggle
+            const encRadio = document.querySelector('input[name="bk-encrypt-mode"][value="encrypted"]');
+            if (encRadio) encRadio.checked = true;
+            updateEncryptionNotice();
+
+            // Fetch stats for info labels
+            try {
+                const resp = await fetch('/api/content/stats');
+                _bkContentStats = await resp.json();
+                const s = _bkContentStats;
+                document.getElementById('bk-export-articles-info').innerHTML =
+                    `${s.article_count} file(s) — ${s.article_slugs.join(', ') || 'none'}`;
+                const mediaKB = (s.media_bytes / 1024).toFixed(0);
+                document.getElementById('bk-export-media-info').innerHTML =
+                    `${s.media_count} file(s) (${mediaKB} KB) — all encrypted`;
+            } catch (e) {
+                document.getElementById('bk-export-articles-info').innerHTML = '?';
+                document.getElementById('bk-export-media-info').innerHTML = '?';
+            }
+
+            // Load backup list
+            loadBackupList();
+        }
+
+        function closeBackupModal() {
+            document.getElementById('backup-modal').style.display = 'none';
+        }
+
+        function toggleExportMediaOption() {
+            const articlesChecked = document.getElementById('bk-export-articles').checked;
+            const mediaGroup = document.getElementById('bk-export-media-group');
+            const encToggle = document.getElementById('bk-encryption-toggle');
+
+            if (articlesChecked) {
+                mediaGroup.style.opacity = '1';
+                mediaGroup.style.pointerEvents = 'auto';
+                encToggle.style.display = 'block';
+                updateEncryptionNotice();
+            } else {
+                mediaGroup.style.opacity = '0.4';
+                mediaGroup.style.pointerEvents = 'none';
+                document.getElementById('bk-export-media').checked = false;
+                encToggle.style.display = 'none';
+            }
+        }
+
+        function updateEncryptionNotice() {
+            const mode = document.querySelector('input[name="bk-encrypt-mode"]:checked')?.value;
+            const notice = document.getElementById('bk-encrypt-notice');
+            if (mode === 'encrypted') {
+                notice.innerHTML = '<span style="color: var(--text-dim);">'
+                    + 'Encrypted content stays encrypted. You will need your '
+                    + '<code>CONTENT_ENCRYPTION_KEY</code> to read it after import.<br>'
+                    + '<strong style="color: var(--error);">❌ Never include your .env or keys in the same archive.</strong>'
+                    + '</span>';
+            } else {
+                notice.innerHTML = '<span style="color: var(--warning);">'
+                    + '⚠️ Content will be <strong>decrypted</strong> before export. '
+                    + 'The archive will contain readable plaintext.<br>'
+                    + 'Handle this file with extreme care — it contains sensitive content.'
+                    + '</span>';
+            }
+        }
+
+        async function doExport() {
+            const includeState = document.getElementById('bk-export-state').checked;
+            const includeAudit = document.getElementById('bk-export-audit').checked;
+            const includeArticles = document.getElementById('bk-export-articles').checked;
+            const includeMedia = document.getElementById('bk-export-media').checked;
+            const includePolicy = document.getElementById('bk-export-policy').checked;
+
+            if (!includeState && !includeAudit && !includeArticles && !includeMedia && !includePolicy) {
+                alert('Select at least one item to export.');
+                return;
+            }
+
+            const btn = document.getElementById('bk-export-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Exporting...';
+
+            try {
+                const resp = await fetch('/api/backup/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        include_state: includeState,
+                        include_audit: includeAudit,
+                        include_articles: includeArticles,
+                        include_media: includeMedia,
+                        include_policy: includePolicy,
+                        decrypt_content: (includeArticles || includeMedia)
+                            ? document.querySelector('input[name="bk-encrypt-mode"]:checked')?.value === 'decrypted'
+                            : false,
+                    }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    // Trigger download
+                    const a = document.createElement('a');
+                    a.href = data.download_url;
+                    a.download = data.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+
+                    const sizeKB = (data.size_bytes / 1024).toFixed(1);
+                    alert(`✅ Export created: ${data.filename} (${sizeKB} KB)\n\nDownload started.`);
+
+                    // Refresh backup list
+                    loadBackupList();
+                } else {
+                    alert('❌ Export failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📥 Export & Download';
+            }
+        }
+
+        async function previewUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            document.getElementById('bk-import-filename').textContent = file.name;
+            document.getElementById('bk-import-preview').style.display = 'block';
+            document.getElementById('bk-import-preview').innerHTML = '⏳ Uploading & validating...';
+            document.getElementById('bk-import-actions').style.display = 'none';
+            _bkUploadedFilename = null;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const resp = await fetch('/api/backup/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+
+                if (!data.success) {
+                    document.getElementById('bk-import-preview').innerHTML =
+                        `<span style="color: var(--error);">❌ ${data.error}</span>`;
+                    return;
+                }
+
+                _bkUploadedFilename = data.filename;
+                const m = data.manifest;
+                const inc = m.includes || {};
+                const stats = m.stats || {};
+
+                let html = `<strong>Archive: ${data.filename}</strong><br>`;
+                html += `Created: ${m.created_at}<br>`;
+                html += `Project: ${m.project}<br>`;
+                html += `Scope: `;
+                const parts = [];
+                if (inc.state) parts.push('state');
+                if (inc.audit) parts.push('audit');
+                if (inc.policy) parts.push('policy');
+                if (inc.content_articles) parts.push(`${stats.article_count} articles`);
+                if (inc.content_media) parts.push(`${stats.media_count} media`);
+                html += parts.join(' + ') + '<br>';
+
+                if (inc.content_articles || inc.content_media) {
+                    html += `<span style="color: var(--warning);">⚠️ Encrypted content requires CONTENT_ENCRYPTION_KEY</span>`;
+                }
+
+                document.getElementById('bk-import-preview').innerHTML = html;
+
+                // Show import action if archive has content
+                if (inc.content_articles || inc.content_media) {
+                    document.getElementById('bk-import-actions').style.display = 'block';
+                } else {
+                    document.getElementById('bk-import-preview').innerHTML += `<br><em>This archive has no content to import. Use Restore from Local Backups below.</em>`;
+                }
+
+                // Refresh list (the uploaded file is now local)
+                loadBackupList();
+            } catch (e) {
+                document.getElementById('bk-import-preview').innerHTML =
+                    `<span style="color: var(--error);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function doImport() {
+            if (!_bkUploadedFilename) return;
+
+            if (!confirm('📤 Import Content\n\nNew articles and media will be added.\nExisting items will not be overwritten.\n\nProceed?')) {
+                return;
+            }
+
+            const btn = document.getElementById('bk-import-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Importing...';
+
+            try {
+                const resp = await fetch('/api/backup/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: _bkUploadedFilename }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    let msg = `✅ Import complete\n\nImported: ${data.imported.length} item(s)`;
+                    if (data.imported.length) msg += '\n' + data.imported.map(i => '  + ' + i).join('\n');
+                    if (data.skipped.length) msg += `\n\nSkipped: ${data.skipped.length} item(s)`;
+                    alert(msg);
+                } else {
+                    alert('❌ Import failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Import Content';
+            }
+        }
+
+        async function doRestore(filename) {
+            if (!confirm(`⚠️ Restore from ${filename}?\n\nThis will OVERWRITE your current state, audit log, content, and policy.\n\nThis cannot be undone. Proceed?`)) {
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/backup/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename,
+                        restore_state: true,
+                        restore_audit: true,
+                        restore_content: true,
+                        restore_policy: true,
+                    }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    alert(`✅ Restore complete\n\nRestored ${data.restored.length} file(s)`);
+                    loadStatus();
+                } else {
+                    alert('❌ Restore failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+
+        async function loadBackupList() {
+            const container = document.getElementById('bk-local-list');
+            try {
+                const resp = await fetch('/api/backup/list');
+                const data = await resp.json();
+
+                if (!data.backups.length) {
+                    container.innerHTML = '<em>No backups yet. Use Export to create one.</em>';
+                    return;
+                }
+
+                let html = '';
+                for (const b of data.backups) {
+                    const sizeKB = (b.size_bytes / 1024).toFixed(1);
+                    const m = b.manifest || {};
+                    const inc = m.includes || {};
+                    const stats = m.stats || {};
+                    const parts = [];
+                    if (inc.state) parts.push('state');
+                    if (inc.audit) parts.push('audit');
+                    if (inc.policy) parts.push('policy');
+                    if (inc.content_articles) parts.push(`${stats.article_count} articles`);
+                    if (inc.content_media) parts.push(`${stats.media_count} media`);
+                    const scope = parts.join(' + ') || '?';
+                    const trigger = m.trigger || '?';
+                    const created = m.created_at ? new Date(m.created_at).toLocaleString() : '?';
+                    const decrypted = m.content_decrypted ? ' 🔓' : '';
+
+                    html += `<div style="padding: 0.6rem 0; border-bottom: 1px solid var(--border);">`;
+                    html += `<div style="display: flex; justify-content: space-between; align-items: flex-start;">`;
+                    html += `<div>`;
+                    html += `<strong>📁 ${b.filename}</strong> <span style="opacity: 0.6;">(${sizeKB} KB)${decrypted}</span><br>`;
+                    html += `<span style="font-size: 0.8rem;">${scope} · ${trigger} · ${created}</span>`;
+                    html += `</div>`;
+                    html += `<div style="display: flex; gap: 0.4rem; flex-shrink: 0;">`;
+                    html += `<a href="/api/backup/download/${b.filename}" class="btn" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;" title="Download archive">📥</a>`;
+                    html += `<button class="btn danger" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;" title="Restore (overwrite current)" onclick="doRestore('${b.filename}')">♻️</button>`;
+                    html += `</div>`;
+                    html += `</div></div>`;
+                }
+
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = `<span style="color: var(--error);">Error loading backups: ${e.message}</span>`;
+            }
+        }
