@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-09T20:00:01.933937Z",
+        "updated_at_iso": "2026-02-09T20:00:56.489934+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,16 +12,16 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-09T18:37:10.084599+00:00",
+        "deadline_iso": "2026-02-11T20:00:56.489934+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-09T20:00:01.885312Z",
-        "time_to_deadline_minutes": 0,
-        "overdue_minutes": 82
+        "now_iso": "2026-02-09T20:00:56.489934+00:00",
+        "time_to_deadline_minutes": 2880,
+        "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-09T09:53:45.466611+00:00",
-        "renewed_this_tick": false,
-        "renewal_count": 1
+        "last_renewal_iso": "2026-02-09T20:00:56.489934+00:00",
+        "renewed_this_tick": true,
+        "renewal_count": 2
     },
     "security": {
         "failed_attempts": 0,
@@ -31,53 +31,22 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "PARTIAL",
-        "state_entered_at_iso": "2026-02-09T19:55:03.106478Z",
-        "last_transition_rule_id": "R20_ESCALATE_TO_PARTIAL_ON_EXPIRY",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-09T20:00:56.489934+00:00",
+        "last_transition_rule_id": "MANUAL_RENEWAL",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "notify_custodians_email": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T19:50:19.373679+00:00"
-            },
-            "notify_watchers_webhook": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T19:50:19.373985+00:00"
-            },
-            "post_x_notice": {
-                "status": "ok",
-                "last_delivery_id": "mock_f78c12b3",
-                "last_executed_iso": "2026-02-09T19:55:03.153878+00:00"
-            },
-            "post_reddit_notice": {
-                "status": "ok",
-                "last_delivery_id": "mock_fd4c02d9",
-                "last_executed_iso": "2026-02-09T19:55:03.154506+00:00"
-            },
-            "publish_github_document": {
-                "status": "ok",
-                "last_delivery_id": "mock_gh_5b2adc77",
-                "last_executed_iso": "2026-02-09T19:55:03.154794+00:00"
-            },
-            "persist_partial_state": {
-                "status": "ok",
-                "last_delivery_id": "mock_3b096019",
-                "last_executed_iso": "2026-02-09T19:55:03.155106+00:00"
-            }
-        },
+        "executed": {},
         "last_tick_actions": []
     },
     "release": {
         "triggered": false,
-        "trigger_time_iso": "2026-02-09T19:37:10.084599+00:00",
+        "trigger_time_iso": null,
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-09T19:37:10.084599+00:00",
+        "execute_after_iso": null,
         "client_token": null
     },
     "integrations": {
