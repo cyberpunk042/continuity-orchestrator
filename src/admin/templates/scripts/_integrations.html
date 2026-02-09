@@ -166,7 +166,12 @@
             const tunnelRunning = tunnelContainer?.status === 'running';
 
             if (containers.length > 0) {
-                html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">`;
+                html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; table-layout: fixed;">
+                    <colgroup>
+                        <col style="width: 1.4rem;">
+                        <col>
+                        <col style="width: 40%;">
+                    </colgroup>`;
                 for (const c of containers) {
                     const isRunning = c.status === 'running';
                     const icon = isRunning ? '✅' : (c.status === 'exited' ? '⏹' : '⚪');
@@ -176,9 +181,9 @@
                         : '';
                     html += `
                         <tr style="line-height: 1.8;">
-                            <td style="width: 1.5rem; text-align: center;">${icon}</td>
-                            <td style="font-family: monospace; color: var(--text); white-space: nowrap;">${c.name}${profileBadge}</td>
-                            <td style="text-align: right; color: var(--text-dim); white-space: nowrap;">${stateText}</td>
+                            <td style="text-align: center;">${icon}</td>
+                            <td style="font-family: monospace; color: var(--text); overflow: hidden; text-overflow: ellipsis;">${c.name}${profileBadge}</td>
+                            <td style="text-align: right; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;">${stateText}</td>
                         </tr>`;
                 }
                 // Separator
