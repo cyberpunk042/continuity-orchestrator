@@ -1046,6 +1046,10 @@ body {
 }
 
 /* Content tab — Editor.js overrides for dark/light theme */
+#content-editor-card {
+    overflow: visible;
+}
+
 #content-editorjs .ce-block__content,
 #content-editorjs .ce-toolbar__content {
     max-width: 100%;

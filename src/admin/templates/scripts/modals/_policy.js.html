@@ -180,6 +180,14 @@
             return `${Math.floor(mins / 60)}h ${mins % 60}m`;
         }
 
+        // Short version for timeline labels (max ~4 chars)
+        function _fmtShort(mins) {
+            if (mins === 0) return '0';
+            if (mins < 60) return `${mins}m`;
+            if (mins % 60 === 0) return `${mins / 60}h`;
+            return `${Math.floor(mins / 60)}h${mins % 60}`;
+        }
+
         function updateTimeLabels() {
             const labels = {
                 'pc-remind_1_label': { suffix: 'before', id: 'pc-remind_1_at_minutes' },
@@ -210,103 +218,174 @@
             const partDelay = parseInt(document.getElementById('pc-partial_after_overdue_minutes')?.value) || 0;
             const fullDelay = parseInt(document.getElementById('pc-full_after_overdue_minutes')?.value) || 0;
 
-            const maxSpan = r1 + fullDelay + 30;
+            // ── Two-zone layout ─────────────────────────────────────
+            // Zone A (compressed): -extMax → -r1  (the "safe" zone, far from deadline)
+            // Zone B (detailed):   -r1 → +fullDelay+30  (the escalation zone)
+            //
+            // Zone A gets ~12% of the bar width, Zone B gets ~88%
+            // This lets the NOW cursor be visible even 24-48h before deadline
 
-            // Build the bar segments
+            const EXT_MINUTES = 1920;  // 32 hours — max extent of compressed zone
+            const ZONE_A_PCT = 12;     // % of total bar for compressed zone
+            const ZONE_B_PCT = 100 - ZONE_A_PCT;
+
+            const detailSpan = r1 + fullDelay + 30;  // minutes covered by Zone B
+
+            // ── Build Zone B segments (detailed) ────────────────────
             const segments = [];
             if (r1 > 0) {
-                const w = r2 < r1 ? ((r1 - r2) / maxSpan * 100) : (r1 / maxSpan * 100);
-                segments.push({ label: 'OK', width: Math.max(w, 3), color: '#22c55e33', text: '#22c55e' });
+                const w = r2 < r1 ? ((r1 - r2) / detailSpan * ZONE_B_PCT) : (r1 / detailSpan * ZONE_B_PCT);
+                segments.push({ label: 'OK', width: Math.max(w, 2), color: '#22c55e33', text: '#22c55e' });
             }
             if (r2 > 0 && r2 !== r1) {
-                const w = (r2 - pre) / maxSpan * 100;
-                segments.push({ label: 'R1', width: Math.max(w, 3), color: '#eab30833', text: '#eab308' });
+                const w = (r2 - pre) / detailSpan * ZONE_B_PCT;
+                segments.push({ label: 'R1', width: Math.max(w, 2), color: '#eab30833', text: '#eab308' });
             }
             if (pre > 0 && pre !== r2) {
-                const w = pre / maxSpan * 100;
-                segments.push({ label: 'R2', width: Math.max(w, 3), color: '#f9731633', text: '#f97316' });
+                const w = pre / detailSpan * ZONE_B_PCT;
+                segments.push({ label: 'R2', width: Math.max(w, 2), color: '#f9731633', text: '#f97316' });
             }
             if (pre > 0) {
-                const w = pre / maxSpan * 100;
-                segments.push({ label: 'PRE', width: Math.max(w, 3), color: '#ef444433', text: '#ef4444' });
+                const w = pre / detailSpan * ZONE_B_PCT;
+                segments.push({ label: 'PRE', width: Math.max(w, 2), color: '#ef444433', text: '#ef4444' });
             }
 
             // Deadline marker
-            segments.push({ label: 'T=0', width: 4, color: '#ffffff22', text: '#fff', isMark: true });
+            segments.push({ label: 'T=0', width: 3, color: '#ffffff22', text: '#fff', isMark: true });
 
             if (partDelay >= 0) {
-                const w = Math.max(partDelay, 1) / maxSpan * 100;
-                segments.push({ label: 'PART', width: Math.max(w, 5), color: '#ef444455', text: '#ef4444' });
+                const w = Math.max(partDelay, 1) / detailSpan * ZONE_B_PCT;
+                segments.push({ label: 'PART', width: Math.max(w, 4), color: '#ef444455', text: '#ef4444' });
             }
             if (fullDelay >= 0) {
                 const afterPart = fullDelay - partDelay;
-                const w = Math.max(afterPart, 1) / maxSpan * 100;
-                segments.push({ label: 'FULL', width: Math.max(w, 5), color: '#dc262666', text: '#dc2626' });
+                const w = Math.max(afterPart, 1) / detailSpan * ZONE_B_PCT;
+                segments.push({ label: 'FULL', width: Math.max(w, 4), color: '#dc262666', text: '#dc2626' });
             }
 
-            // ── NOW cursor position ─────────────────────────────────
-            // The timeline spans from -r1 (left edge) to +fullDelay+30 (right edge)
-            // "minutesBeforeDeadline" is how many minutes until T=0
-            // Positive = before deadline, negative = after deadline
+            // ── NOW cursor position (piecewise mapping) ─────────────
+            // minutesBeforeDeadline: positive = before, negative = after
             let nowPct = null;
             let nowLabel = '';
+            let minutesBeforeDeadline = null;
+
             if (typeof appData !== 'undefined' && appData?.state?.deadline) {
                 const deadlineMs = new Date(appData.state.deadline).getTime();
                 const nowMs = Date.now();
-                const minutesBeforeDeadline = (deadlineMs - nowMs) / 60000;
+                minutesBeforeDeadline = (deadlineMs - nowMs) / 60000;
 
-                // Position on timeline: -r1 maps to 0%, +fullDelay+30 maps to 100%
-                // "minutesFromStart" = how far from the left edge (-r1)
-                const minutesFromStart = r1 - minutesBeforeDeadline;
-                nowPct = (minutesFromStart / maxSpan) * 100;
-
-                // Clamp to visible range with small margin
-                if (nowPct >= -2 && nowPct <= 102) {
-                    nowPct = Math.max(0, Math.min(100, nowPct));
-                    // Build label
-                    const absMins = Math.abs(Math.round(minutesBeforeDeadline));
-                    if (minutesBeforeDeadline > 0) {
-                        nowLabel = _fmtMinutes(absMins) + ' left';
-                    } else {
-                        nowLabel = _fmtMinutes(absMins) + ' overdue';
-                    }
+                if (minutesBeforeDeadline > EXT_MINUTES) {
+                    // ── Scenario 1: Beyond compressed zone (>32h out) → clamp to left
+                    nowPct = 0.5;
+                } else if (minutesBeforeDeadline > r1) {
+                    // ── Scenario 2: In compressed "safe" zone
+                    // Maps EXT_MINUTES → 0% and r1 → ZONE_A_PCT
+                    const ratio = (EXT_MINUTES - minutesBeforeDeadline) / (EXT_MINUTES - r1);
+                    nowPct = ratio * ZONE_A_PCT;
+                } else if (minutesBeforeDeadline >= -(fullDelay + 30)) {
+                    // ── Scenario 3: In detailed zone (-r1 to +fullDelay+30)
+                    const minutesFromDetailStart = r1 - minutesBeforeDeadline;
+                    nowPct = ZONE_A_PCT + (minutesFromDetailStart / detailSpan) * ZONE_B_PCT;
                 } else {
-                    nowPct = null;  // Out of visible range
+                    // ── Scenario 4: Way past overdue → clamp to right
+                    nowPct = 99.5;
                 }
+
+                nowPct = Math.max(0, Math.min(100, nowPct));
+
+                // Build label
+                const absMins = Math.abs(Math.round(minutesBeforeDeadline));
+                if (minutesBeforeDeadline > 0) {
+                    nowLabel = _fmtMinutes(absMins) + ' left';
+                } else {
+                    nowLabel = _fmtMinutes(absMins) + ' overdue';
+                }
+            }
+
+            // ── Build label data for each segment ───────────────────
+            // Each segment gets a time label shown at its left edge above the bar
+            const labelledSegments = [];
+            // SAFE zone
+            labelledSegments.push({ flex: ZONE_A_PCT, label: `-${_fmtShort(EXT_MINUTES)}`, dim: true });
+            // Detail zone segments with their boundary labels
+            for (const seg of segments) {
+                const flexVal = seg.isMark ? 4 : Math.max(seg.width, 6);
+                let timeLabel = '';
+                if (seg.label === 'OK')   timeLabel = `-${_fmtShort(r1)}`;
+                if (seg.label === 'R1')   timeLabel = `-${_fmtShort(r2)}`;
+                if (seg.label === 'R2')   timeLabel = `-${_fmtShort(pre)}`;
+                if (seg.label === 'T=0')  timeLabel = 'T=0';
+                if (seg.label === 'PART') timeLabel = `+${_fmtShort(partDelay)}`;
+                if (seg.label === 'FULL') timeLabel = `+${_fmtShort(fullDelay)}`;
+                labelledSegments.push({ flex: flexVal, label: timeLabel, bold: seg.isMark, seg });
             }
 
             // ── Render HTML ─────────────────────────────────────────
             let barHtml = '<div style="position: relative;">';
 
-            // Bar segments
-            barHtml += '<div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">';
-            for (const seg of segments) {
+            // Row 1: Time labels above — matching flex layout
+            barHtml += '<div style="display: flex; font-size: 0.68rem; color: var(--text-dim); margin-bottom: 6px;">';
+            for (let i = 0; i < labelledSegments.length; i++) {
+                const ls = labelledSegments[i];
+                const isLast = (i === labelledSegments.length - 1);
                 barHtml += `<div style="
-                    width: ${seg.width}%; min-width: ${seg.isMark ? '3px' : '24px'};
+                    flex: ${ls.flex} 1 0%; overflow: hidden; white-space: nowrap;
+                    ${isLast ? 'text-align: right;' : 'padding-right: 4px;'}
+                    ${ls.bold ? 'font-weight: 600; color: var(--text);' : ''}
+                    ${ls.dim ? 'opacity: 0.5;' : ''}
+                ">${ls.label}</div>`;
+            }
+            barHtml += '</div>';
+
+            // Row 2: The bar itself
+            barHtml += '<div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">';
+
+            // Zone A: compressed safe zone
+            barHtml += `<div style="
+                flex: ${ZONE_A_PCT} 1 0%;
+                background: linear-gradient(90deg, #16a34a11, #22c55e22);
+                display: flex; align-items: center; justify-content: center;
+                font-size: 0.65rem; font-weight: 600; color: #22c55e60;
+                border-right: 1px dashed var(--border);
+                white-space: nowrap; overflow: hidden;
+                letter-spacing: 0.02em;
+            ">SAFE</div>`;
+
+            // Zone B: detailed segments
+            for (const seg of segments) {
+                const flexVal = seg.isMark ? 4 : Math.max(seg.width, 6);
+                barHtml += `<div style="
+                    flex: ${flexVal} 1 0%;
                     background: ${seg.color};
                     display: flex; align-items: center; justify-content: center;
                     font-size: 0.72rem; font-weight: 600; color: ${seg.text};
                     ${seg.isMark ? 'border-left: 2px solid white; border-right: 2px solid white;' : ''}
-                    white-space: nowrap; overflow: hidden; text-overflow: clip;
+                    white-space: nowrap; overflow: hidden;
                 ">${seg.label}</div>`;
             }
             barHtml += '</div>';
 
-            // NOW cursor overlay
+            // NOW cursor — arrow on top pointing DOWN, "NOW" label below
             if (nowPct !== null) {
+                let labelAlign, labelTransform;
+                if (nowPct < 8) {
+                    labelAlign = 'left: 1px;';
+                    labelTransform = 'transform: none;';
+                } else if (nowPct > 92) {
+                    labelAlign = 'right: 1px;';
+                    labelTransform = 'transform: none;';
+                } else {
+                    labelAlign = 'left: 50%;';
+                    labelTransform = 'transform: translateX(-50%);';
+                }
+
                 barHtml += `<div style="
-                    position: absolute; top: -6px; bottom: -22px;
+                    position: absolute; top: 18px; bottom: -22px;
                     left: ${nowPct}%; transform: translateX(-50%);
                     width: 2px; pointer-events: none; z-index: 5;
                 ">
                     <div style="
-                        width: 2px; height: calc(28px + 6px);
-                        background: var(--accent, #60a5fa);
-                        box-shadow: 0 0 6px var(--accent, #60a5fa);
-                        animation: policyNowPulse 2s ease-in-out infinite;
-                    "></div>
-                    <div style="
-                        position: absolute; top: -5px; left: 50%;
+                        position: absolute; top: 0; left: 50%;
                         transform: translateX(-50%);
                         width: 0; height: 0;
                         border-left: 5px solid transparent;
@@ -315,8 +394,14 @@
                         filter: drop-shadow(0 0 3px var(--accent, #60a5fa));
                     "></div>
                     <div style="
-                        position: absolute; bottom: -2px; left: 50%;
-                        transform: translateX(-50%);
+                        position: absolute; top: 6px; width: 2px; bottom: 14px;
+                        background: var(--accent, #60a5fa);
+                        box-shadow: 0 0 6px var(--accent, #60a5fa);
+                        animation: policyNowPulse 2s ease-in-out infinite;
+                    "></div>
+                    <div style="
+                        position: absolute; bottom: 0; ${labelAlign}
+                        ${labelTransform}
                         font-size: 0.62rem; font-weight: 700;
                         color: var(--accent, #60a5fa);
                         white-space: nowrap;
@@ -328,20 +413,10 @@
 
             barHtml += '</div>';  // Close position: relative wrapper
 
-            // Labels below — extra margin to avoid NOW label collision
-            barHtml += '<div style="display: flex; justify-content: space-between; margin-top: 0.55rem; font-size: 0.72rem; color: var(--text-dim);">';
-            barHtml += `<span>-${_fmtMinutes(r1)}</span>`;
-            if (r2 > 0 && r2 !== r1) barHtml += `<span>-${_fmtMinutes(r2)}</span>`;
-            if (pre > 0 && pre !== r2) barHtml += `<span>-${_fmtMinutes(pre)}</span>`;
-            barHtml += '<span style="font-weight: 600;">T=0</span>';
-            if (partDelay > 0) barHtml += `<span>+${_fmtMinutes(partDelay)}</span>`;
-            barHtml += `<span>+${_fmtMinutes(fullDelay)}</span>`;
-            barHtml += '</div>';
-
-            // Status line showing current position in text
+            // Status line below
             if (nowPct !== null && nowLabel) {
                 barHtml += `<div style="
-                    text-align: center; margin-top: 0.35rem;
+                    text-align: center; margin-top: 1.2rem;
                     font-size: 0.72rem; color: var(--accent, #60a5fa);
                     font-weight: 600;
                 ">📍 ${nowLabel}</div>`;
@@ -349,10 +424,10 @@
 
             el.innerHTML = barHtml;
 
-            // Inject pulse animation if not already present
-            if (!document.getElementById('policy-now-pulse-style')) {
+            // Inject styles if not already present
+            if (!document.getElementById('policy-tl-styles')) {
                 const style = document.createElement('style');
-                style.id = 'policy-now-pulse-style';
+                style.id = 'policy-tl-styles';
                 style.textContent = `
                     @keyframes policyNowPulse {
                         0%, 100% { opacity: 1; }
