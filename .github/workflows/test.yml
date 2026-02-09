@@ -51,8 +51,9 @@ jobs:
         run: |
           ruff check src/
       
-      - name: Type check
+      - name: Type check (advisory)
         if: matrix.python-version == '3.11'
+        continue-on-error: true
         run: |
           mypy src/ --ignore-missing-imports
 

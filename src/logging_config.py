@@ -98,8 +98,8 @@ class HumanFormatter(logging.Formatter):
 
 
 def setup_logging(
-    level: str = None,
-    format_type: str = None,
+    level: str | None = None,
+    format_type: str | None = None,
 ) -> None:
     """
     Configure logging for the application.
@@ -118,6 +118,7 @@ def setup_logging(
     numeric_level = getattr(logging, log_level, logging.INFO)
     
     # Create formatter
+    formatter: logging.Formatter
     if log_format == "json":
         formatter = JSONFormatter()
     else:

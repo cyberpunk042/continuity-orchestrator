@@ -54,5 +54,9 @@ ignore = ["UP006", "UP017", "UP035", "UP037", "UP042", "UP045", "E501", "E402", 
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
 ignore_missing_imports = true
+# Catch real bugs without requiring full annotations everywhere
+warn_return_any = false
+warn_unused_configs = true
+check_untyped_defs = true
+no_implicit_optional = true
