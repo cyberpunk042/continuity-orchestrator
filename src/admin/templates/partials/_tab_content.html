@@ -85,6 +85,13 @@
 
             <!-- Editor.js container (hidden until article selected) -->
             <div id="content-editorjs-wrap" style="display: none; flex: 1;">
+                <!-- Insert Media toolbar -->
+                <div id="content-media-toolbar" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <button class="btn" onclick="openVaultPicker()" title="Browse vault media or upload a file"
+                        style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+                        📎 Insert Media
+                    </button>
+                </div>
                 <div id="content-editorjs" translate="no"
                     style="border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; min-height: 350px; background: var(--bg-input);">
                 </div>
@@ -179,7 +186,8 @@
                             Images, PDFs, video, audio — max 10 MB
                         </p>
                         <input type="file" id="media-file-input" style="display: none;"
-                            accept="image/*,video/*,audio/*,application/pdf" onchange="mediaFileSelected(event)">
+                            accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z"
+                            onchange="mediaFileSelected(event)">
                         <button class="btn" onclick="document.getElementById('media-file-input').click()"
                             style="margin-top: 1rem; padding: 0.5rem 1.5rem;">
                             📁 Choose File
@@ -286,5 +294,53 @@
     <div class="card full-width" style="margin-top: 1.5rem;">
         <h2><span class="icon">📟</span> Output</h2>
         <pre class="terminal" id="content-terminal" translate="no">Ready.</pre>
+    </div>
+
+    <!-- ═══ VAULT PICKER MODAL ═══ -->
+    <div id="vault-picker-overlay" class="vault-picker-overlay" style="display: none;" onclick="closeVaultPicker(event)">
+        <div class="vault-picker-modal" onclick="event.stopPropagation()">
+            <div class="vault-picker-header">
+                <h3 style="margin: 0; font-size: 1rem;">📎 Insert Media</h3>
+                <button onclick="closeVaultPicker()" class="vault-picker-close" title="Close">✕</button>
+            </div>
+
+            <!-- Filter tabs -->
+            <div class="vault-picker-tabs">
+                <button class="vault-picker-tab active" data-filter="all" onclick="vaultPickerFilter('all', this)">✨ All</button>
+                <button class="vault-picker-tab" data-filter="image" onclick="vaultPickerFilter('image', this)">📸 Images</button>
+                <button class="vault-picker-tab" data-filter="video" onclick="vaultPickerFilter('video', this)">🎬 Video</button>
+                <button class="vault-picker-tab" data-filter="audio" onclick="vaultPickerFilter('audio', this)">🎵 Audio</button>
+                <button class="vault-picker-tab" data-filter="file" onclick="vaultPickerFilter('file', this)">📄 Files</button>
+            </div>
+
+            <!-- Gallery grid -->
+            <div id="vault-picker-grid" class="vault-picker-grid">
+                <div class="loading">Loading media...</div>
+            </div>
+
+            <!-- Footer: upload + insert actions -->
+            <div class="vault-picker-footer">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <input type="file" id="vault-picker-file-input" style="display: none;"
+                        accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z"
+                        onchange="vaultPickerUploadFile(event)">
+                    <button class="btn" onclick="document.getElementById('vault-picker-file-input').click()"
+                        style="padding: 0.4rem 0.8rem; font-size: 0.82rem;">
+                        📤 Upload new
+                    </button>
+                    <span id="vault-picker-status" style="font-size: 0.78rem; color: var(--text-dim);"></span>
+                </div>
+                <div id="vault-picker-actions" style="display: none; gap: 0.5rem;">
+                    <button class="btn primary" id="vault-picker-embed-btn" onclick="vaultPickerInsert('embed')"
+                        style="padding: 0.45rem 1rem; font-size: 0.85rem;">
+                        ▶ Embed
+                    </button>
+                    <button class="btn" id="vault-picker-attach-btn" onclick="vaultPickerInsert('attach')"
+                        style="padding: 0.45rem 1rem; font-size: 0.85rem;">
+                        📎 Attach
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>

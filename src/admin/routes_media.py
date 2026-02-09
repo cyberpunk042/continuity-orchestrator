@@ -11,6 +11,8 @@ Routes:
     DELETE /api/content/media/<media_id>       # Delete media file + manifest entry
     PATCH  /api/content/media/<media_id>       # Update metadata (min_stage, caption)
     POST   /api/content/media/<media_id>/toggle-encryption  # Encrypt ↔ decrypt
+    GET    /api/content/media/health            # Check for missing files
+    POST   /api/content/media/restore-large     # Restore large files from GitHub Release
 """
 
 from __future__ import annotations
@@ -31,11 +33,22 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 # MIME type prefix → media ID prefix mapping
+# Checked in order: exact matches first, then prefix (startswith) matches.
 MIME_PREFIX_MAP = {
-    "image/": "img",
-    "video/": "vid",
-    "audio/": "aud",
-    "application/pdf": "doc",
+    # Exact matches
+    "application/pdf":            "doc",
+    "application/json":           "dat",
+    "application/xml":            "dat",
+    "application/zip":            "arc",
+    "application/gzip":           "arc",
+    "application/x-tar":          "arc",
+    "application/x-7z-compressed": "arc",
+    "message/rfc822":             "eml",
+    # Prefix matches (type family)
+    "image/":                     "img",
+    "video/":                     "vid",
+    "audio/":                     "aud",
+    "text/":                      "txt",
 }
 
 
@@ -66,10 +79,13 @@ def _get_encryption_key() -> Optional[str]:
 
 def _id_prefix_for_mime(mime_type: str) -> str:
     """Derive the media ID prefix from MIME type."""
-    for prefix_pattern, id_prefix in MIME_PREFIX_MAP.items():
-        if mime_type.startswith(prefix_pattern) or mime_type == prefix_pattern:
+    # Try exact match first, then prefix (startswith) match
+    if mime_type in MIME_PREFIX_MAP:
+        return MIME_PREFIX_MAP[mime_type]
+    for pattern, id_prefix in MIME_PREFIX_MAP.items():
+        if pattern.endswith("/") and mime_type.startswith(pattern):
             return id_prefix
-    return "media"
+    return "file"
 
 
 # Release tag used for large media file backup
@@ -118,6 +134,71 @@ def _upload_to_release_bg(media_id: str, enc_path: Path) -> None:
         logger.warning(f"[media-release] Failed to start upload: {e}")
 
 
+def _restore_large_media(manifest) -> dict:
+    """Download missing large .enc files from the 'media-vault' GitHub Release.
+
+    Scans the manifest for entries with `storage == "large"` that don't have
+    a local file on disk, then uses `gh release download` to restore them.
+
+    Returns:
+        Dict with 'restored', 'failed', 'skipped' lists and 'gh_available' bool.
+    """
+    import subprocess
+    import shutil
+
+    result = {
+        "gh_available": bool(shutil.which("gh")),
+        "restored": [],
+        "failed": [],
+        "skipped": [],
+        "already_present": [],
+    }
+
+    if not result["gh_available"]:
+        logger.warning("[media-restore] gh CLI not found — cannot restore")
+        return result
+
+    project_root = current_app.config["PROJECT_ROOT"]
+    large_dir = project_root / "content" / "media" / "large"
+    large_dir.mkdir(parents=True, exist_ok=True)
+
+    for entry in manifest.entries:
+        if entry.storage != "large":
+            continue
+
+        local_path = manifest.enc_path(entry.id)
+        if local_path.exists():
+            result["already_present"].append(entry.id)
+            continue
+
+        # Try to download from release
+        asset_name = f"{entry.id}.enc"
+        try:
+            proc = subprocess.run(
+                [
+                    "gh", "release", "download", MEDIA_RELEASE_TAG,
+                    "--pattern", asset_name,
+                    "--dir", str(large_dir),
+                    "--clobber",
+                ],
+                cwd=str(project_root),
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode == 0 and local_path.exists():
+                result["restored"].append(entry.id)
+                logger.info(f"[media-restore] Restored {entry.id} from release")
+            else:
+                stderr = proc.stderr.strip()
+                result["failed"].append({"id": entry.id, "error": stderr or "Download failed"})
+                logger.warning(f"[media-restore] Failed to restore {entry.id}: {stderr}")
+        except subprocess.TimeoutExpired:
+            result["failed"].append({"id": entry.id, "error": "Download timed out (120s)"})
+        except Exception as e:
+            result["failed"].append({"id": entry.id, "error": str(e)})
+
+    return result
+
+
 # ── Routes ───────────────────────────────────────────────────────
 
 
@@ -158,10 +239,175 @@ def api_get_media(media_id: str):
     return jsonify(entry_dict)
 
 
+@media_bp.route("/health", methods=["GET"])
+def api_media_health():
+    """Check media file integrity — reports missing files and storage tiers."""
+    import shutil
+
+    manifest = _load_manifest()
+    issues = []
+    stats = {"total": 0, "present": 0, "missing": 0, "git": 0, "large": 0}
+
+    for entry in manifest.entries:
+        stats["total"] += 1
+        tier = entry.storage or "git"
+        stats[tier] = stats.get(tier, 0) + 1
+
+        local_path = manifest.enc_path(entry.id)
+        if local_path.exists():
+            stats["present"] += 1
+        else:
+            stats["missing"] += 1
+            issues.append({
+                "id": entry.id,
+                "original_name": entry.original_name,
+                "storage": tier,
+                "expected_path": str(local_path),
+            })
+
+    return jsonify({
+        "healthy": stats["missing"] == 0,
+        "stats": stats,
+        "missing_files": issues,
+        "gh_available": bool(shutil.which("gh")),
+    })
+
+
+@media_bp.route("/restore-large", methods=["POST"])
+def api_restore_large():
+    """Download missing large media files from the 'media-vault' GitHub Release."""
+    manifest = _load_manifest()
+    result = _restore_large_media(manifest)
+
+    return jsonify({
+        "success": True,
+        **result,
+    })
+
+
+@media_bp.route("/reoptimize", methods=["POST"])
+def api_reoptimize():
+    """Re-optimize existing media files that were stored without optimization.
+
+    Reads each file, runs through the optimizer, and if the result is
+    smaller, replaces the file on disk and updates the manifest entry.
+    Handles storage tier migration (e.g. git → git if file shrinks).
+    """
+    from ..content.media_optimize import optimize_media, classify_storage
+    from ..content.crypto import is_encrypted_file, decrypt_file, encrypt_file, get_encryption_key
+
+    manifest = _load_manifest()
+    results = {"optimized": [], "skipped": [], "failed": [], "total": len(manifest.entries)}
+
+    passphrase = get_encryption_key()
+
+    for entry in list(manifest.entries):
+        old_path = manifest.enc_path(entry.id)
+        if not old_path.exists():
+            results["failed"].append({"id": entry.id, "error": "File missing"})
+            continue
+
+        try:
+            raw_data = old_path.read_bytes()
+
+            # Decrypt if needed to get plaintext for optimization
+            was_encrypted = is_encrypted_file(raw_data)
+            if was_encrypted:
+                if not passphrase:
+                    results["skipped"].append({"id": entry.id, "reason": "Encrypted, no key"})
+                    continue
+                dec = decrypt_file(raw_data, passphrase)
+                plaintext = dec["plaintext"]
+            else:
+                plaintext = raw_data
+
+            # Run optimizer
+            opt_data, opt_mime, opt_ext, was_optimized = optimize_media(
+                plaintext, entry.mime_type
+            )
+
+            if not was_optimized:
+                results["skipped"].append({"id": entry.id, "reason": "Already optimal"})
+                continue
+
+            # Re-encrypt if it was encrypted before
+            if was_encrypted:
+                store_data = encrypt_file(opt_data, passphrase)
+            else:
+                store_data = opt_data
+
+            # Determine new storage tier
+            new_tier = classify_storage(len(opt_data))
+            old_tier = entry.storage or "git"
+
+            # Update manifest entry
+            new_name = f"{Path(entry.original_name).stem}{opt_ext}"
+            sha256 = hashlib.sha256(store_data).hexdigest()
+
+            manifest.update_entry(
+                entry.id,
+                mime_type=opt_mime,
+                size_bytes=len(opt_data),
+                sha256=sha256,
+                original_name=new_name,
+                storage=new_tier,
+            )
+
+            # Determine new path
+            # Temporarily update storage to get correct enc_path
+            entry.storage = new_tier
+            new_path = manifest.enc_path(entry.id)
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write optimized file
+            new_path.write_bytes(store_data)
+
+            # Remove old file if path changed (tier migration)
+            if old_path != new_path and old_path.exists():
+                old_path.unlink()
+
+            pct = len(opt_data) / len(plaintext) * 100
+            results["optimized"].append({
+                "id": entry.id,
+                "original_size": len(plaintext),
+                "optimized_size": len(opt_data),
+                "reduction_pct": round(100 - pct, 1),
+                "old_mime": entry.mime_type,
+                "new_mime": opt_mime,
+                "old_tier": old_tier,
+                "new_tier": new_tier,
+            })
+
+            logger.info(
+                f"Re-optimized {entry.id}: {len(plaintext):,} → {len(opt_data):,} bytes "
+                f"({pct:.0f}%), {old_tier} → {new_tier}"
+            )
+
+        except Exception as e:
+            results["failed"].append({"id": entry.id, "error": str(e)})
+            logger.error(f"Re-optimize failed for {entry.id}: {e}")
+
+    manifest.save()
+
+    # Backup any newly-large files to GitHub Releases
+    for item in results["optimized"]:
+        if item["new_tier"] == "large":
+            _upload_to_release_bg(item["id"], manifest.enc_path(item["id"]))
+
+    return jsonify({"success": True, **results})
+
+
 @media_bp.route("/upload", methods=["POST"])
 def api_upload_media():
     """
-    Upload a media file (stored as raw bytes).
+    Upload a media file with automatic optimization.
+
+    Pipeline:
+    1. Validate input
+    2. Optimize if possible (images → WebP, video → H.264, audio → AAC)
+    3. Classify storage tier based on optimized size
+    4. Write to disk, update manifest
+    5. Backup to GitHub Releases if large
 
     Encryption is handled later at article save time — the article's
     encrypt checkbox determines whether its referenced media gets encrypted.
@@ -202,7 +448,6 @@ def api_upload_media():
         or mimetypes.guess_type(original_name)[0]
         or "application/octet-stream"
     )
-    sha256 = hashlib.sha256(file_data).hexdigest()
 
     # Form fields
     min_stage = request.form.get("min_stage", "FULL").upper()
@@ -217,47 +462,78 @@ def api_upload_media():
             "error": f"Invalid min_stage '{min_stage}'. Valid: {valid}"
         }), 400
 
-    # ── Generate ID and store raw file ──
+    # ── Optimize media (images, video, audio) ──
+
+    from ..content.media_optimize import optimize_media, classify_storage
+
+    original_size = len(file_data)
+    store_data, store_mime, store_ext, was_optimized = optimize_media(
+        file_data, mime_type
+    )
+
+    # Update original_name extension if format changed
+    if was_optimized and store_ext:
+        stem = Path(original_name).stem
+        original_name = f"{stem}{store_ext}"
+
+    sha256 = hashlib.sha256(store_data).hexdigest()
+
+    # ── Generate ID and classify storage ──
+
+    storage_tier = classify_storage(len(store_data))
 
     manifest = _load_manifest()
-    id_prefix = _id_prefix_for_mime(mime_type)
+    id_prefix = _id_prefix_for_mime(store_mime)
     media_id = manifest.next_id(id_prefix)
 
-    # Write raw file to disk (no encryption at upload time)
-    enc_path = manifest.enc_path(media_id)
-    enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(file_data)
-
-    # ── Update manifest ──
+    # ── Update manifest (before write so enc_path resolves correctly) ──
 
     from ..content.media import MediaEntry
     entry = MediaEntry(
         id=media_id,
         original_name=original_name,
-        mime_type=mime_type,
-        size_bytes=len(file_data),
+        mime_type=store_mime,
+        size_bytes=len(store_data),
         sha256=sha256,
         encrypted=False,
         min_stage=min_stage,
         referenced_by=[article_slug] if article_slug else [],
         caption=caption,
+        storage=storage_tier,
     )
     manifest.add_entry(entry)
+
+    # Write (possibly optimized) file to disk
+    enc_path = manifest.enc_path(media_id)
+    enc_path.parent.mkdir(parents=True, exist_ok=True)
+    enc_path.write_bytes(store_data)
     manifest.save()
 
+    opt_info = ""
+    if was_optimized:
+        pct = len(store_data) / original_size * 100
+        opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
     logger.info(
         f"Media uploaded: {media_id} ({original_name}, "
-        f"{len(file_data)} bytes, stage={min_stage})"
+        f"{len(store_data):,} bytes, stage={min_stage}, "
+        f"storage={storage_tier}{opt_info})"
     )
+
+    # Backup large files to GitHub Releases
+    if storage_tier == "large":
+        _upload_to_release_bg(media_id, enc_path)
 
     return jsonify({
         "success": True,
         "id": media_id,
         "media_uri": f"media://{media_id}",
         "original_name": original_name,
-        "mime_type": mime_type,
-        "size_bytes": len(file_data),
+        "mime_type": store_mime,
+        "size_bytes": len(store_data),
+        "original_size_bytes": original_size,
+        "optimized": was_optimized,
         "min_stage": min_stage,
+        "storage": storage_tier,
     }), 201
 
 
@@ -514,29 +790,21 @@ def api_editor_upload():
         })
 
     # ── Larger file → optimize if needed, store raw ──
-    from ..content.media_optimize import (
-        should_optimize, optimize_image, classify_storage,
-        LARGE_THRESHOLD_BYTES,
+    from ..content.media_optimize import optimize_media, classify_storage
+
+    # Run universal optimization (images, video, audio)
+    original_size = len(file_data)
+    store_data, store_mime, store_ext, optimized = optimize_media(
+        file_data, mime_type
     )
 
-    # Auto-optimize large images (resize + convert to WebP)
-    store_data = file_data
-    store_mime = mime_type
-    optimized = False
-    if should_optimize(len(file_data), mime_type):
-        store_data, store_mime, _ext = optimize_image(file_data, mime_type)
-        optimized = len(store_data) < len(file_data)
-        if optimized:
-            logger.info(
-                f"Editor upload: optimized {original_name} "
-                f"{len(file_data):,} → {len(store_data):,} bytes "
-                f"({store_mime})"
-            )
+    # Update original_name extension if format changed
+    if optimized and store_ext:
+        stem = Path(original_name).stem
+        original_name = f"{stem}{store_ext}"
 
     # Determine storage tier based on (possibly optimized) size
     storage_tier = classify_storage(len(store_data))
-    # Files that came through optimization are at least 100KB,
-    # so tier will be "git" or "large" (never "inline")
 
     sha256 = hashlib.sha256(store_data).hexdigest()
     manifest = _load_manifest()
@@ -558,15 +826,19 @@ def api_editor_upload():
     )
     manifest.add_entry(entry)
 
-    # Write raw file to disk (no encryption at upload time)
+    # Write (possibly optimized) file to disk
     enc_path = manifest.enc_path(media_id)
     enc_path.parent.mkdir(parents=True, exist_ok=True)
     enc_path.write_bytes(store_data)
     manifest.save()
 
+    opt_info = ""
+    if optimized:
+        pct = len(store_data) / original_size * 100
+        opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
     logger.info(
         f"Editor upload ({storage_tier}): {media_id} ({original_name}, "
-        f"{len(store_data):,} bytes, optimized={optimized})"
+        f"{len(store_data):,} bytes{opt_info})"
     )
 
     # If stored in large/, trigger GitHub Release upload in background
@@ -582,7 +854,7 @@ def api_editor_upload():
         "media_id": media_id,
         "media_uri": f"media://{media_id}",
         "size_bytes": len(store_data),
-        "original_size_bytes": len(file_data),
+        "original_size_bytes": original_size,
         "optimized": optimized,
         "storage": storage_tier,
     })

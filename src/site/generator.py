@@ -132,40 +132,129 @@ class SiteGenerator:
             for css_file in css_src.glob("*.css"):
                 shutil.copy(css_file, css_dest / css_file.name)
     
+    # Release tag used for large media backup
+    MEDIA_RELEASE_TAG = "media-vault"
+
+    def _restore_missing_large(
+        self, manifest, entries: list
+    ) -> int:
+        """Auto-restore missing large-tier media from GitHub Releases.
+
+        Called during site build. For each entry with storage=="large"
+        whose file is missing locally, downloads it from the media-vault
+        release using the gh CLI.
+
+        Returns:
+            Number of files successfully restored.
+        """
+        import subprocess
+
+        if not shutil.which("gh"):
+            logger.warning(
+                "[media-restore] gh CLI not found — cannot auto-restore "
+                "large media from GitHub Releases"
+            )
+            return 0
+
+        # Collect IDs that need restoring
+        to_restore = []
+        for entry in entries:
+            if (entry.storage or "git") != "large":
+                continue
+            if not manifest.enc_path(entry.id).exists():
+                to_restore.append(entry)
+
+        if not to_restore:
+            return 0
+
+        logger.info(
+            f"[media-restore] {len(to_restore)} large file(s) missing locally "
+            f"— downloading from release '{self.MEDIA_RELEASE_TAG}'"
+        )
+
+        large_dir = manifest.media_dir / "large"
+        large_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine project root (content/media/../../)
+        project_root = manifest.media_dir.parent.parent
+
+        restored = 0
+        for entry in to_restore:
+            asset_name = f"{entry.id}.enc"
+            try:
+                proc = subprocess.run(
+                    [
+                        "gh", "release", "download", self.MEDIA_RELEASE_TAG,
+                        "--pattern", asset_name,
+                        "--dir", str(large_dir),
+                        "--clobber",
+                    ],
+                    cwd=str(project_root),
+                    capture_output=True, text=True, timeout=120,
+                )
+                local_path = manifest.enc_path(entry.id)
+                if proc.returncode == 0 and local_path.exists():
+                    logger.info(
+                        f"[media-restore] ✓ Restored {entry.id} "
+                        f"({entry.original_name}, {entry.size_bytes:,} bytes)"
+                    )
+                    restored += 1
+                else:
+                    stderr = proc.stderr.strip()
+                    logger.error(
+                        f"[media-restore] ✗ Failed to restore {entry.id}: "
+                        f"{stderr or 'file not found in release'}"
+                    )
+            except subprocess.TimeoutExpired:
+                logger.error(
+                    f"[media-restore] ✗ Timeout restoring {entry.id} (120s)"
+                )
+            except Exception as e:
+                logger.error(f"[media-restore] ✗ Error restoring {entry.id}: {e}")
+
+        logger.info(
+            f"[media-restore] Restored {restored}/{len(to_restore)} large files"
+        )
+        return restored
+
     def _process_media(self, stage: str) -> Dict[str, str]:
         """
         Process eligible media files for the current stage.
-        
-        Reads the media manifest, checks each entry's min_stage against
-        the current stage, and processes accessible files to public/media/.
-        
-        For encrypted media: decrypts and writes plaintext.
-        For unencrypted media: copies raw bytes directly.
-        
+
+        Pipeline:
+        1. Load manifest, filter by stage visibility
+        2. Auto-restore missing large files from GitHub Releases
+        3. Decrypt encrypted files (if key available)
+        4. Write plaintext to public/media/
+        5. Return {media_id: relative_url} map
+
         Args:
             stage: Current content stage (e.g. "OK", "PARTIAL", "FULL")
-        
+
         Returns:
             Media map: {media_id: relative_url} for resolved media.
             Only includes media that was successfully processed.
         """
         from ..content.crypto import decrypt_file, get_encryption_key, is_encrypted_file
         from ..content.media import MediaManifest
-        
+
         media_map: Dict[str, str] = {}
-        
+
         try:
             manifest = MediaManifest.load()
         except Exception as e:
             logger.warning(f"Failed to load media manifest: {e}")
             return media_map
-        
+
         visible = manifest.get_visible_entries(stage)
         if not visible:
             logger.debug("No media visible at current stage")
             return media_map
-        
-        # Only need the key if any media is encrypted
+
+        # ── Step 1: Auto-restore missing large files from GitHub Release ──
+        self._restore_missing_large(manifest, visible)
+
+        # ── Step 2: Prepare encryption key if needed ──
         passphrase = None
         has_encrypted = any(e.encrypted for e in visible)
         if has_encrypted:
@@ -175,63 +264,75 @@ class SiteGenerator:
                     "Encrypted media files exist but CONTENT_ENCRYPTION_KEY is not set. "
                     "Encrypted media will be skipped."
                 )
-        
+
+        # ── Step 3: Process each visible entry ──
         media_out = self.output_dir / "media"
         media_out.mkdir(parents=True, exist_ok=True)
-        
+
         processed_count = 0
+        missing_count = 0
+        skipped_encrypted = 0
         for entry in visible:
             file_path = manifest.enc_path(entry.id)
             if not file_path.exists():
-                logger.warning(
-                    f"Media '{entry.id}' in manifest but file missing: {file_path}"
-                )
+                storage = entry.storage or "git"
+                if storage == "large":
+                    # Already tried auto-restore above — it failed
+                    logger.error(
+                        f"Media '{entry.id}' ({entry.original_name}) MISSING after "
+                        f"restore attempt. Check GitHub Release '{self.MEDIA_RELEASE_TAG}'."
+                    )
+                else:
+                    logger.error(
+                        f"Media '{entry.id}' ({entry.original_name}) MISSING: {file_path}. "
+                        f"File should be tracked in git — check for corruption."
+                    )
+                missing_count += 1
                 continue
-            
+
             try:
                 raw_data = file_path.read_bytes()
                 actually_encrypted = is_encrypted_file(raw_data)
-                
+
                 if actually_encrypted:
-                    # Encrypted media — need key to decrypt
                     if not passphrase:
                         logger.warning(
                             f"Skipping encrypted media '{entry.id}' — no key available"
                         )
+                        skipped_encrypted += 1
                         continue
-                    
+
                     result = decrypt_file(raw_data, passphrase)
                     file_bytes = result["plaintext"]
-                    output_name = entry.original_name
                 else:
-                    # Unencrypted media — use raw bytes directly
                     file_bytes = raw_data
-                    output_name = entry.original_name
-                
+
+                output_name = entry.original_name
                 output_path = media_out / output_name
-                
+
                 # Handle filename collisions by adding media ID
                 if output_path.exists():
                     stem = output_path.stem
                     suffix = output_path.suffix
                     output_name = f"{stem}_{entry.id}{suffix}"
                     output_path = media_out / output_name
-                
+
                 output_path.write_bytes(file_bytes)
-                
+
                 # Map: media_id → relative URL from site root
                 media_map[entry.id] = f"media/{output_name}"
                 processed_count += 1
-                
+
             except Exception as e:
                 logger.error(f"Failed to process media '{entry.id}': {e}")
-        
-        if processed_count:
+
+        if processed_count or missing_count or skipped_encrypted:
             logger.info(
-                f"Processed media: {processed_count}/{len(visible)} files "
-                f"written to {media_out}"
+                f"Media: {processed_count}/{len(visible)} processed"
+                + (f", {missing_count} MISSING" if missing_count else "")
+                + (f", {skipped_encrypted} encrypted (no key)" if skipped_encrypted else "")
             )
-        
+
         return media_map
     
     def _build_media_resolver(
