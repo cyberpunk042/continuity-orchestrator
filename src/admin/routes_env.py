@@ -216,9 +216,44 @@ def api_push_secrets():
     if push_to_github and all_ok and results:
         trigger_mirror_sync_bg(project_root, "secrets-only")
 
+    # ── DEPLOY_MODE → enable/disable GitHub workflows ──────────────
+    workflow_results = []
+    deploy_mode = all_values.get("DEPLOY_MODE", "").strip().lower()
+    if deploy_mode in ("docker", "github-pages"):
+        from ..config.system_status import check_tool
+        gh_status = check_tool("gh")
+
+        if gh_status.installed and gh_status.authenticated:
+            repo_flag = gh_repo_flag(project_root)
+            # docker → disable pipelines; github-pages → enable them
+            action = "disable" if deploy_mode == "docker" else "enable"
+            for wf in ("cron.yml", "deploy-site.yml"):
+                try:
+                    result = subprocess.run(
+                        ["gh", "workflow", action, wf] + repo_flag,
+                        cwd=str(project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    workflow_results.append({
+                        "workflow": wf,
+                        "action": action,
+                        "success": result.returncode == 0,
+                        "error": result.stderr.strip() if result.returncode != 0 else None,
+                    })
+                except Exception as e:
+                    workflow_results.append({
+                        "workflow": wf,
+                        "action": action,
+                        "success": False,
+                        "error": str(e),
+                    })
+
     return jsonify({
         "env_saved": save_to_env,
         "deletions_applied": deletions_applied,
         "results": results,
+        "workflow_results": workflow_results,
         "all_success": all_ok,
     })

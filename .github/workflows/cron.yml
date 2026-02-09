@@ -53,9 +53,6 @@ env:
 jobs:
   run-tick:
     name: Execute Continuity Tick
-    # Skip entirely when Docker handles ticks, site builds, and serving.
-    # Set DEPLOY_MODE=docker as a GitHub repository variable to disable.
-    if: vars.DEPLOY_MODE != 'docker'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

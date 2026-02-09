@@ -179,6 +179,40 @@
                 html += `</div>`;
             }
 
+            // Access URLs
+            const nginxContainer = containers.find(c => c.name === 'continuity-nginx');
+            const nginxRunning = nginxContainer?.status === 'running';
+            const tunnelToken = envData?.CLOUDFLARE_TUNNEL_TOKEN;
+            const tunnelContainer = containers.find(c => c.name === 'continuity-tunnel');
+            const tunnelRunning = tunnelContainer?.status === 'running';
+
+            html += `<div style="display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.5rem;">`;
+            // Local URL
+            html += `
+                <div class="status-row">
+                    <span class="status-label">Local URL</span>
+                    <span class="status-value">
+                        ${nginxRunning
+                            ? `<a href="http://localhost:8080" target="_blank" style="color: var(--accent);">http://localhost:8080 🔗</a>`
+                            : `<span style="color: var(--text-dim);">http://localhost:8080 (not running)</span>`
+                        }
+                    </span>
+                </div>`;
+            // Tunnel URL
+            if (tunnelToken) {
+                html += `
+                    <div class="status-row">
+                        <span class="status-label">Tunnel</span>
+                        <span class="status-value">
+                            ${tunnelRunning
+                                ? `<span style="color: var(--accent);">🌐 Active (Cloudflare)</span>`
+                                : `<span style="color: var(--text-dim);">🌐 Token configured, not running</span>`
+                            }
+                        </span>
+                    </div>`;
+            }
+            html += `</div>`;
+
             // Git sync config
             const cfg = dockerData.git_sync_config;
             const activeProfiles = dockerData.active_profiles || [];
@@ -199,18 +233,6 @@
             }
             html += `</div>`;
 
-            // Tunnel status
-            const tunnelToken = envData?.CLOUDFLARE_TUNNEL_TOKEN;
-            const tunnelContainer = containers.find(c => c.name === 'continuity-tunnel');
-            const tunnelRunning = tunnelContainer?.status === 'running';
-
-            if (tunnelRunning) {
-                html += `<div style="font-size: 0.82rem; color: var(--accent);">🌐 Tunnel: Active (Cloudflare)</div>`;
-            } else if (tunnelToken) {
-                html += `<div style="font-size: 0.82rem; color: var(--text-dim);">🌐 Tunnel: Token configured but not running</div>`;
-            } else {
-                html += `<div style="font-size: 0.82rem; color: var(--text-dim);">🌐 Tunnel: Not configured</div>`;
-            }
 
             // Auto git-sync checkbox
             html += `
