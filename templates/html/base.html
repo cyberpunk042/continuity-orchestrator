@@ -5,6 +5,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ project }}{% endblock %}</title>
+
+    <!-- SEO & Meta -->
+    <meta name="description" content="{% block meta_description %}Continuity Orchestrator — An open-source automated continuity monitoring and status reporting system.{% endblock %}">
+    <meta name="keywords" content="continuity, orchestrator, dead man switch, automation, status, monitoring, open-source">
+    <meta name="author" content="{{ project }}">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="{% block canonical %}{% endblock %}">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{% block og_title %}{{ project }} — Continuity Status{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}Automated continuity monitoring and escalation system. Open-source, self-hosted, privacy-first.{% endblock %}">
+    <meta property="og:site_name" content="Continuity Orchestrator">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{ project }} — Continuity Status">
+    <meta name="twitter:description" content="Automated continuity monitoring and escalation system.">
+
+    <!-- Feeds & Resources -->
     <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="{{ base_path|default('') }}feed.xml">
     <link rel="stylesheet" href="{{ base_path|default('') }}assets/css/base.css">
     {% block extra_css %}{% endblock %}
@@ -21,6 +41,17 @@
 
 <body class="{% block body_class %}{% endblock %}">
     {% block content %}{% endblock %}
+
+    {% block site_footer %}
+    <footer>
+        <nav class="footer-nav">
+            <a href="{{ base_path|default('') }}privacy.html">Privacy Policy</a>
+            <a href="{{ base_path|default('') }}terms.html">Terms of Use</a>
+            <a href="{{ base_path|default('') }}privacy.html#contact">Contact</a>
+        </nav>
+        <p>Generated: {{ build_time }}</p>
+    </footer>
+    {% endblock %}
 
     <script>
         const CURRENT_DEADLINE = "{{ deadline }}";

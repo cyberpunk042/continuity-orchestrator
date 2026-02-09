@@ -291,7 +291,8 @@
                     const radio = document.querySelector('input[name="deadline-hours"]:checked');
                     const custom = document.getElementById('wiz-custom-deadline')?.value;
                     return {
-                        DEADLINE_HOURS: custom ? parseInt(custom) : (radio ? parseInt(radio.value) : 48)
+                        DEADLINE_HOURS: custom ? parseInt(custom) : (radio ? parseInt(radio.value) : 48),
+                        _DEADLINE_TOUCHED: true,
                     };
                 }
             },
@@ -451,19 +452,19 @@
                         <label class="form-label">API Secret</label>
                         <input type="password" class="form-input" id="wiz-x-api-secret" placeholder="xxxxxxxxxx"
                                title="Also called 'Consumer Secret'. Shown only once when generated — save it immediately.">
-                        <div class="form-hint">Also called Consumer Secret — shown once at generation</div>
+                        <div class="form-hint">Also called Consumer Secret — shown once at generation ${appData?.secrets?.find(s => s.name === 'X_API_SECRET')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Access Token</label>
                         <input type="password" class="form-input" id="wiz-x-access-token" placeholder="xxxxxxxxxx"
                                title="Your account's access token. Found under 'Authentication Tokens' in the Keys and Tokens tab.">
-                        <div class="form-hint">Under "Authentication Tokens" — click Generate</div>
+                        <div class="form-hint">Under "Authentication Tokens" — click Generate ${appData?.secrets?.find(s => s.name === 'X_ACCESS_TOKEN')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Access Token Secret</label>
                         <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx"
                                title="Your account's access token secret. Shown only once when generated — save it immediately.">
-                        <div class="form-hint">Paired with Access Token — shown once at generation</div>
+                        <div class="form-hint">Paired with Access Token — shown once at generation ${appData?.secrets?.find(s => s.name === 'X_ACCESS_SECRET')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div style="margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(99,102,241,0.08); font-size: 0.82rem; color: var(--text-dim);">
                         💡 After setup, check status from the <a href="#integrations" onclick="switchTab('integrations'); return false;" style="color: var(--info); font-weight: 600;">Integrations</a> tab.
@@ -2008,10 +2009,12 @@
 
             // Separate non-secret wizard data from actual secrets
             const deadlineHours = wizardData.DEADLINE_HOURS || 48;
+            const deadlineTouched = !!wizardData._DEADLINE_TOUCHED;
             const deployMode = wizardData.DEPLOY_MODE;
             const operatingMode = wizardData.MODE;
             const secrets = { ...wizardData };
             delete secrets.DEADLINE_HOURS;
+            delete secrets._DEADLINE_TOUCHED;
             // Note: DEPLOY_MODE stays in secrets — it's LOCAL_ONLY tier,
             // so it'll be saved to .env but not pushed to GitHub.
             delete secrets.MODE;
@@ -2076,8 +2079,8 @@
                 }
             }
 
-            // Set deadline if in countdown mode
-            if (deadlineHours && (!operatingMode || operatingMode === 'renewable_countdown')) {
+            // Set deadline only if the user actually changed it in this wizard run
+            if (deadlineTouched && deadlineHours && (!operatingMode || operatingMode === 'renewable_countdown')) {
                 try {
                     const dlResponse = await fetch('/api/state/set-deadline', {
                         method: 'POST',

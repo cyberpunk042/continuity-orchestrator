@@ -627,7 +627,7 @@
             {
                 id: 'x', label: 'X / Twitter', adapter: 'x_twitter',
                 secrets: ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'],
-                testCmd: null,
+                testCmd: 'test x',
                 wizardStep: 'twitter',
             },
             {
@@ -693,25 +693,38 @@
 
                 // Actions
                 if (allSet && integ.testCmd) {
-                    const defaultTo = integ.id === 'email'
-                        ? (envData['OPERATOR_EMAIL'] || '')
-                        : (envData['OPERATOR_SMS'] || '');
-                    const placeholder = defaultTo
-                        ? `Default: ${defaultTo}`
-                        : (integ.id === 'email' ? 'email@example.com' : '+1234567890');
-                    html += `
-                        <div style="margin-top: 0.4rem;">
-                            <label style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.25rem; display: block;">
-                                Send to ${integ.id === 'email' ? '(email)' : '(phone)'}:
-                            </label>
-                            <input type="${integ.id === 'email' ? 'email' : 'tel'}"
-                                id="test-to-${integ.id}"
-                                placeholder="${placeholder}"
-                                style="width: 100%; box-sizing: border-box; padding: 0.45rem 0.7rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; margin-bottom: 0.5rem;" />
-                            <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="width: 100%;">
-                                🧪 Send Test ${integ.label}
-                            </button>
-                        </div>`;
+                    if (integ.id === 'email' || integ.id === 'sms') {
+                        const defaultTo = integ.id === 'email'
+                            ? (envData['OPERATOR_EMAIL'] || '')
+                            : (envData['OPERATOR_SMS'] || '');
+                        const placeholder = defaultTo
+                            ? `Default: ${defaultTo}`
+                            : (integ.id === 'email' ? 'email@example.com' : '+1234567890');
+                        html += `
+                            <div style="margin-top: 0.4rem;">
+                                <label style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.25rem; display: block;">
+                                    Send to ${integ.id === 'email' ? '(email)' : '(phone)'}:
+                                </label>
+                                <input type="${integ.id === 'email' ? 'email' : 'tel'}"
+                                    id="test-to-${integ.id}"
+                                    placeholder="${placeholder}"
+                                    style="width: 100%; box-sizing: border-box; padding: 0.45rem 0.7rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; margin-bottom: 0.5rem;" />
+                                <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="width: 100%;">
+                                    🧪 Send Test ${integ.label}
+                                </button>
+                            </div>`;
+                    } else {
+                        html += `
+                            <div style="margin-top: 0.4rem; display: flex; gap: 0.5rem;">
+                                <button class="btn primary" onclick="runIntegrationTest('${integ.id}')" style="flex: 1;">
+                                    🔑 Verify Credentials
+                                </button>
+                                ${integ.id === 'x' ? `
+                                <button class="btn" onclick="runIntegrationTest('${integ.id}', {post: true})" style="flex: 1;">
+                                    🐦 Post Test Tweet
+                                </button>` : ''}
+                            </div>`;
+                    }
                 } else if (allSet && !integ.testCmd) {
                     html += `<div style="color: var(--accent); font-size: 0.85rem;">✅ Configured — no test available yet</div>`;
                 } else {
@@ -737,17 +750,25 @@
             }
         }
 
-        async function runIntegrationTest(integId) {
+        async function runIntegrationTest(integId, opts) {
+            opts = opts || {};
             const terminal = document.getElementById('integration-terminal');
             const toInput = document.getElementById(`test-to-${integId}`);
             const to = toInput?.value?.trim() || '';
-            const label = integId === 'email' ? 'Email' : 'SMS';
+            const integ = INTEGRATIONS.find(i => i.id === integId);
+            const label = integ ? integ.label : integId;
 
             terminal.className = 'terminal';
-            terminal.textContent = `🧪 Testing ${label}${to ? ` → ${to}` : ' (using default)'}...\n`;
+            if (integId === 'email' || integId === 'sms') {
+                terminal.textContent = `🧪 Testing ${label}${to ? ` → ${to}` : ' (using default)'}...\n`;
+            } else if (opts.post) {
+                terminal.textContent = `🐦 Posting test tweet to ${label}...\n`;
+            } else {
+                terminal.textContent = `🔑 Verifying ${label} credentials...\n`;
+            }
 
             try {
-                const body = {};
+                const body = { ...opts };
                 if (to) body.to = to;
 
                 const response = await fetch(`/api/test/${integId}`, {

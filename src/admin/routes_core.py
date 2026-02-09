@@ -179,6 +179,34 @@ def api_test_sms():
         return jsonify({"error": str(e)}), 500
 
 
+@core_bp.route("/api/test/x", methods=["POST"])
+def api_test_x():
+    """Verify X (Twitter) API credentials, optionally post a test tweet."""
+    project_root = _project_root()
+    data = request.json or {}
+    cmd = ["python", "-m", "src.main", "test", "x"]
+    if data.get("post"):
+        cmd.append("--post")
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_env(),
+        )
+        return jsonify({
+            "success": result.returncode == 0,
+            "output": result.stdout,
+            "error": result.stderr,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Command timed out"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @core_bp.route("/api/renew", methods=["POST"])
 def api_renew():
     """Renew the deadline."""

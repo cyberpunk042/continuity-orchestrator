@@ -1,0 +1,116 @@
+{
+    "time": 1739128800000,
+    "blocks": [
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "Continuity Orchestrator is an <b>open-source, self-hosted automation system</b> designed to monitor operator check-ins and take predefined actions if the operator becomes unavailable. Think of it as a programmable continuity plan with built-in escalation."
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "What Problem Does It Solve?",
+                "level": 2
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "In many scenarios — solo operators, independent professionals, researchers, journalists — there is no one watching the watcher. If something happens to you, who ensures your systems are handled, your stakeholders are notified, or your information is preserved?"
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "Continuity Orchestrator provides a <b>structured, automated response</b> to that question. You check in regularly. If you stop checking in, the system escalates through configurable stages."
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "How It Works",
+                "level": 2
+            }
+        },
+        {
+            "type": "list",
+            "data": {
+                "style": "ordered",
+                "items": [
+                    "<b>OK</b> — Normal operation. The operator is checking in regularly.",
+                    "<b>REMIND</b> — Deadline approaching. Reminder notifications are sent via configured channels.",
+                    "<b>PRE_RELEASE</b> — Final warning before escalation begins.",
+                    "<b>PARTIAL</b> — Limited disclosure. Some pre-configured content becomes visible.",
+                    "<b>FULL</b> — Complete disclosure. All scheduled content is published."
+                ]
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "Notification Channels",
+                "level": 2
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "The system can notify through multiple channels, all optional and operator-configured:"
+            }
+        },
+        {
+            "type": "list",
+            "data": {
+                "style": "unordered",
+                "items": [
+                    "<b>Email</b> — via Resend API",
+                    "<b>SMS</b> — via Twilio",
+                    "<b>X (Twitter)</b> — automated status posts to the operator's account",
+                    "<b>Reddit</b> — automated status posts to the operator's subreddit",
+                    "<b>GitHub Pages</b> — this status site, updated automatically"
+                ]
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "Key Principles",
+                "level": 2
+            }
+        },
+        {
+            "type": "list",
+            "data": {
+                "style": "unordered",
+                "items": [
+                    "<b>Privacy-first</b> — No visitor tracking, no analytics, no cookies",
+                    "<b>Self-hosted</b> — You control your data and your deployment",
+                    "<b>Open-source</b> — Full source code available for inspection",
+                    "<b>Transparent automation</b> — All automated posts are clearly identified as such",
+                    "<b>Minimal footprint</b> — Low API usage, respectful of platform rate limits"
+                ]
+            }
+        },
+        {
+            "type": "header",
+            "data": {
+                "text": "Technical Architecture",
+                "level": 2
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "The system runs as a scheduled GitHub Actions workflow (or locally via CLI). Each \"tick\" evaluates the current state against the deadline, determines if escalation is needed, and executes the appropriate notification actions. The static site is rebuilt after each state change and deployed to GitHub Pages."
+            }
+        },
+        {
+            "type": "paragraph",
+            "data": {
+                "text": "Configuration is managed through a web-based admin panel or CLI, with secrets stored securely in environment variables or GitHub Actions secrets."
+            }
+        }
+    ],
+    "version": "2.29.1"
+}

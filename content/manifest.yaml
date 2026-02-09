@@ -1,5 +1,17 @@
 version: 1
 articles:
+- slug: project
+  title: About This Project
+  visibility:
+    min_stage: OK
+    include_in_nav: true
+    pin_to_top: true
+  meta:
+    description: What Continuity Orchestrator is, how it works, and why it exists
+    author: System
+    tags:
+    - info
+    - overview
 - slug: about
   title: How It Works
   visibility:

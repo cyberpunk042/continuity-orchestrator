@@ -89,8 +89,11 @@ class SiteGenerator:
         files_generated.append(self._render_template("countdown.html", context))
         files_generated.append(self._render_template("timeline.html", context))
         files_generated.append(self._render_template("status.html", context))
+        files_generated.append(self._render_template("privacy.html", context))
+        files_generated.append(self._render_template("terms.html", context))
         files_generated.append(self._generate_feed(context))
         files_generated.append(self._generate_status_json(context))
+        files_generated.append(self._generate_robots_txt(context))
         
         # Generate articles
         article_files = self._generate_articles(context)
@@ -566,6 +569,32 @@ class SiteGenerator:
         output_path.write_text(json.dumps(status, indent=2))
         return output_path
     
+    def _generate_robots_txt(self, context: Dict[str, Any]) -> Path:
+        """Generate robots.txt allowing all crawlers."""
+        github_repo = context.get("github_repository", "")
+        if github_repo and "/" in github_repo and github_repo != "OWNER/REPO":
+            owner, repo = github_repo.split("/", 1)
+            sitemap_url = f"https://{owner}.github.io/{repo}/sitemap.xml"
+        else:
+            sitemap_url = ""
+        
+        lines = [
+            "# Continuity Orchestrator — robots.txt",
+            "# This site is a public status page. All crawlers are welcome.",
+            "",
+            "User-agent: *",
+            "Allow: /",
+            "",
+        ]
+        
+        if sitemap_url:
+            lines.append(f"Sitemap: {sitemap_url}")
+            lines.append("")
+        
+        output_path = self.output_dir / "robots.txt"
+        output_path.write_text("\n".join(lines))
+        return output_path
+    
     def _generate_archive_entry(
         self,
         entry: Dict[str, Any],
@@ -712,6 +741,8 @@ class SiteGenerator:
             ("countdown.html", "0.8", "hourly"),
             ("timeline.html", "0.7", "daily"),
             ("status.html", "0.6", "hourly"),
+            ("privacy.html", "0.3", "monthly"),
+            ("terms.html", "0.3", "monthly"),
         ]
         
         # Articles

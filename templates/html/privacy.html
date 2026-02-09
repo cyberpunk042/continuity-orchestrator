@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy — {{ project }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ base_path|default('') }}assets/css/articles.css">
+{% endblock %}
+
+{% block body_class %}page-articles{% endblock %}
+
+{% block content %}
+<header>
+    <h1>Privacy Policy</h1>
+    <nav>
+        <a href="{{ base_path|default('') }}index.html">← Back to Status</a>
+    </nav>
+</header>
+
+<main>
+    <article class="editor-content legal-page">
+        <p class="legal-updated">Last updated: February 2026</p>
+
+        <h2>1. Overview</h2>
+        <p>
+            Continuity Orchestrator is an open-source, self-hosted personal automation tool.
+            It is designed for <strong>single-operator use</strong> — there are no end users,
+            no user accounts, and no public-facing data collection.
+        </p>
+
+        <h2>2. Data Collection</h2>
+        <p>This project collects <strong>no personal data from visitors</strong>. Specifically:</p>
+        <ul>
+            <li>No cookies are used</li>
+            <li>No analytics or tracking scripts are loaded</li>
+            <li>No third-party advertising or marketing services are integrated</li>
+            <li>No visitor data is stored, processed, or transmitted</li>
+        </ul>
+        <p>
+            The static pages served from this site are informational only. They display the
+            current operational status of the system and are regenerated periodically.
+        </p>
+
+        <h2>3. Operator Data</h2>
+        <p>
+            The operator (the person who deployed and maintains this instance) stores their
+            own configuration locally or in encrypted GitHub repository secrets. This includes:
+        </p>
+        <ul>
+            <li>API credentials for notification services (email, SMS, social media)</li>
+            <li>Operator contact information (email address, phone number)</li>
+            <li>Security passphrases for authentication</li>
+        </ul>
+        <p>
+            These secrets are <strong>never exposed on the public site</strong>. They are stored
+            securely using environment variables, encrypted secrets, or local <code>.env</code> files.
+        </p>
+
+        <h2>4. Third-Party Services</h2>
+        <p>When configured by the operator, the system may interact with the following services for notifications:</p>
+        <ul>
+            <li><strong>Resend</strong> — for sending email notifications</li>
+            <li><strong>Twilio</strong> — for sending SMS notifications</li>
+            <li><strong>X (Twitter)</strong> — for posting status updates</li>
+            <li><strong>Reddit</strong> — for posting status updates</li>
+            <li><strong>GitHub</strong> — for hosting this static site and running automated workflows</li>
+        </ul>
+        <p>
+            Each service is optional and only activated if the operator explicitly
+            configures it. No data is sent to these services on behalf of site visitors.
+        </p>
+
+        <h2>5. GitHub Pages Hosting</h2>
+        <p>
+            This site is hosted on <a href="https://docs.github.com/en/pages" target="_blank">GitHub Pages</a>.
+            GitHub may collect basic server logs (IP addresses, request timestamps) as part of
+            their hosting infrastructure. Please refer to
+            <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank">GitHub's Privacy Statement</a>
+            for details.
+        </p>
+
+        <h2>6. Open Source</h2>
+        <p>
+            The complete source code for this project is available for review. All data handling
+            can be verified by inspecting the codebase. No telemetry, analytics, or tracking
+            code is present in the source.
+        </p>
+
+        <h2 id="contact">7. Contact</h2>
+        <p>
+            For privacy-related questions about this deployment, you can reach the operator at:
+        </p>
+        <p style="margin-left: 1.5rem;">
+            📧 <a href="mailto:jfm.devops.expert@gmail.com">jfm.devops.expert@gmail.com</a>
+        </p>
+    </article>
+</main>
+{% endblock %}

@@ -139,6 +139,115 @@ def test_sms(to: str, message: str):
         raise SystemExit(1)
 
 
+@test.command("x")
+@click.option("--post", "-p", is_flag=True, help="Actually post a test tweet (default: verify credentials only)")
+def test_x(post: bool):
+    """Verify X (Twitter) API credentials and optionally post a test tweet."""
+    import os
+
+    # Check configuration
+    api_key = os.environ.get("X_API_KEY")
+    api_secret = os.environ.get("X_API_SECRET")
+    access_token = os.environ.get("X_ACCESS_TOKEN")
+    access_secret = os.environ.get("X_ACCESS_SECRET")
+
+    missing = []
+    if not api_key:
+        missing.append("X_API_KEY")
+    if not api_secret:
+        missing.append("X_API_SECRET")
+    if not access_token:
+        missing.append("X_ACCESS_TOKEN")
+    if not access_secret:
+        missing.append("X_ACCESS_SECRET")
+
+    if missing:
+        click.secho(f"❌ Missing: {', '.join(missing)}", fg="red")
+        click.echo("   Set these in your .env file or via the Setup Wizard")
+        raise SystemExit(1)
+
+    click.echo()
+    click.secho("🐦 Testing X / Twitter", bold=True)
+    click.echo(f"   API Key: {api_key[:8]}...")
+    click.echo(f"   Access Token: {access_token[:8]}...")
+    click.echo()
+
+    try:
+        import httpx
+    except ImportError:
+        click.secho("❌ httpx package not installed", fg="red")
+        click.echo("   pip install httpx")
+        raise SystemExit(1)
+
+    try:
+        from ..adapters.x_twitter import XAdapter
+        adapter = XAdapter()
+
+        # Build OAuth header for credential verification
+        url = f"{adapter.API_BASE}/2/users/me"
+        auth_header = adapter._build_oauth_header("GET", url)
+
+        with httpx.Client(timeout=15.0) as client:
+            response = client.get(
+                url,
+                headers={"Authorization": auth_header},
+            )
+
+            if response.status_code == 200:
+                data = response.json().get("data", {})
+                username = data.get("username", "unknown")
+                name = data.get("name", "unknown")
+                click.secho("✅ Credentials valid!", fg="green")
+                click.echo(f"   Account: @{username} ({name})")
+
+                if post:
+                    click.echo()
+                    click.echo("   Posting test tweet...")
+                    tweet_url = f"{adapter.API_BASE}/2/tweets"
+                    tweet_auth = adapter._build_oauth_header("POST", tweet_url)
+                    tweet_response = client.post(
+                        tweet_url,
+                        json={"text": "🧪 Continuity Orchestrator test tweet — this can be deleted."},
+                        headers={
+                            "Authorization": tweet_auth,
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    if tweet_response.status_code == 201:
+                        tweet_data = tweet_response.json().get("data", {})
+                        tweet_id = tweet_data.get("id", "unknown")
+                        click.secho("✅ Tweet posted!", fg="green")
+                        click.echo(f"   Tweet ID: {tweet_id}")
+                        click.echo(f"   URL: https://x.com/{username}/status/{tweet_id}")
+                    else:
+                        err = tweet_response.json()
+                        detail = err.get("detail", err.get("title", f"HTTP {tweet_response.status_code}"))
+                        click.secho(f"❌ Tweet failed: {detail}", fg="red")
+                        raise SystemExit(1)
+                else:
+                    click.echo()
+                    click.echo("   Use --post to send a test tweet")
+            elif response.status_code == 401:
+                click.secho("❌ Authentication failed (401)", fg="red")
+                click.echo("   Check that your API keys and tokens are correct")
+                click.echo("   Make sure User Authentication is set up with Read+Write permissions")
+                raise SystemExit(1)
+            elif response.status_code == 403:
+                click.secho("❌ Forbidden (403)", fg="red")
+                click.echo("   Your app may not have the required permissions")
+                click.echo("   Go to Developer Portal → App → Settings → User authentication → Read and Write")
+                raise SystemExit(1)
+            else:
+                click.secho(f"❌ API error: HTTP {response.status_code}", fg="red")
+                click.echo(f"   Response: {response.text[:200]}")
+                raise SystemExit(1)
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        click.secho(f"❌ X test failed: {e}", fg="red")
+        raise SystemExit(1)
+
 @test.command("webhook")
 @click.option("--url", "-u", required=True, help="Webhook URL to POST to")
 @click.option("--payload", "-p", default='{"test": true, "source": "continuity-orchestrator"}', help="JSON payload")

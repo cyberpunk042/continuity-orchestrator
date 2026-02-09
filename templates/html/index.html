@@ -12,6 +12,7 @@
 <header>
     <h1>Continuity Status</h1>
     <p class="subtitle">{{ project }}</p>
+    <p style="color: var(--color-text-muted); font-size: 0.82rem; margin-top: 0.25rem;">Open-source automated continuity monitoring system</p>
 </header>
 
 <main>
@@ -43,10 +44,6 @@
         {% if nav_articles %}<a href="articles/">Articles</a>{% endif %}
     </nav>
 </main>
-
-<footer>
-    <p>Generated: {{ build_time }}</p>
-</footer>
 {% endblock %}
 
 {% block extra_js %}
