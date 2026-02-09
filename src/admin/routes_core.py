@@ -320,6 +320,16 @@ def api_factory_reset():
                 )
                 if commit_result.returncode == 0:
                     output += "\n📦 Policy change committed to git"
+                    # Push the commit so user doesn't have to manually
+                    push_result = subprocess.run(
+                        ["git", "push"],
+                        cwd=str(project_root),
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if push_result.returncode == 0:
+                        output += "\n🚀 Pushed to remote"
+                    else:
+                        output += f"\n⚠️ Push failed (run git push manually): {push_result.stderr}"
             else:
                 output += f"\n⚠️ Policy reset failed: {policy_result.stderr}"
 

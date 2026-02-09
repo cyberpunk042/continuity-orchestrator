@@ -2765,6 +2765,12 @@
                     }
                 }
 
+                // Auto-close modal after success
+                setTimeout(() => {
+                    const modal = document.getElementById('policy-modal');
+                    if (modal) modal.style.display = 'none';
+                }, 1500);
+
             } catch (err) {
                 status.innerHTML = `<span style="color: var(--error);">❌ ${err.message}</span>`;
             } finally {
