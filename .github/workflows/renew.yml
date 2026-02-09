@@ -135,12 +135,19 @@ jobs:
         run: |
           if [ -n "$SENTINEL_URL" ]; then
             ACTION="${{ steps.validate.outputs.action }}"
-            python -c "
-from src.sentinel import signal_sentinel
-signal_type = '${ACTION}' if '${ACTION}' == 'release' else 'renewal'
-result = signal_sentinel(signal_type)
-print(f'✅ Sentinel signaled: {signal_type}' if result else '⚠️ Sentinel unreachable (non-critical)')
-            "
+            SIGNAL_TYPE="renewal"
+            [ "$ACTION" = "release" ] && SIGNAL_TYPE="release"
+            NONCE=$(head -c16 /dev/urandom | xxd -p)
+            RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SENTINEL_URL}/signal" \
+              -H "Authorization: Bearer ${SENTINEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"type\":\"${SIGNAL_TYPE}\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"nonce\":\"${NONCE}\"}" \
+              2>/dev/null || echo "000")
+            if [ "$RESP" = "200" ]; then
+              echo "✅ Sentinel signaled: ${SIGNAL_TYPE}"
+            else
+              echo "⚠️ Sentinel unreachable (HTTP ${RESP}, non-critical)"
+            fi
           else
             echo "ℹ️ Sentinel not configured — skipping"
           fi

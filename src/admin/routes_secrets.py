@@ -386,8 +386,11 @@ def api_sentinel_setup():
     auto_run = data.get("autoRun", False)
     y_flag = " -y" if auto_run else ""
 
-    # Wrap the script so the terminal stays open after completion
-    wrapper = f'bash {script_path}{y_flag}; echo ""; read -p "Press Enter to close…"'
+    # Wrap the script — in auto mode, close immediately; interactive keeps open
+    if auto_run:
+        wrapper = f'bash {script_path}{y_flag}'
+    else:
+        wrapper = f'bash {script_path}; echo ""; read -p "Press Enter to close…"'
 
     # Try to open in a terminal
     terminal_cmds = [

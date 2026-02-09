@@ -31,6 +31,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     const path = url.pathname;
     const method = request.method;
 
+    console.log(`[http] ${method} ${path}`);
+
     // CORS preflight
     if (method === "OPTIONS") {
         return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -49,6 +51,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     // ── Protected endpoints ───────────────────────────────────────
 
     if (!validateBearer(request, env.SENTINEL_TOKEN)) {
+        console.warn(`[http] 401 Unauthorized on ${method} ${path}`);
         return unauthorized();
     }
 
@@ -65,6 +68,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
 
     // ── 404 ───────────────────────────────────────────────────────
+    console.warn(`[http] 404 Not found: ${method} ${path}`);
     return json({ error: "Not found" }, 404);
 }
 
@@ -76,15 +80,17 @@ async function handlePostState(request: Request, env: Env): Promise<Response> {
 
         // Basic validation
         if (!state.lastTickAt || !state.deadline || !state.stage) {
+            console.warn("[state] Rejected: missing required fields");
             return json({ error: "Missing required fields: lastTickAt, deadline, stage" }, 400);
         }
 
         await env.SENTINEL_KV.put("state", JSON.stringify(state));
 
-        console.log(`[state] Received: stage=${state.stage} deadline=${state.deadline}`);
+        console.log(`[state] ✅ Received — stage=${state.stage} deadline=${state.deadline} lastTick=${state.lastTickAt} stateChanged=${state.stateChanged} renewed=${state.renewedThisTick}`);
         return json({ ok: true, received: state.stage });
 
     } catch (err) {
+        console.error("[state] ❌ Invalid JSON body:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
 }
@@ -96,15 +102,17 @@ async function handlePostSignal(request: Request, env: Env): Promise<Response> {
         const signal = await request.json() as Signal;
 
         if (!signal.type || !signal.at) {
+            console.warn("[signal] Rejected: missing required fields");
             return json({ error: "Missing required fields: type, at" }, 400);
         }
 
         await env.SENTINEL_KV.put("signal", JSON.stringify(signal));
 
-        console.log(`[signal] Received: type=${signal.type} at=${signal.at}`);
+        console.log(`[signal] ✅ Received — type=${signal.type} at=${signal.at} nonce=${signal.nonce || "none"}`);
         return json({ ok: true, received: signal.type });
 
     } catch (err) {
+        console.error("[signal] ❌ Invalid JSON body:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
 }
@@ -116,15 +124,17 @@ async function handlePostConfig(request: Request, env: Env): Promise<Response> {
         const config = await request.json() as SentinelConfig;
 
         if (!config.repo || !config.workflowFile) {
+            console.warn("[config] Rejected: missing required fields");
             return json({ error: "Missing required fields: repo, workflowFile" }, 400);
         }
 
         await env.SENTINEL_KV.put("config", JSON.stringify(config));
 
-        console.log(`[config] Updated: repo=${config.repo} cadence=${config.defaultCadenceMinutes}m`);
+        console.log(`[config] ✅ Updated — repo=${config.repo} workflow=${config.workflowFile} cadence=${config.defaultCadenceMinutes}m thresholds=${config.thresholds.length} urgencyWindow=${config.urgencyWindowMinutes}m maxBackoff=${config.maxBackoffMinutes}m`);
         return json({ ok: true, repo: config.repo });
 
     } catch (err) {
+        console.error("[config] ❌ Invalid JSON body:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
 }
@@ -144,6 +154,8 @@ async function handleStatus(env: Env): Promise<Response> {
     const signal: Signal | null = signalRaw ? JSON.parse(signalRaw) : null;
     const config: SentinelConfig | null = configRaw ? JSON.parse(configRaw) : null;
     const lastDecision: DecisionLog | null = decisionRaw ? JSON.parse(decisionRaw) : null;
+
+    console.log(`[status] configured=${!!config} hasState=${!!state} hasSignal=${!!signal} hasDecision=${!!lastDecision} hasLock=${!!dispatchLock}`);
 
     return json({
         healthy: true,
@@ -176,6 +188,9 @@ async function handleStatus(env: Env): Promise<Response> {
 
 // ─── Cron Handler ───────────────────────────────────────────────
 async function handleScheduled(env: Env): Promise<void> {
+    const now = new Date();
+    console.log(`[cron] ──── Sentinel tick at ${now.toISOString()} ────`);
+
     // Read all KV keys in parallel
     const [stateRaw, signalRaw, configRaw, dispatchLock] = await Promise.all([
         env.SENTINEL_KV.get("state"),
@@ -188,13 +203,30 @@ async function handleScheduled(env: Env): Promise<void> {
     const signal: Signal | null = signalRaw ? JSON.parse(signalRaw) : null;
     const config: SentinelConfig | null = configRaw ? JSON.parse(configRaw) : null;
 
+    // Log KV state for observability
+    console.log(`[cron] KV state: config=${!!config} state=${!!state} signal=${!!signal} lock=${!!dispatchLock}`);
+
+    if (state) {
+        const lastTickAge = Math.round((now.getTime() - new Date(state.lastTickAt).getTime()) / 60_000);
+        const minutesToDeadline = Math.round((new Date(state.deadline).getTime() - now.getTime()) / 60_000);
+        console.log(`[cron] Engine state: stage=${state.stage} lastTick=${lastTickAge}m ago deadline=${minutesToDeadline}m away renewed=${state.renewedThisTick}`);
+    }
+    if (signal) {
+        console.log(`[cron] Pending signal: type=${signal.type} at=${signal.at}`);
+    }
+    if (dispatchLock) {
+        const lockAge = Math.round((now.getTime() - new Date(dispatchLock).getTime()) / 1000);
+        console.log(`[cron] Dispatch lock: ${dispatchLock} (${lockAge}s ago)`);
+    }
+
     // No config = not set up yet, nothing to do
     if (!config) {
-        console.log("[cron] No config found — skipping (run setup wizard first)");
+        console.warn("[cron] ⚠️ No config found in KV — run the setup wizard to configure the sentinel");
         return;
     }
 
-    const now = new Date();
+    console.log(`[cron] Config: repo=${config.repo} cadence=${config.defaultCadenceMinutes}m urgency=${config.urgencyWindowMinutes}m backoff=${config.maxBackoffMinutes}m thresholds=${config.thresholds.length}`);
+
     const decision = shouldDispatch(state, signal, config, now, dispatchLock);
 
     // Log the decision for observability
@@ -208,9 +240,18 @@ async function handleScheduled(env: Env): Promise<void> {
     };
     await env.SENTINEL_KV.put("last_decision", JSON.stringify(decisionLog));
 
-    console.log(`[cron] Decision: dispatch=${decision.dispatch} reason=${decision.reason}`);
+    if (decision.dispatch) {
+        console.log(`[cron] ✅ DISPATCH — reason: ${decision.reason}`);
+    } else {
+        console.log(`[cron] ⏭️ SKIP — reason: ${decision.reason}`);
+    }
 
     if (!decision.dispatch) {
+        const nextDue = decisionLog.nextDueAt;
+        if (nextDue) {
+            const nextDueMin = Math.round((new Date(nextDue).getTime() - now.getTime()) / 60_000);
+            console.log(`[cron] Next due in ~${nextDueMin}m (${nextDue})`);
+        }
         return;
     }
 
@@ -218,18 +259,21 @@ async function handleScheduled(env: Env): Promise<void> {
 
     // Acquire lock (TTL 90 seconds to prevent double dispatch)
     await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: 90 });
+    console.log(`[cron] Lock acquired, dispatching to ${config.repo}/${config.workflowFile}...`);
 
     const success = await dispatchWorkflow(config, env.GITHUB_TOKEN, decision.reason);
 
     if (success) {
+        console.log(`[cron] ✅ Dispatch succeeded — workflow triggered on ${config.repo}`);
         // Clear the consumed signal
         if (signal) {
             await env.SENTINEL_KV.delete("signal");
+            console.log(`[cron] Signal consumed and cleared: type=${signal.type}`);
         }
     } else {
         // Release lock on failure so we retry next minute
         await env.SENTINEL_KV.delete("dispatch_lock");
-        console.error("[cron] Dispatch failed — lock released for retry");
+        console.error("[cron] ❌ Dispatch FAILED — lock released, will retry next tick");
     }
 }
 

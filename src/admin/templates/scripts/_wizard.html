@@ -915,12 +915,25 @@
                             <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 0 0 10px 10px; padding: 1.25rem; margin-top: 0.5rem;">
                                 <ol style="color: var(--text-dim); line-height: 2; margin: 0 0 0 1.25rem; font-size: 0.85rem;">
                                     <li>Install Wrangler: <code>npm install -g wrangler</code> then <code>wrangler login</code></li>
-                                    <li>Create KV: <code>wrangler kv namespace create SENTINEL_KV</code></li>
-                                    <li>Patch <code>worker/sentinel/wrangler.toml</code> with the KV namespace ID</li>
-                                    <li>Generate a token: <code>openssl rand -hex 32</code></li>
-                                    <li>Set Worker secrets: <code>wrangler secret put AUTH_TOKEN</code> and <code>wrangler secret put GITHUB_TOKEN</code></li>
-                                    <li>Deploy: <code>cd worker/sentinel && wrangler deploy</code></li>
-                                    <li>Paste the Worker URL and auth token below</li>
+                                    <li>Register a workers.dev subdomain (if first Worker):
+                                        <br><span style="opacity:0.7;">Go to <a href="https://dash.cloudflare.com/?to=/:account/workers/onboarding" target="_blank" style="color:var(--info);">Cloudflare dashboard → Workers</a> and pick a subdomain</span>
+                                    </li>
+                                    <li><code>cd worker/sentinel && npm install</code></li>
+                                    <li>Create KV: <code>npx wrangler kv namespace create SENTINEL_KV</code></li>
+                                    <li>Copy the <code>id</code> from the output into <code>worker/sentinel/wrangler.toml</code> under <code>[[kv_namespaces]]</code></li>
+                                    <li>Set <code>GITHUB_REPO = "owner/repo"</code> in the <code>[vars]</code> section of <code>wrangler.toml</code></li>
+                                    <li>Generate auth token: <code>openssl rand -hex 32</code></li>
+                                    <li>Set Worker secrets:
+                                        <br><code>npx wrangler secret put SENTINEL_TOKEN</code> <span style="opacity:0.7;">(paste the token from step 7)</span>
+                                        <br><code>npx wrangler secret put GITHUB_TOKEN</code> <span style="opacity:0.7;">(a GitHub PAT with <em>Actions: write</em> scope)</span>
+                                    </li>
+                                    <li>Deploy: <code>npx wrangler deploy</code></li>
+                                    <li>Add to your <code>.env</code>:
+                                        <br><code>SENTINEL_URL=https://&lt;worker-name&gt;.&lt;subdomain&gt;.workers.dev</code>
+                                        <br><code>SENTINEL_TOKEN=&lt;token from step 7&gt;</code>
+                                    </li>
+                                    <li>Push both secrets to GitHub: <code>./manage.sh secrets</code></li>
+                                    <li>Paste the Worker URL and auth token in the fields below</li>
                                 </ol>
                             </div>
                         </details>
@@ -1267,9 +1280,11 @@
                     removeOverlay();
                 });
 
-                // Poll for completion
+                // Poll for completion via signal file + env check
                 const emojis = ['🛰️', '📡', '⚡', '🔄'];
                 let emojiIdx = 0;
+                const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
                 pollTimer = setInterval(async () => {
                     // Update elapsed time
                     const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -1282,46 +1297,47 @@
                     const spinnerEl = document.getElementById('sentinel-spinner');
                     if (spinnerEl) { emojiIdx = (emojiIdx + 1) % emojis.length; spinnerEl.textContent = emojis[emojiIdx]; }
 
-                    // Check if env has sentinel config now
+                    // Timeout check
+                    if (Date.now() - startTime > POLL_TIMEOUT_MS) {
+                        removeOverlay();
+                        _showSentinelResult('timeout');
+                        return;
+                    }
+
                     try {
-                        const envRes = await fetch('/api/env/read');
-                        const envData = await envRes.json();
-                        if (envData.success && envData.env) {
-                            const url = envData.env.SENTINEL_URL;
-                            const token = envData.env.SENTINEL_TOKEN;
-                            if (url && token) {
-                                // Success! Auto-populate fields
-                                removeOverlay();
+                        // Check signal file first (fast, reliable)
+                        const statusRes = await fetch('/api/sentinel/setup-status');
+                        const statusData = await statusRes.json();
 
-                                // Update the wizard inputs if they exist
-                                const urlInput = document.getElementById('wiz-sentinel-url');
-                                const tokenInput = document.getElementById('wiz-sentinel-token');
-                                if (urlInput) urlInput.value = url;
-                                if (tokenInput) tokenInput.value = token;
-
-                                // Show success notification
-                                const successOverlay = document.createElement('div');
-                                successOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
-                                successOverlay.innerHTML = `
-                                    <div style="background:var(--bg-card);border:1px solid rgba(74,222,128,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
-                                        <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
-                                        <h2 style="color:var(--accent);margin-bottom:0.5rem;">Sentinel Deployed!</h2>
-                                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
-                                            The Worker is live and the configuration has been saved.
-                                        </p>
-                                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.8rem;">
-                                            <div style="margin-bottom:0.4rem;"><strong>URL:</strong> <code>${url}</code></div>
-                                            <div><strong>Token:</strong> <code>${token.substring(0, 8)}…</code></div>
-                                        </div>
-                                        <button class="btn primary" onclick="this.closest('div').parentElement.remove()" style="padding:0.5rem 2rem;">
-                                            Continue →
-                                        </button>
-                                    </div>
-                                `;
-                                document.body.appendChild(successOverlay);
-                                successOverlay.addEventListener('click', (e) => { if (e.target === successOverlay) successOverlay.remove(); });
-                            }
+                        if (statusData.status === 'failed') {
+                            removeOverlay();
+                            _showSentinelResult('failed');
+                            return;
                         }
+
+                        if (statusData.status === 'success') {
+                            // Signal says success — also grab env for details
+                            const envRes = await fetch('/api/env/read');
+                            const envData = await envRes.json();
+                            const url = envData?.env?.SENTINEL_URL || statusData.url || '';
+                            const token = envData?.env?.SENTINEL_TOKEN || '';
+
+                            removeOverlay();
+
+                            // Auto-populate wizard fields
+                            const urlInput = document.getElementById('wiz-sentinel-url');
+                            const tokenInput = document.getElementById('wiz-sentinel-token');
+                            if (urlInput) urlInput.value = url;
+                            if (tokenInput && token) tokenInput.value = token;
+
+                            _showSentinelResult('success', url, token);
+                            return;
+                        }
+
+                        // Still running — update status text
+                        const statusEl = document.getElementById('sentinel-poll-status');
+                        if (statusEl) statusEl.textContent = 'Waiting for setup to complete…';
+
                     } catch (e) {
                         // Ignore poll errors
                     }
@@ -1331,6 +1347,77 @@
                 removeOverlay();
                 alert(`❌ Error: ${error.message}`);
             }
+        }
+
+        // Show result overlay for sentinel setup
+        function _showSentinelResult(status, url = '', token = '') {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
+
+            // Close handler: refresh env data + re-render wizard step
+            function dismissAndRefresh() {
+                overlay.remove();
+                loadStatus().then(() => renderWizard());
+            }
+
+            let content = '';
+            if (status === 'success') {
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid rgba(74,222,128,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
+                        <h2 style="color:var(--accent);margin-bottom:0.5rem;">Sentinel Deployed!</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The Worker is live and the configuration has been saved.
+                        </p>
+                        ${url ? `<div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.8rem;">
+                            <div style="margin-bottom:0.4rem;"><strong>URL:</strong> <code>${url}</code></div>
+                            ${token ? `<div><strong>Token:</strong> <code>${token.substring(0, 8)}…</code></div>` : ''}
+                        </div>` : ''}
+                        <button class="btn primary" id="sentinel-result-close" style="padding:0.5rem 2rem;">
+                            Continue →
+                        </button>
+                    </div>`;
+            } else if (status === 'failed') {
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid rgba(239,68,68,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">❌</div>
+                        <h2 style="color:var(--error);margin-bottom:0.5rem;">Setup Failed</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The setup encountered an error. Check the terminal window for details.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.82rem;color:var(--text-dim);">
+                            💡 For better troubleshooting, try running directly in your terminal:<br>
+                            <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh sentinel -y</code>
+                        </div>
+                        <button class="btn" id="sentinel-result-close" style="padding:0.5rem 2rem;">
+                            Close
+                        </button>
+                    </div>`;
+            } else {
+                // timeout
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">⏱️</div>
+                        <h2 style="color:var(--warning);margin-bottom:0.5rem;">Setup Timed Out</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The setup is taking longer than expected. It may still be running in the terminal window.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.82rem;color:var(--text-dim);">
+                            💡 For better troubleshooting, try running directly in your terminal:<br>
+                            <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh sentinel -y</code>
+                        </div>
+                        <button class="btn" id="sentinel-result-close" style="padding:0.5rem 2rem;">
+                            Close
+                        </button>
+                    </div>`;
+            }
+
+            overlay.innerHTML = content;
+            document.body.appendChild(overlay);
+
+            // Wire close button + backdrop click to refresh wizard
+            document.getElementById('sentinel-result-close')?.addEventListener('click', dismissAndRefresh);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) dismissAndRefresh(); });
         }
 
         // ========================================

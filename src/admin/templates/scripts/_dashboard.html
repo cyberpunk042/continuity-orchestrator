@@ -311,9 +311,8 @@
                     return;
                 }
 
-                // Sentinel is live
-                const state = data.state || {};
-                const lastDecision = data.last_decision || {};
+                // Sentinel is live — map Worker /status response fields
+                const lastDecision = data.lastDecision || {};
                 const config = data.config || {};
 
                 badge.textContent = 'active';
@@ -322,10 +321,8 @@
 
                 let rows = '';
 
-                if (lastDecision.action) {
-                    const action = lastDecision.action === 'tick' ? '🟢 tick' :
-                                   lastDecision.action === 'skip' ? '⏭️ skip' :
-                                   lastDecision.action;
+                if (lastDecision.dispatch !== undefined) {
+                    const action = lastDecision.dispatch ? '🟢 dispatched' : '⏭️ skipped';
                     rows += `<div class="status-row"><span class="status-label">Last Decision</span><span class="status-value">${action}</span></div>`;
 
                     if (lastDecision.reason) {
@@ -338,16 +335,21 @@
                     rows += `<div class="status-row"><span class="status-label">Checked</span><span class="status-value" style="font-size: 0.82rem;">${ago}</span></div>`;
                 }
 
-                if (lastDecision.nextDueAt) {
-                    const nextDue = new Date(lastDecision.nextDueAt);
+                if (data.nextDueAt) {
+                    const nextDue = new Date(data.nextDueAt);
                     const now = new Date();
                     const diffMin = Math.round((nextDue - now) / 60000);
                     const when = diffMin > 0 ? `in ${diffMin}m` : 'now';
                     rows += `<div class="status-row"><span class="status-label">Next Due</span><span class="status-value">${when}</span></div>`;
                 }
 
-                if (state.stage) {
-                    rows += `<div class="status-row"><span class="status-label">Worker Stage</span><span class="status-value">${state.stage}</span></div>`;
+                if (data.stage) {
+                    rows += `<div class="status-row"><span class="status-label">Worker Stage</span><span class="status-value">${data.stage}</span></div>`;
+                }
+
+                if (data.lastDispatchAt) {
+                    const ago = _timeAgo(new Date(data.lastDispatchAt));
+                    rows += `<div class="status-row"><span class="status-label">Last Dispatch</span><span class="status-value" style="font-size: 0.82rem;">${ago}</span></div>`;
                 }
 
                 if (config.repo) {

@@ -203,14 +203,26 @@ jobs:
           SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
         run: |
           if [ -n "$SENTINEL_URL" ]; then
-            python -c "
-from src.sentinel import notify_sentinel
-from src.persistence.state_file import load_state
-from pathlib import Path
-state = load_state(Path('state/current.json'))
-result = notify_sentinel(state)
-print('✅ Sentinel notified' if result else '⚠️ Sentinel unreachable (non-critical)')
-            "
+            STATE_PAYLOAD=$(jq -c '{
+              lastTickAt: .meta.updated_at_iso,
+              deadline: .timer.deadline_iso,
+              stage: .escalation.state,
+              stageEnteredAt: (.escalation.state_entered_at_iso // ""),
+              renewedThisTick: (.renewal.renewed_this_tick // false),
+              lastRenewalAt: (.renewal.last_renewal_iso // ""),
+              stateChanged: true,
+              version: (now | floor)
+            }' state/current.json)
+            RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SENTINEL_URL}/state" \
+              -H "Authorization: Bearer ${SENTINEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$STATE_PAYLOAD" \
+              2>/dev/null || echo "000")
+            if [ "$RESP" = "200" ]; then
+              echo "✅ Sentinel notified"
+            else
+              echo "⚠️ Sentinel unreachable (HTTP ${RESP}, non-critical)"
+            fi
           else
             echo "ℹ️ Sentinel not configured — skipping"
           fi

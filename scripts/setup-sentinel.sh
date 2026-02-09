@@ -9,7 +9,7 @@
 #   4. Creates a KV namespace (or reuses an existing one)
 #   5. Patches wrangler.toml with the real KV namespace ID
 #   6. Generates a secure auth token
-#   7. Sets Worker secrets (AUTH_TOKEN, GITHUB_TOKEN)
+#   7. Sets Worker secrets (SENTINEL_TOKEN, GITHUB_TOKEN)
 #   8. Deploys the Worker
 #   9. Writes SENTINEL_URL and SENTINEL_TOKEN to your .env
 #  10. Verifies the /health endpoint
@@ -323,9 +323,9 @@ fi
 echo ""
 echo -e "${BOLD}Setting Worker secrets…${NC}"
 
-echo "$SENTINEL_TOKEN" | wrangler secret put AUTH_TOKEN --name continuity-sentinel 2>/dev/null && \
-    echo -e "  ${GREEN}✓ AUTH_TOKEN set${NC}" || \
-    echo -e "  ${YELLOW}⚠ AUTH_TOKEN may already be set (non-fatal)${NC}"
+echo "$SENTINEL_TOKEN" | wrangler secret put SENTINEL_TOKEN --name continuity-sentinel 2>/dev/null && \
+    echo -e "  ${GREEN}✓ SENTINEL_TOKEN set${NC}" || \
+    echo -e "  ${YELLOW}⚠ SENTINEL_TOKEN may already be set (non-fatal)${NC}"
 
 echo "$DISPATCH_TOKEN" | wrangler secret put GITHUB_TOKEN --name continuity-sentinel 2>/dev/null && \
     echo -e "  ${GREEN}✓ GITHUB_TOKEN set${NC}" || \
