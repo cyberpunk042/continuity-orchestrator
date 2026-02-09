@@ -183,14 +183,45 @@
                         <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.4;">📤</div>
                         <p style="font-size: 0.95rem; margin-bottom: 0.5rem;">Drop a file here, or click to upload</p>
                         <p style="font-size: 0.78rem; color: var(--text-dim);">
-                            Images, PDFs, video, audio — max 10 MB
+                            Images, PDFs, video, audio — up to 1 GB
                         </p>
                         <input type="file" id="media-file-input" style="display: none;"
-                            accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z"
+                            accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z,.mkv,.webm,.mov,.avi"
                             onchange="mediaFileSelected(event)">
                         <button class="btn" onclick="document.getElementById('media-file-input').click()"
                             style="margin-top: 1rem; padding: 0.5rem 1.5rem;">
                             📁 Choose File
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-stage progress (hidden until upload starts) -->
+                <div id="media-upload-progress" style="display: none; width: 100%; padding: 1.5rem;">
+                    <div id="media-progress-stage-label" style="font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">Uploading...</div>
+                    <div style="position: relative; height: 6px; background: var(--surface-alt, #2a2a3a); border-radius: 3px; overflow: hidden;">
+                        <div id="media-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #60a5fa); border-radius: 3px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 0.4rem;">
+                        <span id="media-progress-detail" style="font-size: 0.75rem; color: var(--text-dim);">0%</span>
+                        <span id="media-progress-eta" style="font-size: 0.75rem; color: var(--text-dim);"></span>
+                    </div>
+                    <!-- Stage indicators -->
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+                        <div id="media-stage-upload" class="media-stage-indicator active" style="flex: 1; text-align: center; font-size: 0.72rem; padding: 0.3rem; border-radius: 4px; background: var(--surface-alt, #2a2a3a);">
+                            📤 Upload
+                        </div>
+                        <div id="media-stage-optimize" class="media-stage-indicator" style="flex: 1; text-align: center; font-size: 0.72rem; padding: 0.3rem; border-radius: 4px; background: var(--surface-alt, #2a2a3a); opacity: 0.4;">
+                            ⚙️ Optimize
+                        </div>
+                        <div id="media-stage-release" class="media-stage-indicator" style="flex: 1; text-align: center; font-size: 0.72rem; padding: 0.3rem; border-radius: 4px; background: var(--surface-alt, #2a2a3a); opacity: 0.4;">
+                            ☁️ Release
+                        </div>
+                    </div>
+                    <!-- Cancel button -->
+                    <div style="text-align: center; margin-top: 0.75rem;">
+                        <button id="media-cancel-btn" class="btn" onclick="mediaCancelUploadInProgress()"
+                            style="padding: 0.35rem 1rem; font-size: 0.78rem; opacity: 0.7;">
+                            ✕ Cancel
                         </button>
                     </div>
                 </div>
@@ -215,6 +246,14 @@
                         <input class="form-input" id="media-upload-caption" type="text" placeholder="Describe this media"
                             style="padding: 0.45rem;">
                     </div>
+                </div>
+                <!-- Encryption toggle -->
+                <div style="margin-top: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+                        <input type="checkbox" id="media-upload-encrypt" style="accent-color: var(--accent);">
+                        🔒 Encrypt file at rest
+                    </label>
+                    <span style="font-size: 0.72rem; color: var(--text-dim);">(requires CONTENT_ENCRYPTION_KEY)</span>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
                     <div id="media-upload-file-info" style="font-size: 0.82rem; color: var(--text-dim);"></div>
@@ -275,6 +314,10 @@
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
                         <div id="media-detail-refs" translate="no" style="font-size: 0.78rem; color: var(--text-dim);"></div>
                         <div style="display: flex; gap: 0.5rem;">
+                            <a class="btn" id="media-download-btn" href="#" download
+                                style="padding: 0.4rem 0.8rem; font-size: 0.82rem; text-decoration: none; display: none;">
+                                ⬇️ Download
+                            </a>
                             <button class="btn" id="media-toggle-encrypt-btn" onclick="mediaToggleEncryption()"
                                 style="padding: 0.4rem 0.8rem; font-size: 0.82rem;">
                                 🔒 Encrypt

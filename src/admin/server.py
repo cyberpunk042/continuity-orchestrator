@@ -54,8 +54,8 @@ def create_app() -> Flask:
     # Disable reloader warning
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-    # Max upload size: 50 MB (Flask rejects larger requests with 413)
-    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+    # Max upload size: 1 GB (large videos can be 500+ MB raw — ffmpeg compresses after)
+    app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024
 
     # ── Register Blueprints ───────────────────────────────────────
     app.register_blueprint(core_bp)                                     # / + /api/*
@@ -82,6 +82,20 @@ def create_app() -> Flask:
             "error": f"File too large (max {max_mb:.0f} MB)",
         }), 413
 
+    @app.errorhandler(500)
+    def internal_server_error(e):
+        """Catch-all: return JSON for any unhandled 500 so clients never see raw HTML."""
+        import traceback
+        from flask import jsonify as _jsonify, request
+        tb = traceback.format_exc()
+        logger.error(
+            f"Unhandled 500 on {request.method} {request.path}: {e}\n{tb}"
+        )
+        return _jsonify({
+            "success": False,
+            "error": f"Internal server error: {str(e)}",
+        }), 500
+
     # ── Request Logging ───────────────────────────────────────────
 
     @app.before_request
@@ -106,7 +120,16 @@ def create_app() -> Flask:
 
         # Only log API calls (not static files)
         if request.path.startswith('/api/'):
-            logger.info(
+            # Demote frequent polling endpoints to DEBUG to reduce noise
+            poll_endpoints = (
+                '/api/status', '/api/vault/status', '/api/git/status',
+                '/release-status',     # substring match for media release polling
+                '/optimize-status',    # substring match for optimize polling
+            )
+            is_poll = any(request.path.endswith(ep) or ep in request.path
+                         for ep in poll_endpoints)
+            log_fn = logger.debug if is_poll else logger.info
+            log_fn(
                 f"{request.method} {request.path} → {response.status_code} ({duration_ms}ms)"
             )
         return response
@@ -189,13 +212,36 @@ def run_server(
         import time
         time.sleep(0.5)  # Give it time to release the port
 
+    # ── Configure logging ──────────────────────────────────────
+    # This ensures ALL src.* loggers (routes, media_optimize, crypto, etc.)
+    # output to the console, not just Flask's internal logger.
+    log_level = logging.DEBUG if debug else logging.INFO
+    log_format = (
+        "%(asctime)s %(levelname)-5s [%(name)s:%(lineno)d] %(message)s"
+        if debug
+        else "%(asctime)s %(levelname)-5s [%(name)s] %(message)s"
+    )
+    logging.basicConfig(
+        level=log_level,
+        format=log_format,
+        datefmt="%H:%M:%S",
+        force=True,  # override any existing config
+    )
+    # Always suppress werkzeug — we have our own after_request logger
+    # that shows the same info but with duration. No need for duplicate lines.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+    if debug:
+        print(f"  🐛 Debug mode ON — log level: DEBUG")
+
     app = create_app()
 
     url = f"http://{host}:{port}"
+    debug_tag = " [DEBUG]" if debug else ""
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║              CONTINUITY ORCHESTRATOR ADMIN                   ║
+║              CONTINUITY ORCHESTRATOR ADMIN{debug_tag:<20} ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
 ║  Local admin server running at:                              ║
@@ -248,7 +294,10 @@ def run_server(
     signal.signal(signal.SIGINT, _shutdown_signal)
 
     # Run the server
-    app.run(host=host, port=port, debug=debug)
+    # Disable reloader in debug mode — it forks the process,
+    # which fails with "tcgetpgrp failed: Not a tty" in some terminals.
+    # Debug logging & interactive error pages still work without it.
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
 
 
 if __name__ == "__main__":

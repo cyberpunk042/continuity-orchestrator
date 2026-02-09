@@ -50,7 +50,7 @@ show_menu() {
     echo -e "  ${BLUE}0)${NC} setup           Run setup wizard (reconfigure)"
     echo -e "  ${BLUE}s)${NC} secrets         Push all secrets to GitHub repo"
     echo ""
-    echo -e "  ${CYAN}w)${NC}  web            Open web admin panel (browser)"
+    echo -e "  ${CYAN}w)${NC}  web            Open web admin panel (--debug for verbose logs)"
     echo -e "  ${CYAN}c)${NC}  config-status  Show comprehensive status"
     echo ""
     echo -e "  ${RED}!)${NC}  trigger-release Emergency disclosure trigger"
@@ -157,11 +157,15 @@ run_setup() {
 }
 
 run_admin() {
+    local extra_args="${@}"
     echo -e "\n${BOLD}=== Web Admin Panel ===${NC}\n"
     echo -e "${CYAN}Opening browser to local admin panel...${NC}"
     echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
+    if [[ "$extra_args" == *"--debug"* ]]; then
+        echo -e "${RED}Debug mode enabled — verbose logging active${NC}"
+    fi
     echo ""
-    python -m src.admin
+    python -m src.admin $extra_args
 }
 
 run_config_status() {
@@ -359,7 +363,7 @@ main() {
             trigger|trigger-release) run_trigger_release ;;
             setup|wizard) run_setup ;;
             secrets|push-secrets) run_push_secrets ;;
-            web|admin) run_admin ;;
+            web|admin) shift; run_admin "$@" ;;
             config-status|cs) run_config_status ;;
             help) show_help ;;
             *) 

@@ -29,8 +29,8 @@ media_bp = Blueprint("media", __name__)
 
 logger = logging.getLogger(__name__)
 
-# Maximum upload size: 50 MB
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# Maximum upload size: 1 GB (raw video can be 500+ MB; ffmpeg compresses after)
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 # MIME type prefix → media ID prefix mapping
 # Checked in order: exact matches first, then prefix (startswith) matches.
@@ -91,47 +91,200 @@ def _id_prefix_for_mime(mime_type: str) -> str:
 # Release tag used for large media file backup
 MEDIA_RELEASE_TAG = "media-vault"
 
+# In-memory release upload status tracking
+# { media_id: { "status": "pending"|"uploading"|"done"|"failed"|"cancelled", "message": str } }
+_release_upload_status = {}
+# Active subprocess references for cancellation
+_release_active_procs = {}
+
 
 def _upload_to_release_bg(media_id: str, enc_path: Path) -> None:
     """Upload a large .enc file to a GitHub Release in the background.
 
     Uses the `gh` CLI to attach the file as a release asset to the
     'media-vault' release. Creates the release if it doesn't exist.
-    Runs as a background subprocess so it doesn't block the API response.
+    Runs as a background thread so progress can be tracked and cancelled.
     """
     import subprocess
     import shutil
+    import threading
+    import time
 
     if not shutil.which("gh"):
         logger.warning("[media-release] gh CLI not found — skipping release upload")
+        _release_upload_status[media_id] = {
+            "status": "failed", "message": "gh CLI not installed"
+        }
         return
 
     project_root = current_app.config["PROJECT_ROOT"]
+    size_mb = enc_path.stat().st_size / (1024 * 1024) if enc_path.exists() else 0
 
-    # Shell script: create release if missing, then upload asset
-    # --clobber overwrites if the asset already exists (re-upload)
-    script = (
-        f'gh release view {MEDIA_RELEASE_TAG} > /dev/null 2>&1 || '
-        f'gh release create {MEDIA_RELEASE_TAG} '
-        f'--title "Media Vault" '
-        f'--notes "Encrypted media files (large). Auto-managed by admin panel." '
-        f'--latest=false; '
-        f'gh release upload {MEDIA_RELEASE_TAG} '
-        f'"{enc_path}" --clobber '
-        f'&& echo "[media-release] Uploaded {media_id}" '
-        f'|| echo "[media-release] Failed to upload {media_id}"'
-    )
+    _release_upload_status[media_id] = {
+        "status": "pending",
+        "message": f"Queued ({size_mb:.0f} MB)",
+        "started_at": time.time(),
+        "size_mb": size_mb,
+    }
+
+    def _do_upload():
+        try:
+            # Check if cancelled before starting
+            if _release_upload_status.get(media_id, {}).get("status") == "cancelled":
+                return
+
+            _release_upload_status[media_id]["status"] = "uploading"
+            _release_upload_status[media_id]["message"] = "Ensuring release exists..."
+
+            # Step 1: Ensure release exists
+            check = subprocess.run(
+                ["gh", "release", "view", MEDIA_RELEASE_TAG],
+                cwd=str(project_root),
+                capture_output=True, text=True, timeout=30,
+            )
+            if _release_upload_status.get(media_id, {}).get("status") == "cancelled":
+                return
+
+            if check.returncode != 0:
+                _release_upload_status[media_id]["message"] = "Creating release..."
+                create = subprocess.run(
+                    ["gh", "release", "create", MEDIA_RELEASE_TAG,
+                     "--title", "Media Vault",
+                     "--notes", "Encrypted media files (large). Auto-managed by admin panel.",
+                     "--latest=false"],
+                    cwd=str(project_root),
+                    capture_output=True, text=True, timeout=60,
+                )
+                if create.returncode != 0:
+                    raise RuntimeError(f"Failed to create release: {create.stderr[:200]}")
+
+            if _release_upload_status.get(media_id, {}).get("status") == "cancelled":
+                return
+
+            # Step 2: Upload asset (use Popen so we can kill it on cancel)
+            _release_upload_status[media_id]["message"] = f"Uploading {size_mb:.0f} MB..."
+            logger.info(f"[media-release] Uploading {media_id} ({size_mb:.0f} MB)...")
+
+            proc = subprocess.Popen(
+                ["gh", "release", "upload", MEDIA_RELEASE_TAG,
+                 str(enc_path), "--clobber"],
+                cwd=str(project_root),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            _release_active_procs[media_id] = proc
+
+            # Wait for completion
+            stdout, stderr = proc.communicate(timeout=3600)
+
+            # Clean up proc reference
+            _release_active_procs.pop(media_id, None)
+
+            # Check if we were cancelled while waiting
+            if _release_upload_status.get(media_id, {}).get("status") == "cancelled":
+                return
+
+            if proc.returncode == 0:
+                elapsed = time.time() - _release_upload_status[media_id].get("started_at", time.time())
+                _release_upload_status[media_id] = {
+                    "status": "done",
+                    "message": f"Uploaded in {elapsed:.0f}s",
+                }
+                logger.info(
+                    f"[media-release] ✅ {media_id} uploaded ({size_mb:.0f} MB, {elapsed:.0f}s)"
+                )
+            else:
+                err = stderr.decode(errors="replace")[:300] if stderr else "unknown error"
+                _release_upload_status[media_id] = {
+                    "status": "failed",
+                    "message": f"gh upload failed: {err}",
+                }
+                logger.warning(f"[media-release] ❌ {media_id} failed: {err}")
+
+        except subprocess.TimeoutExpired:
+            _release_active_procs.pop(media_id, None)
+            # Kill the process on timeout
+            if proc and proc.poll() is None:
+                proc.kill()
+            _release_upload_status[media_id] = {
+                "status": "failed",
+                "message": "Upload timed out (>1 hour)",
+            }
+            logger.warning(f"[media-release] ❌ {media_id} timed out")
+
+        except Exception as e:
+            _release_active_procs.pop(media_id, None)
+            _release_upload_status[media_id] = {
+                "status": "failed",
+                "message": str(e),
+            }
+            logger.error(f"[media-release] ❌ {media_id} error: {e}", exc_info=True)
 
     logger.info(f"[media-release] Queueing background upload: {media_id}")
-    try:
-        subprocess.Popen(
-            ["bash", "-c", script],
-            cwd=str(project_root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        logger.warning(f"[media-release] Failed to start upload: {e}")
+    thread = threading.Thread(target=_do_upload, name=f"release-{media_id}", daemon=True)
+    thread.start()
+
+
+@media_bp.route("/<media_id>/release-status")
+def api_release_status(media_id):
+    """Poll the status of a background release upload."""
+    status = _release_upload_status.get(media_id)
+    if not status:
+        return jsonify({"status": "unknown", "message": "No upload tracked"}), 404
+    return jsonify(status)
+
+
+@media_bp.route("/cancel-optimize", methods=["POST"])
+def api_cancel_optimize():
+    """Kill the active ffmpeg optimization process."""
+    from ..content.media_optimize import cancel_active_optimization
+    killed = cancel_active_optimization()
+    if killed:
+        logger.info("Optimization cancelled by user")
+        return jsonify({"success": True, "message": "ffmpeg process killed"})
+    return jsonify({"success": True, "message": "No active optimization"})
+
+
+@media_bp.route("/optimize-status")
+def api_optimize_status():
+    """Poll real-time ffmpeg encoding progress."""
+    from ..content.media_optimize import get_optimization_status
+    return jsonify(get_optimization_status())
+
+
+@media_bp.route("/extend-optimize", methods=["POST"])
+def api_extend_optimize():
+    """Extend the optimization deadline by 5 minutes."""
+    from ..content.media_optimize import extend_optimization
+    extra = request.json.get("extra_seconds", 300) if request.is_json else 300
+    result = extend_optimization(int(extra))
+    if result.get("success"):
+        logger.info(f"Optimization deadline extended: {result['message']}")
+    return jsonify(result)
+
+@media_bp.route("/<media_id>/release-cancel", methods=["POST"])
+def api_release_cancel(media_id):
+    """Cancel a running release upload."""
+    status = _release_upload_status.get(media_id)
+    if not status:
+        return jsonify({"success": False, "message": "No upload tracked"}), 404
+
+    if status.get("status") in ("done", "failed", "cancelled"):
+        return jsonify({"success": True, "message": f"Already {status['status']}"})
+
+    # Mark as cancelled
+    _release_upload_status[media_id] = {
+        "status": "cancelled",
+        "message": "Cancelled by user",
+    }
+
+    # Kill active subprocess if running
+    proc = _release_active_procs.pop(media_id, None)
+    if proc and proc.poll() is None:
+        proc.kill()
+        logger.info(f"[media-release] Killed upload process for {media_id}")
+
+    logger.info(f"[media-release] ⚠️ {media_id} cancelled by user")
+    return jsonify({"success": True, "message": "Upload cancelled"})
 
 
 def _restore_large_media(manifest) -> dict:
@@ -323,7 +476,7 @@ def api_reoptimize():
 
             # Run optimizer
             opt_data, opt_mime, opt_ext, was_optimized = optimize_media(
-                plaintext, entry.mime_type
+                plaintext, entry.mime_type, entry.original_name
             )
 
             if not was_optimized:
@@ -418,123 +571,170 @@ def api_upload_media():
         caption: Optional caption text
         article_slug: Optional article to reference
     """
-    # ── Validate request ──
+    upload_stage = "validate"  # Track which stage we're in for error reporting
+    original_name = "unknown"
 
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+    try:
+        # ── Validate request ──
 
-    file = request.files["file"]
-    if not file.filename:
-        return jsonify({"error": "Empty filename"}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
 
-    # Read file data
-    file_data = file.read()
+        file = request.files["file"]
+        if not file.filename:
+            return jsonify({"error": "Empty filename"}), 400
 
-    if not file_data:
-        return jsonify({"error": "Empty file"}), 400
+        # Read file data
+        file_data = file.read()
 
-    if len(file_data) > MAX_UPLOAD_BYTES:
-        size_mb = len(file_data) / (1024 * 1024)
-        max_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+        if not file_data:
+            return jsonify({"error": "Empty file"}), 400
+
+        if len(file_data) > MAX_UPLOAD_BYTES:
+            size_mb = len(file_data) / (1024 * 1024)
+            max_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+            return jsonify({
+                "error": f"File too large: {size_mb:.1f} MB (max {max_mb:.0f} MB)"
+            }), 413
+
+        # ── Determine metadata ──
+
+        original_name = file.filename
+        mime_type = (
+            file.content_type
+            or mimetypes.guess_type(original_name)[0]
+            or "application/octet-stream"
+        )
+
+        # Form fields
+        min_stage = request.form.get("min_stage", "FULL").upper()
+        caption = request.form.get("caption", "")
+        article_slug = request.form.get("article_slug", "")
+        encrypt_requested = request.form.get("encrypt", "0") in ("1", "true", "yes")
+
+        # Validate min_stage
+        from ..content.media import STAGE_ORDER
+        if min_stage not in STAGE_ORDER:
+            valid = ", ".join(STAGE_ORDER.keys())
+            return jsonify({
+                "error": f"Invalid min_stage '{min_stage}'. Valid: {valid}"
+            }), 400
+
+        # ── Optimize media (images, video, audio) ──
+        upload_stage = "optimize"
+
+        from ..content.media_optimize import optimize_media, classify_storage
+
+        original_size = len(file_data)
+        logger.info(
+            f"Starting optimization: {original_name} "
+            f"({original_size:,} bytes, {mime_type})"
+        )
+        store_data, store_mime, store_ext, was_optimized = optimize_media(
+            file_data, mime_type, original_name
+        )
+        logger.info(
+            f"Optimization complete: {original_size:,} → {len(store_data):,} bytes "
+            f"(optimized={was_optimized})"
+        )
+
+        # Update original_name extension if format changed
+        if was_optimized and store_ext:
+            stem = Path(original_name).stem
+            original_name = f"{stem}{store_ext}"
+
+        sha256 = hashlib.sha256(store_data).hexdigest()
+
+        # ── Encrypt if requested ──
+
+        upload_stage = "encrypt"
+        is_encrypted = False
+        write_data = store_data
+        if encrypt_requested:
+            from ..content.crypto import encrypt_file, get_encryption_key
+            passphrase = get_encryption_key()
+            if not passphrase:
+                return jsonify({
+                    "error": "Encryption requested but CONTENT_ENCRYPTION_KEY is not set"
+                }), 400
+            write_data = encrypt_file(store_data, passphrase)
+            is_encrypted = True
+            logger.info(f"Encrypting media: {len(store_data):,} → {len(write_data):,} bytes")
+
+        # ── Generate ID and classify storage ──
+
+        upload_stage = "store"
+        storage_tier = classify_storage(len(write_data))
+
+        manifest = _load_manifest()
+        id_prefix = _id_prefix_for_mime(store_mime)
+        media_id = manifest.next_id(id_prefix)
+
+        # ── Update manifest (before write so enc_path resolves correctly) ──
+
+        from ..content.media import MediaEntry
+        entry = MediaEntry(
+            id=media_id,
+            original_name=original_name,
+            mime_type=store_mime,
+            size_bytes=len(write_data),
+            sha256=sha256,
+            encrypted=is_encrypted,
+            min_stage=min_stage,
+            referenced_by=[article_slug] if article_slug else [],
+            caption=caption,
+            storage=storage_tier,
+        )
+        manifest.add_entry(entry)
+
+        # Write (possibly optimized + encrypted) file to disk
+        enc_path = manifest.enc_path(media_id)
+        enc_path.parent.mkdir(parents=True, exist_ok=True)
+        enc_path.write_bytes(write_data)
+        manifest.save()
+
+        opt_info = ""
+        if was_optimized:
+            pct = len(store_data) / original_size * 100
+            opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
+        enc_info = ", encrypted" if is_encrypted else ""
+        logger.info(
+            f"Media uploaded: {media_id} ({original_name}, "
+            f"{len(write_data):,} bytes, stage={min_stage}, "
+            f"storage={storage_tier}{opt_info}{enc_info})"
+        )
+
+        # Backup large files to GitHub Releases
+        if storage_tier == "large":
+            _upload_to_release_bg(media_id, enc_path)
+
         return jsonify({
-            "error": f"File too large: {size_mb:.1f} MB (max {max_mb:.0f} MB)"
-        }), 413
+            "success": True,
+            "id": media_id,
+            "media_uri": f"media://{media_id}",
+            "original_name": original_name,
+            "mime_type": store_mime,
+            "size_bytes": len(write_data),
+            "original_size_bytes": original_size,
+            "optimized": was_optimized,
+            "encrypted": is_encrypted,
+            "min_stage": min_stage,
+            "storage": storage_tier,
+        }), 201
 
-    # ── Determine metadata ──
-
-    original_name = file.filename
-    mime_type = (
-        file.content_type
-        or mimetypes.guess_type(original_name)[0]
-        or "application/octet-stream"
-    )
-
-    # Form fields
-    min_stage = request.form.get("min_stage", "FULL").upper()
-    caption = request.form.get("caption", "")
-    article_slug = request.form.get("article_slug", "")
-
-    # Validate min_stage
-    from ..content.media import STAGE_ORDER
-    if min_stage not in STAGE_ORDER:
-        valid = ", ".join(STAGE_ORDER.keys())
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(
+            f"Upload failed at stage '{upload_stage}' for '{original_name}': "
+            f"{e}\n{tb}"
+        )
         return jsonify({
-            "error": f"Invalid min_stage '{min_stage}'. Valid: {valid}"
-        }), 400
-
-    # ── Optimize media (images, video, audio) ──
-
-    from ..content.media_optimize import optimize_media, classify_storage
-
-    original_size = len(file_data)
-    store_data, store_mime, store_ext, was_optimized = optimize_media(
-        file_data, mime_type
-    )
-
-    # Update original_name extension if format changed
-    if was_optimized and store_ext:
-        stem = Path(original_name).stem
-        original_name = f"{stem}{store_ext}"
-
-    sha256 = hashlib.sha256(store_data).hexdigest()
-
-    # ── Generate ID and classify storage ──
-
-    storage_tier = classify_storage(len(store_data))
-
-    manifest = _load_manifest()
-    id_prefix = _id_prefix_for_mime(store_mime)
-    media_id = manifest.next_id(id_prefix)
-
-    # ── Update manifest (before write so enc_path resolves correctly) ──
-
-    from ..content.media import MediaEntry
-    entry = MediaEntry(
-        id=media_id,
-        original_name=original_name,
-        mime_type=store_mime,
-        size_bytes=len(store_data),
-        sha256=sha256,
-        encrypted=False,
-        min_stage=min_stage,
-        referenced_by=[article_slug] if article_slug else [],
-        caption=caption,
-        storage=storage_tier,
-    )
-    manifest.add_entry(entry)
-
-    # Write (possibly optimized) file to disk
-    enc_path = manifest.enc_path(media_id)
-    enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(store_data)
-    manifest.save()
-
-    opt_info = ""
-    if was_optimized:
-        pct = len(store_data) / original_size * 100
-        opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
-    logger.info(
-        f"Media uploaded: {media_id} ({original_name}, "
-        f"{len(store_data):,} bytes, stage={min_stage}, "
-        f"storage={storage_tier}{opt_info})"
-    )
-
-    # Backup large files to GitHub Releases
-    if storage_tier == "large":
-        _upload_to_release_bg(media_id, enc_path)
-
-    return jsonify({
-        "success": True,
-        "id": media_id,
-        "media_uri": f"media://{media_id}",
-        "original_name": original_name,
-        "mime_type": store_mime,
-        "size_bytes": len(store_data),
-        "original_size_bytes": original_size,
-        "optimized": was_optimized,
-        "min_stage": min_stage,
-        "storage": storage_tier,
-    }), 201
+            "success": False,
+            "error": f"Upload failed during {upload_stage}: {str(e)}",
+            "stage": upload_stage,
+            "file": original_name,
+        }), 500
 
 
 @media_bp.route("/<media_id>/preview", methods=["GET"])
@@ -544,9 +744,11 @@ def api_preview_media(media_id: str):
 
     Returns the file binary data with the correct Content-Type header.
     For encrypted media, decrypts first. For unencrypted, serves directly.
+    Transparently decompresses gzip-stored files.
     This endpoint is for admin preview only and should not be publicly exposed.
     """
     from ..content.crypto import decrypt_file, is_encrypted_file
+    from ..content.media_optimize import decompress_if_gzipped
 
     manifest = _load_manifest()
     entry = manifest.get(media_id)
@@ -560,10 +762,11 @@ def api_preview_media(media_id: str):
 
     raw_data = file_path.read_bytes()
 
-    # If the file is unencrypted, serve directly
+    # If the file is unencrypted, serve directly (decompress if gzipped)
     if not entry.encrypted or not is_encrypted_file(raw_data):
+        serve_data = decompress_if_gzipped(raw_data)
         return Response(
-            raw_data,
+            serve_data,
             mimetype=entry.mime_type,
             headers={
                 "Content-Disposition": f'inline; filename="{entry.original_name}"',
@@ -582,8 +785,11 @@ def api_preview_media(media_id: str):
         logger.error(f"Failed to decrypt media '{media_id}': {e}")
         return jsonify({"error": f"Decryption failed: {e}"}), 500
 
+    # Decompress if the decrypted content is gzipped
+    plaintext = decompress_if_gzipped(result["plaintext"])
+
     return Response(
-        result["plaintext"],
+        plaintext,
         mimetype=result["mime_type"],
         headers={
             "Content-Disposition": f'inline; filename="{result["filename"]}"',
@@ -594,29 +800,68 @@ def api_preview_media(media_id: str):
 
 @media_bp.route("/<media_id>", methods=["DELETE"])
 def api_delete_media(media_id: str):
-    """Delete a media file and its manifest entry."""
+    """Delete a media file and its manifest entry.
+
+    Blocks if the media is referenced by articles unless ?force=true.
+    Also removes the GitHub Release asset if storage == large.
+    """
     manifest = _load_manifest()
     entry = manifest.get(media_id)
 
     if not entry:
         return jsonify({"error": f"Media '{media_id}' not found"}), 404
 
-    # Delete the file
+    # Check references (block unless forced)
+    refs = entry.referenced_by or []
+    force = request.args.get("force", "false").lower() in ("true", "1", "yes")
+    if refs and not force:
+        return jsonify({
+            "error": f"Media is referenced by: {', '.join(refs)}. "
+                     f"Remove references first, or add ?force=true to delete anyway.",
+            "referenced_by": refs,
+            "requires_force": True,
+        }), 409
+
+    # Delete the local file
     file_path = manifest.enc_path(media_id)
     if file_path.exists():
         file_path.unlink()
         logger.debug(f"Deleted media file: {file_path}")
 
+    # Delete GitHub Release asset if large tier
+    storage = entry.storage or "git"
+    if storage == "large":
+        import subprocess
+        import shutil as _shutil
+        if _shutil.which("gh"):
+            asset_name = f"{media_id}.enc"
+            project_root = current_app.config["PROJECT_ROOT"]
+            try:
+                subprocess.Popen(
+                    ["gh", "release", "delete-asset", MEDIA_RELEASE_TAG,
+                     asset_name, "--yes"],
+                    cwd=str(project_root),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info(f"[media-release] Queued asset deletion: {asset_name}")
+            except Exception as e:
+                logger.warning(f"[media-release] Could not delete asset: {e}")
+
     # Remove from manifest
     manifest.remove_entry(media_id)
     manifest.save()
 
-    logger.info(f"Media deleted: {media_id} ({entry.original_name})")
+    logger.info(
+        f"Media deleted: {media_id} ({entry.original_name})"
+        + (f" [was referenced by: {', '.join(refs)}]" if refs else "")
+    )
 
     return jsonify({
         "success": True,
         "id": media_id,
         "original_name": entry.original_name,
+        "had_references": refs,
     })
 
 
@@ -751,113 +996,124 @@ def api_editor_upload():
     """
     import base64
 
-    if "image" not in request.files:
-        return jsonify({"success": 0, "error": "No image provided"}), 400
+    try:
+        if "image" not in request.files:
+            return jsonify({"success": 0, "error": "No image provided"}), 400
 
-    file = request.files["image"]
-    if not file.filename:
-        return jsonify({"success": 0, "error": "Empty filename"}), 400
+        file = request.files["image"]
+        if not file.filename:
+            return jsonify({"success": 0, "error": "Empty filename"}), 400
 
-    file_data = file.read()
-    if not file_data:
-        return jsonify({"success": 0, "error": "Empty file"}), 400
+        file_data = file.read()
+        if not file_data:
+            return jsonify({"success": 0, "error": "Empty file"}), 400
 
-    if len(file_data) > MAX_UPLOAD_BYTES:
-        return jsonify({"success": 0, "error": "File too large (max 10 MB)"}), 413
+        if len(file_data) > MAX_UPLOAD_BYTES:
+            return jsonify({"success": 0, "error": "File too large (max 10 MB)"}), 413
 
-    original_name = file.filename
-    mime_type = (
-        file.content_type
-        or mimetypes.guess_type(original_name)[0]
-        or "application/octet-stream"
-    )
-
-    # ── Small file → inline as base64 data URI ──
-    if len(file_data) < INLINE_THRESHOLD_BYTES:
-        b64 = base64.b64encode(file_data).decode("ascii")
-        data_uri = f"data:{mime_type};base64,{b64}"
-
-        logger.info(
-            f"Editor upload (inline): {original_name} "
-            f"({len(file_data)} bytes, {mime_type})"
+        original_name = file.filename
+        mime_type = (
+            file.content_type
+            or mimetypes.guess_type(original_name)[0]
+            or "application/octet-stream"
         )
+
+        # ── Small file → inline as base64 data URI ──
+        if len(file_data) < INLINE_THRESHOLD_BYTES:
+            b64 = base64.b64encode(file_data).decode("ascii")
+            data_uri = f"data:{mime_type};base64,{b64}"
+
+            logger.info(
+                f"Editor upload (inline): {original_name} "
+                f"({len(file_data)} bytes, {mime_type})"
+            )
+
+            return jsonify({
+                "success": 1,
+                "file": {"url": data_uri},
+                "inline": True,
+                "size_bytes": len(file_data),
+            })
+
+        # ── Larger file → optimize if needed, store raw ──
+        from ..content.media_optimize import optimize_media, classify_storage
+
+        # Run universal optimization (images, video, audio)
+        original_size = len(file_data)
+        store_data, store_mime, store_ext, optimized = optimize_media(
+            file_data, mime_type, original_name
+        )
+
+        # Update original_name extension if format changed
+        if optimized and store_ext:
+            stem = Path(original_name).stem
+            original_name = f"{stem}{store_ext}"
+
+        # Determine storage tier based on (possibly optimized) size
+        storage_tier = classify_storage(len(store_data))
+
+        sha256 = hashlib.sha256(store_data).hexdigest()
+        manifest = _load_manifest()
+        id_prefix = _id_prefix_for_mime(store_mime)
+        media_id = manifest.next_id(id_prefix)
+
+        # Register in manifest FIRST (so enc_path resolves correctly)
+        from ..content.media import MediaEntry
+        entry = MediaEntry(
+            id=media_id,
+            original_name=original_name,
+            mime_type=store_mime,
+            size_bytes=len(store_data),
+            sha256=sha256,
+            encrypted=False,
+            min_stage=request.form.get("min_stage", "FULL").upper(),
+            caption="",
+            storage=storage_tier,
+        )
+        manifest.add_entry(entry)
+
+        # Write (possibly optimized) file to disk
+        enc_path = manifest.enc_path(media_id)
+        enc_path.parent.mkdir(parents=True, exist_ok=True)
+        enc_path.write_bytes(store_data)
+        manifest.save()
+
+        opt_info = ""
+        if optimized:
+            pct = len(store_data) / original_size * 100
+            opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
+        logger.info(
+            f"Editor upload ({storage_tier}): {media_id} ({original_name}, "
+            f"{len(store_data):,} bytes{opt_info})"
+        )
+
+        # If stored in large/, trigger GitHub Release upload in background
+        if storage_tier == "large":
+            _upload_to_release_bg(media_id, enc_path)
 
         return jsonify({
             "success": 1,
-            "file": {"url": data_uri},
-            "inline": True,
-            "size_bytes": len(file_data),
+            # Return preview URL for editor display; the JS save-hook
+            # rewrites it back to media:// for storage.
+            "file": {"url": f"/api/content/media/{media_id}/preview"},
+            "inline": False,
+            "media_id": media_id,
+            "media_uri": f"media://{media_id}",
+            "size_bytes": len(store_data),
+            "original_size_bytes": original_size,
+            "optimized": optimized,
+            "storage": storage_tier,
         })
 
-    # ── Larger file → optimize if needed, store raw ──
-    from ..content.media_optimize import optimize_media, classify_storage
-
-    # Run universal optimization (images, video, audio)
-    original_size = len(file_data)
-    store_data, store_mime, store_ext, optimized = optimize_media(
-        file_data, mime_type
-    )
-
-    # Update original_name extension if format changed
-    if optimized and store_ext:
-        stem = Path(original_name).stem
-        original_name = f"{stem}{store_ext}"
-
-    # Determine storage tier based on (possibly optimized) size
-    storage_tier = classify_storage(len(store_data))
-
-    sha256 = hashlib.sha256(store_data).hexdigest()
-    manifest = _load_manifest()
-    id_prefix = _id_prefix_for_mime(store_mime)
-    media_id = manifest.next_id(id_prefix)
-
-    # Register in manifest FIRST (so enc_path resolves correctly)
-    from ..content.media import MediaEntry
-    entry = MediaEntry(
-        id=media_id,
-        original_name=original_name,
-        mime_type=store_mime,
-        size_bytes=len(store_data),
-        sha256=sha256,
-        encrypted=False,
-        min_stage=request.form.get("min_stage", "FULL").upper(),
-        caption="",
-        storage=storage_tier,
-    )
-    manifest.add_entry(entry)
-
-    # Write (possibly optimized) file to disk
-    enc_path = manifest.enc_path(media_id)
-    enc_path.parent.mkdir(parents=True, exist_ok=True)
-    enc_path.write_bytes(store_data)
-    manifest.save()
-
-    opt_info = ""
-    if optimized:
-        pct = len(store_data) / original_size * 100
-        opt_info = f", optimized {original_size:,} → {len(store_data):,} ({pct:.0f}%)"
-    logger.info(
-        f"Editor upload ({storage_tier}): {media_id} ({original_name}, "
-        f"{len(store_data):,} bytes{opt_info})"
-    )
-
-    # If stored in large/, trigger GitHub Release upload in background
-    if storage_tier == "large":
-        _upload_to_release_bg(media_id, enc_path)
-
-    return jsonify({
-        "success": 1,
-        # Return preview URL for editor display; the JS save-hook
-        # rewrites it back to media:// for storage.
-        "file": {"url": f"/api/content/media/{media_id}/preview"},
-        "inline": False,
-        "media_id": media_id,
-        "media_uri": f"media://{media_id}",
-        "size_bytes": len(store_data),
-        "original_size_bytes": original_size,
-        "optimized": optimized,
-        "storage": storage_tier,
-    })
+    except Exception as e:
+        import traceback
+        logger.error(
+            f"Editor upload failed: {e}\n{traceback.format_exc()}"
+        )
+        return jsonify({
+            "success": 0,
+            "error": f"Upload failed: {str(e)}",
+        }), 500
 
 
 @media_bp.route("/editor-fetch-url", methods=["POST"])

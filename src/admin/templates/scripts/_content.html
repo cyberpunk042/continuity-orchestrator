@@ -411,28 +411,141 @@ toolConfig.image = {
     class: ImageTool,
     config: {
         uploader: {
-            async uploadByFile(file) {
-                const formData = new FormData();
-                formData.append('image', file);
-                const resp = await fetch('/api/content/media/editor-upload', {
-                    method: 'POST',
-                    body: formData,
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    if (data.inline) {
-                        contentLog(`🖼️ Image inlined (${formatMediaSize(data.size_bytes)})`);
-                    } else {
-                        const opt = data.optimized
-                            ? ` · optimized ${formatMediaSize(data.original_size_bytes)} → ${formatMediaSize(data.size_bytes)}`
-                            : '';
-                        const tier = data.storage === 'large' ? ' [release]' : '';
-                        contentLog(`🖼️ Image → vault: ${data.media_id} (${formatMediaSize(data.size_bytes)}${opt}${tier})`);
+            uploadByFile(file) {
+                return new Promise((resolve, reject) => {
+                    const formData = new FormData();
+                    formData.append('image', file);
+
+                    // Create floating progress toast
+                    let toast = document.getElementById('editor-upload-toast');
+                    if (!toast) {
+                        toast = document.createElement('div');
+                        toast.id = 'editor-upload-toast';
+                        toast.style.cssText = `
+                            position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+                            background: var(--surface, #1a1a2e); border: 1px solid var(--border, #333);
+                            border-radius: 8px; padding: 0.75rem 1rem; min-width: 280px;
+                            box-shadow: 0 4px 20px rgba(0,0,0,0.4); cursor: pointer;
+                            font-size: 0.82rem; color: var(--text, #e0e0e0);
+                        `;
+                        toast.title = 'Click to cancel';
+                        document.body.appendChild(toast);
                     }
-                } else {
-                    contentLog(`❌ Image upload failed: ${data.error}`, true);
-                }
-                return data;
+                    toast.style.display = 'block';
+                    toast.innerHTML = `
+                        <div style="margin-bottom: 0.4rem; font-weight: 500;">📤 Uploading ${file.name}...</div>
+                        <div style="height: 4px; background: var(--surface-alt, #2a2a3a); border-radius: 2px; overflow: hidden;">
+                            <div id="editor-upload-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #60a5fa); transition: width 0.2s;"></div>
+                        </div>
+                        <div id="editor-upload-detail" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.3rem;">0%</div>
+                    `;
+
+                    const xhr = new XMLHttpRequest();
+                    const startTime = Date.now();
+
+                    toast.onclick = () => {
+                        xhr.abort();
+                        toast.style.display = 'none';
+                        contentLog('⚠️ Editor image upload cancelled');
+                        reject(new Error('Upload cancelled'));
+                    };
+
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (!e.lengthComputable) return;
+                        const pct = Math.round((e.loaded / e.total) * 100);
+                        const bar = document.getElementById('editor-upload-bar');
+                        const detail = document.getElementById('editor-upload-detail');
+                        if (bar) bar.style.width = pct + '%';
+                        const elapsed = (Date.now() - startTime) / 1000;
+                        const speed = e.loaded / elapsed;
+                        const speedStr = speed > 1024*1024
+                            ? `${(speed/(1024*1024)).toFixed(1)} MB/s`
+                            : `${(speed/1024).toFixed(0)} KB/s`;
+                        if (detail) detail.textContent = `${pct}% · ${speedStr}`;
+                    });
+
+                    xhr.upload.addEventListener('loadend', () => {
+                        const bar = document.getElementById('editor-upload-bar');
+                        const detail = document.getElementById('editor-upload-detail');
+                        if (detail) detail.textContent = '⚙️ Optimizing...';
+                        // Interpolate optimization progress
+                        let optPct = 0;
+                        window._editorOptInterval = setInterval(() => {
+                            optPct = Math.min(90, optPct + 3);
+                            if (bar) bar.style.width = optPct + '%';
+                        }, 200);
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (window._editorOptInterval) clearInterval(window._editorOptInterval);
+                        const bar = document.getElementById('editor-upload-bar');
+                        if (bar) bar.style.width = '100%';
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    if (bar) bar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+                                    if (data.inline) {
+                                        contentLog(`🖼️ Image inlined (${formatMediaSize(data.size_bytes)})`);
+                                    } else {
+                                        const opt = data.optimized
+                                            ? ` · optimized ${formatMediaSize(data.original_size_bytes)} → ${formatMediaSize(data.size_bytes)}`
+                                            : '';
+                                        const tier = data.storage === 'large' ? ' [release]' : '';
+                                        contentLog(`🖼️ Image → vault: ${data.media_id} (${formatMediaSize(data.size_bytes)}${opt}${tier})`);
+                                    }
+                                    setTimeout(() => { toast.style.display = 'none'; }, 1500);
+                                    resolve(data);
+                                } else {
+                                    contentLog(`❌ Image upload failed: ${data.error}`, true);
+                                    toast.style.display = 'none';
+                                    reject(new Error(data.error));
+                                }
+                            } catch (e) {
+                                toast.style.display = 'none';
+                                contentLog('❌ Editor upload: invalid server response', true);
+                                reject(new Error('Invalid server response'));
+                            }
+                        } else {
+                            // Error response — try to parse structured JSON error
+                            let errMsg = `Server error (HTTP ${xhr.status})`;
+                            try {
+                                const errData = JSON.parse(xhr.responseText);
+                                errMsg = errData.error || errMsg;
+                            } catch (e) {
+                                if (xhr.responseText?.includes('Internal Server Error')) {
+                                    errMsg = `Server crashed (HTTP ${xhr.status}) — check logs`;
+                                }
+                            }
+                            // Show error in toast briefly
+                            const bar = document.getElementById('editor-upload-bar');
+                            if (bar) bar.style.background = 'var(--danger, #ef4444)';
+                            const detail = document.getElementById('editor-upload-detail');
+                            if (detail) detail.textContent = `❌ ${errMsg}`;
+                            contentLog(`❌ Editor upload: ${errMsg}`, true);
+                            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+                            reject(new Error(errMsg));
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        if (window._editorOptInterval) clearInterval(window._editorOptInterval);
+                        const bar = document.getElementById('editor-upload-bar');
+                        if (bar) bar.style.background = 'var(--danger, #ef4444)';
+                        toast.innerHTML += '<div style="color: var(--danger); margin-top: 0.3rem;">Network error</div>';
+                        contentLog('❌ Editor upload network error', true);
+                        setTimeout(() => { toast.style.display = 'none'; }, 3000);
+                        reject(new Error('Network error'));
+                    });
+
+                    xhr.addEventListener('abort', () => {
+                        if (window._editorOptInterval) clearInterval(window._editorOptInterval);
+                    });
+
+                    xhr.open('POST', '/api/content/media/editor-upload');
+                    xhr.timeout = 300000; // 5 min for images
+                    xhr.send(formData);
+                });
             },
             async uploadByUrl(url) {
                 const resp = await fetch('/api/content/media/editor-fetch-url', {

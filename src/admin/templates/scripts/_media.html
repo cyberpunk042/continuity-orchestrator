@@ -8,6 +8,39 @@ let mediaEntries = [];
 let mediaSelectedId = null;
 let mediaPendingFile = null;
 let contentCurrentMode = 'articles'; // 'articles' or 'media'
+let _mediaActiveXhr = null;  // reference to active upload XHR for cancel
+let _mediaReleasePollInterval = null;  // release upload status polling
+let _mediaReleaseMediaId = null;       // media ID of active release upload
+
+function mediaCancelUploadInProgress() {
+    if (_mediaActiveXhr) {
+        _mediaActiveXhr.abort();
+        _mediaActiveXhr = null;
+    }
+    if (window._mediaOptInterval) {
+        clearInterval(window._mediaOptInterval);
+        window._mediaOptInterval = null;
+    }
+    if (_mediaReleasePollInterval) {
+        clearInterval(_mediaReleasePollInterval);
+        _mediaReleasePollInterval = null;
+    }
+    // Kill backend ffmpeg process if actively encoding
+    fetch('/api/content/media/cancel-optimize', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => { if (d.message !== 'No active optimization') contentLog(`⚙️ ${d.message}`); })
+        .catch(() => {});
+    // Cancel the backend release upload process if running
+    if (_mediaReleaseMediaId) {
+        fetch(`/api/content/media/${_mediaReleaseMediaId}/release-cancel`, { method: 'POST' })
+            .then(r => r.json())
+            .then(d => contentLog(`⚠️ Release upload cancelled: ${d.message}`))
+            .catch(() => {});
+        _mediaReleaseMediaId = null;
+    }
+    contentLog('⚠️ Upload cancelled by user');
+    mediaUploadPrompt();
+}
 
 // ── Mode switching ─────────────────────────────────────
 
@@ -117,6 +150,11 @@ function renderMediaGallery() {
 // ── Select media item ──────────────────────────────────
 
 async function mediaSelectItem(mediaId) {
+    // Clean up any running release poll from a previous upload
+    if (_mediaReleasePollInterval) {
+        clearInterval(_mediaReleasePollInterval);
+        _mediaReleasePollInterval = null;
+    }
     mediaSelectedId = mediaId;
     renderMediaGallery();
 
@@ -182,14 +220,46 @@ async function mediaSelectItem(mediaId) {
     const isAudio = item.mime_type?.startsWith('audio/');
     const previewUrl = `/api/content/media/${mediaId}/preview`;
 
+    // Download button (always available)
+    const dlBtn = document.getElementById('media-download-btn');
+    if (dlBtn) {
+        dlBtn.href = previewUrl;
+        dlBtn.download = item.original_name || mediaId;
+        dlBtn.style.display = '';
+    }
+
     if (isImage) {
         previewEl.innerHTML = `<img src="${previewUrl}" alt="${item.original_name}"
             style="max-width: 100%; max-height: 350px; object-fit: contain; border-radius: 4px;"
             onerror="this.outerHTML='<div style=\\'text-align: center; color: var(--text-dim);\\'>🔒 Preview unavailable<br><span style=\\'font-size: 0.78rem;\\'>Encryption key may not be set</span></div>'">`;
     } else if (isVideo) {
-        previewEl.innerHTML = `<video controls style="max-width: 100%; max-height: 350px; border-radius: 4px;">
-            <source src="${previewUrl}" type="${item.mime_type}">
-        </video>`;
+        // Try browser auto-detection for ALL video types — don't set 'type' attribute.
+        // Chrome/Edge can decode H.264 inside MKV containers via codec sniffing.
+        // If the browser can't play it, the 'error' event fires and we show a download fallback.
+        const videoId = `media-video-${mediaId}`;
+        previewEl.innerHTML = `
+            <video id="${videoId}" controls style="max-width: 100%; max-height: 350px; border-radius: 4px;">
+                <source src="${previewUrl}">
+            </video>
+            <div id="${videoId}-fallback" style="display: none; text-align: center; padding: 1.5rem;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.5;">🎬</div>
+                <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                    Cannot play this format in browser. Download to play with VLC.
+                </p>
+                <a href="${previewUrl}" download="${item.original_name}"
+                   class="btn" style="padding: 0.4rem 1.2rem; font-size: 0.85rem;">
+                    ⬇️ Download (${formatMediaSize(item.size_bytes)})
+                </a>
+            </div>`;
+        // If browser can't decode, hide video and show download fallback
+        const videoEl = document.getElementById(videoId);
+        if (videoEl) {
+            videoEl.addEventListener('error', () => {
+                videoEl.style.display = 'none';
+                const fb = document.getElementById(`${videoId}-fallback`);
+                if (fb) fb.style.display = 'block';
+            }, true);  // capture phase to catch <source> errors
+        }
     } else if (isAudio) {
         previewEl.innerHTML = `
             <div style="text-align: center; width: 100%; padding: 2rem;">
@@ -221,10 +291,57 @@ function mediaUploadPrompt() {
 
     document.getElementById('media-panel-name').textContent = 'Upload media';
     document.getElementById('media-panel-badges').innerHTML = '';
-    document.getElementById('media-detail-view').style.display = 'none';
-    document.getElementById('media-upload-zone').style.display = 'flex';
-    document.getElementById('media-upload-options').style.display = 'none';
-    document.getElementById('media-file-input').value = '';
+    const detailView = document.getElementById('media-detail-view');
+    if (detailView) detailView.style.display = 'none';
+
+    const uploadZone = document.getElementById('media-upload-zone');
+    if (uploadZone) uploadZone.style.display = 'flex';
+
+    const uploadOpts = document.getElementById('media-upload-options');
+    if (uploadOpts) uploadOpts.style.display = 'none';
+
+    const progressEl = document.getElementById('media-upload-progress');
+    if (progressEl) progressEl.style.display = 'none';
+
+    const encryptCb = document.getElementById('media-upload-encrypt');
+    if (encryptCb) encryptCb.checked = false;
+
+    // Rebuild dropzone content (mediaFileSelected replaces innerHTML, destroying the file input)
+    const dropzone = document.getElementById('media-dropzone');
+    if (dropzone) {
+        dropzone.style.display = '';
+        dropzone.innerHTML = `
+            <div style="text-align: center;">
+                <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.4;">📤</div>
+                <p style="font-size: 0.95rem; margin-bottom: 0.5rem;">Drop a file here, or click to upload</p>
+                <p style="font-size: 0.78rem; color: var(--text-dim);">
+                    Images, PDFs, video, audio — up to 1 GB
+                </p>
+                <input type="file" id="media-file-input" style="display: none;"
+                    accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z,.mkv,.webm,.mov,.avi"
+                    onchange="mediaFileSelected(event)">
+                <button class="btn" onclick="document.getElementById('media-file-input').click()"
+                    style="margin-top: 1rem; padding: 0.5rem 1.5rem;">
+                    📁 Choose File
+                </button>
+            </div>`;
+    }
+
+    // Reset progress bar
+    const bar = document.getElementById('media-progress-bar');
+    if (bar) {
+        bar.style.width = '0%';
+        bar.style.background = 'linear-gradient(90deg, var(--accent), #60a5fa)';
+    }
+    // Reset stages
+    ['media-stage-upload', 'media-stage-optimize', 'media-stage-release'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.opacity = '0.4';
+            el.style.borderBottom = 'none';
+            el.style.color = '';
+        }
+    });
 }
 
 function mediaFileSelected(event) {
@@ -264,25 +381,374 @@ async function mediaDoUpload() {
     formData.append('file', mediaPendingFile);
     formData.append('min_stage', document.getElementById('media-upload-stage').value);
     formData.append('caption', document.getElementById('media-upload-caption').value);
+    formData.append('encrypt', document.getElementById('media-upload-encrypt').checked ? '1' : '0');
+
+    const fileSize = mediaPendingFile.size;
+    const isVideo = mediaPendingFile.type?.startsWith('video/');
+    const isAudio = mediaPendingFile.type?.startsWith('audio/');
+    const isImage = mediaPendingFile.type?.startsWith('image/');
+    const isPdf = mediaPendingFile.type === 'application/pdf';
+    const fileName = mediaPendingFile.name;
+    const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
+
+    // Show progress UI, hide dropzone and options (NOT the upload zone itself — progress bar is inside it)
+    document.getElementById('media-dropzone').style.display = 'none';
+    document.getElementById('media-upload-options').style.display = 'none';
+    const progressContainer = document.getElementById('media-upload-progress');
+    progressContainer.style.display = '';
+
+    const progressBar = document.getElementById('media-progress-bar');
+    const stageLabel = document.getElementById('media-progress-stage-label');
+    const progressDetail = document.getElementById('media-progress-detail');
+    const progressEta = document.getElementById('media-progress-eta');
+    const stageUpload = document.getElementById('media-stage-upload');
+    const stageOptimize = document.getElementById('media-stage-optimize');
+    const stageRelease = document.getElementById('media-stage-release');
+
+    function setProgress(pct, label, detail, eta) {
+        progressBar.style.width = pct + '%';
+        if (label) stageLabel.textContent = label;
+        if (detail) progressDetail.textContent = detail;
+        progressEta.textContent = eta || '';
+    }
+
+    function activateStage(stage) {
+        [stageUpload, stageOptimize, stageRelease].forEach(el => {
+            el.style.opacity = '0.4';
+            el.style.borderBottom = 'none';
+        });
+        stage.style.opacity = '1';
+        stage.style.borderBottom = '2px solid var(--accent)';
+    }
+
+    function completeStage(stage) {
+        stage.style.opacity = '1';
+        stage.style.borderBottom = '2px solid var(--accent)';
+        stage.style.color = 'var(--accent)';
+    }
+
+    // ── Stage 1: Upload (real progress via XHR) ────────────
+    activateStage(stageUpload);
+    setProgress(0, `📤 Uploading ${fileName}...`, '0%');
+
+    let uploadStartTime = Date.now();
 
     try {
-        const resp = await fetch('/api/content/media/upload', {
-            method: 'POST',
-            body: formData,
-        });
-        const data = await resp.json();
+        const response = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            _mediaActiveXhr = xhr;  // store for cancel
 
-        if (data.success) {
-            contentLog(`✅ Media uploaded: ${data.id} (${data.original_name}, ${formatMediaSize(data.size_bytes)})`);
+            xhr.upload.addEventListener('progress', (e) => {
+                if (!e.lengthComputable) return;
+                const pct = Math.round((e.loaded / e.total) * 100);
+                const elapsedSec = (Date.now() - uploadStartTime) / 1000;
+                const speed = e.loaded / elapsedSec; // bytes/sec
+                const remaining = (e.total - e.loaded) / speed;
+                const etaStr = remaining > 60
+                    ? `~${Math.ceil(remaining / 60)} min left`
+                    : remaining > 5
+                        ? `~${Math.ceil(remaining)}s left`
+                        : '';
+                const speedStr = speed > 1024 * 1024
+                    ? `${(speed / (1024*1024)).toFixed(1)} MB/s`
+                    : `${(speed / 1024).toFixed(0)} KB/s`;
+                setProgress(pct, `📤 Uploading...`, `${pct}% · ${formatMediaSize(e.loaded)} / ${formatMediaSize(e.total)} · ${speedStr}`, etaStr);
+            });
+
+            xhr.upload.addEventListener('loadend', () => {
+                // Upload complete → switch to optimization stage
+                completeStage(stageUpload);
+                activateStage(stageOptimize);
+
+                // Type-aware optimization progress
+                if (isVideo || isAudio) {
+                    const tool = isVideo ? 'ffmpeg (video)' : 'ffmpeg (audio)';
+                    setProgress(0, `⚙️ Optimizing with ${tool}...`, `Starting...`, '');
+
+                    // Poll real ffmpeg progress from server every 2 seconds
+                    window._mediaOptInterval = setInterval(async () => {
+                        try {
+                            const resp = await fetch('/api/content/media/optimize-status');
+                            const data = await resp.json();
+
+                            if (data.status !== 'encoding') return; // not active
+
+                            const elapsed = data.elapsed || 0;
+                            const elapsedStr = elapsed < 60
+                                ? `${Math.round(elapsed)}s`
+                                : `${(elapsed / 60).toFixed(1)} min`;
+
+                            // Build progress info from real ffmpeg data
+                            let detail = `${elapsedStr} elapsed`;
+                            if (data.speed) detail += ` · ${data.speed} speed`;
+                            if (data.fps) detail += ` · ${data.fps} fps`;
+
+                            // Encode time position (e.g. "23:15 / 46:48")
+                            let encoderInfo = data.encoder || tool;
+                            if (data.time && data.time !== '00:00:00') {
+                                encoderInfo += ` · encoded: ${data.time}`;
+                            }
+
+                            // Calculate progress from duration if available
+                            let pct = 5;
+                            if (data.duration_sec > 0 && data.time) {
+                                const parts = data.time.split(':').map(Number);
+                                const encodedSec = (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+                                pct = Math.min(95, Math.round((encodedSec / data.duration_sec) * 100));
+                            }
+
+                            // Deadline warning — show extend button
+                            const deadlineSec = data.deadline || 0;
+                            const timeLeft = deadlineSec - elapsed;
+
+                            if (data.deadline_warning) {
+                                setProgress(pct, `⏰ Deadline reached — encoding still running`, detail, '');
+                                // Show extend button if not already shown
+                                if (!document.getElementById('media-extend-btn')) {
+                                    const cancelRow = document.querySelector('#media-upload-zone .btn[onclick*="mediaCancelUpload"]')?.parentElement;
+                                    if (cancelRow) {
+                                        const extBtn = document.createElement('button');
+                                        extBtn.id = 'media-extend-btn';
+                                        extBtn.className = 'btn';
+                                        extBtn.style.cssText = 'margin-left: 0.5rem; background: var(--accent); color: white;';
+                                        extBtn.textContent = '⏰ Extend +5 min';
+                                        extBtn.onclick = async () => {
+                                            extBtn.disabled = true;
+                                            extBtn.textContent = 'Extending...';
+                                            await fetch('/api/content/media/extend-optimize', {
+                                                method: 'POST',
+                                                headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({extra_seconds: 300}),
+                                            });
+                                            extBtn.textContent = '✅ Extended!';
+                                            setTimeout(() => extBtn.remove(), 2000);
+                                            contentLog('⏰ Optimization deadline extended by 5 minutes');
+                                        };
+                                        cancelRow.appendChild(extBtn);
+                                    }
+                                }
+                                progressBar.style.background = 'linear-gradient(90deg, var(--warning, #f59e0b), #fbbf24)';
+                            } else if (timeLeft < 60 && timeLeft > 0) {
+                                setProgress(pct, `⚙️ Optimizing with ${encoderInfo}...`, detail, `⏰ ~${Math.ceil(timeLeft)}s left on deadline`);
+                            } else {
+                                setProgress(pct, `⚙️ Optimizing with ${encoderInfo}...`, detail, '');
+                            }
+                        } catch (e) {
+                            // Poll error — keep trying
+                        }
+                    }, 2000);
+                } else if (isImage) {
+                    setProgress(30, '⚙️ Compressing image → WebP...', `Converting ${formatMediaSize(fileSize)}`, '');
+                    let imgOptStart = Date.now();
+                    window._mediaOptInterval = setInterval(() => {
+                        const elapsed = Date.now() - imgOptStart;
+                        const pct = Math.min(90, 30 + Math.round((1 - Math.exp(-elapsed / 10000)) * 60));
+                        const bar = document.getElementById('media-progress-bar');
+                        if (bar) bar.style.width = pct + '%';
+                    }, 200);
+                } else if (isPdf) {
+                    setProgress(20, '⚙️ Optimizing PDF with Ghostscript...', `Processing ${formatMediaSize(fileSize)}`, '');
+                    let pdfOptStart = Date.now();
+                    window._mediaOptInterval = setInterval(() => {
+                        const elapsed = Date.now() - pdfOptStart;
+                        const pct = Math.min(90, 20 + Math.round((1 - Math.exp(-elapsed / 15000)) * 70));
+                        const bar = document.getElementById('media-progress-bar');
+                        if (bar) bar.style.width = pct + '%';
+                    }, 300);
+                } else {
+                    // Text, JSON, CSV, etc — gzip is fast
+                    setProgress(50, '⚙️ Compressing...', `Gzip: ${formatMediaSize(fileSize)}`, '');
+                    window._mediaOptInterval = setInterval(() => {
+                        const bar = document.getElementById('media-progress-bar');
+                        const cur = parseFloat(bar.style.width) || 50;
+                        if (cur < 90) bar.style.width = (cur + 5) + '%';
+                    }, 100);
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                _mediaActiveXhr = null;
+                if (window._mediaOptInterval) {
+                    clearInterval(window._mediaOptInterval);
+                    window._mediaOptInterval = null;
+                }
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        resolve(JSON.parse(xhr.responseText));
+                    } catch (e) {
+                        reject(new Error('Server returned invalid JSON'));
+                    }
+                } else {
+                    // Try to parse structured error from our endpoint
+                    let errMsg = `Server error (HTTP ${xhr.status})`;
+                    try {
+                        const err = JSON.parse(xhr.responseText);
+                        const stage = err.stage ? ` [${err.stage}]` : '';
+                        errMsg = (err.error || errMsg) + stage;
+                    } catch (e) {
+                        // HTML error page or non-JSON response
+                        if (xhr.responseText?.includes('Internal Server Error')) {
+                            errMsg = `Server crashed (HTTP ${xhr.status}) — check server logs`;
+                        }
+                    }
+                    reject(new Error(errMsg));
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                _mediaActiveXhr = null;
+                if (window._mediaOptInterval) clearInterval(window._mediaOptInterval);
+                reject(new Error('Network error'));
+            });
+
+            xhr.addEventListener('timeout', () => {
+                _mediaActiveXhr = null;
+                if (window._mediaOptInterval) clearInterval(window._mediaOptInterval);
+                reject(new Error('Request timed out'));
+            });
+
+            xhr.addEventListener('abort', () => {
+                _mediaActiveXhr = null;
+                if (window._mediaOptInterval) clearInterval(window._mediaOptInterval);
+                reject(new Error('Upload cancelled'));
+            });
+
+            xhr.open('POST', '/api/content/media/upload');
+            xhr.timeout = 7200000; // 2 hours max for huge video encoding
+            xhr.send(formData);
+        });
+
+        // ── Stage 2 complete: Optimization done ────────────
+        completeStage(stageOptimize);
+
+        if (response.success) {
+            // Show results
+            const origSize = response.original_size_bytes || fileSize;
+            const finalSize = response.size_bytes || origSize;
+            const savings = origSize > finalSize
+                ? ` (${Math.round((1 - finalSize / origSize) * 100)}% smaller)`
+                : '';
+
+            // Optimization status info
+            let optStatus = '';
+            if (response.optimized) {
+                optStatus = ` · ✅ optimized${savings}`;
+            } else if (isVideo || isAudio) {
+                optStatus = ' · ⚠️ stored as-is (encoding skipped)';
+            }
+
+            // Browser compatibility warning for non-MP4/WebM video
+            const mime = response.mime_type || '';
+            const nonPlayable = isVideo && !['video/mp4', 'video/webm', 'video/ogg'].includes(mime);
+            if (nonPlayable) {
+                optStatus += ' · ⚠️ format may not play in browser';
+            }
+
+            contentLog(`✅ Media uploaded: ${response.id} (${response.original_name}, ${formatMediaSize(finalSize)}${savings})`);
             mediaPendingFile = null;
             mediaLoaded = false;
-            await loadMedia();
-            mediaSelectItem(data.id);
+
+            // Stage 3: Release upload (if large tier)
+            if (response.storage === 'large') {
+                activateStage(stageRelease);
+                completeStage(stageOptimize);
+                setProgress(0, '☁️ Uploading to GitHub Release...', 'Queued...', '');
+                progressBar.style.background = 'linear-gradient(90deg, var(--accent), #818cf8)';
+
+                // Poll release status until done/failed/cancelled
+                const releaseMediaId = response.id;
+                _mediaReleaseMediaId = releaseMediaId;
+                const releaseStartTime = Date.now();
+                _mediaReleasePollInterval = setInterval(async () => {
+                    try {
+                        const resp = await fetch(`/api/content/media/${releaseMediaId}/release-status`);
+                        const data = await resp.json();
+
+                        const elapsedSec = (Date.now() - releaseStartTime) / 1000;
+                        const elapsedStr = elapsedSec > 60
+                            ? `${(elapsedSec / 60).toFixed(1)} min`
+                            : `${Math.round(elapsedSec)}s`;
+
+                        if (data.status === 'done') {
+                            clearInterval(_mediaReleasePollInterval);
+                            _mediaReleasePollInterval = null;
+                            completeStage(stageRelease);
+                            setProgress(100, `✅ Upload complete!`, `${formatMediaSize(finalSize)}${optStatus} · released in ${elapsedStr}`, '');
+                            progressBar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+                            contentLog(`☁️ Release upload done: ${releaseMediaId} (${elapsedStr})`);
+                            setTimeout(async () => {
+                                progressContainer.style.display = 'none';
+                                await loadMedia();
+                                mediaSelectItem(releaseMediaId);
+                            }, 2000);
+                        } else if (data.status === 'failed') {
+                            clearInterval(_mediaReleasePollInterval);
+                            _mediaReleasePollInterval = null;
+                            stageRelease.style.color = 'var(--danger, #ef4444)';
+                            stageRelease.innerHTML = '✗ Release';
+                            setProgress(100, `⚠️ Release upload failed`, data.message || 'Unknown error', '');
+                            progressBar.style.background = 'var(--warning, #f59e0b)';
+                            contentLog(`⚠️ Release upload failed: ${data.message}`, true);
+                            // Still switch to detail view — local file is saved
+                            setTimeout(async () => {
+                                progressContainer.style.display = 'none';
+                                await loadMedia();
+                                mediaSelectItem(releaseMediaId);
+                            }, 3000);
+                        } else if (data.status === 'cancelled') {
+                            clearInterval(_mediaReleasePollInterval);
+                            _mediaReleasePollInterval = null;
+                            _mediaReleaseMediaId = null;
+                            // Already handled by cancel function
+                            return;
+                        } else {
+                            // pending or uploading — show progress
+                            // Asymptotic progress based on elapsed time (rough estimate)
+                            const sizeMb = data.size_mb || (finalSize / (1024 * 1024));
+                            const estSec = Math.max(30, sizeMb * 2); // ~2s per MB
+                            const pct = Math.min(90, Math.round((1 - Math.exp(-elapsedSec / estSec * 2)) * 90));
+                            setProgress(pct, `☁️ ${data.message || 'Uploading to release...'}`, `${pct}% · ${elapsedStr}`, '');
+                        }
+                    } catch (e) {
+                        // Poll error — keep trying
+                        console.warn('Release status poll error:', e);
+                    }
+                }, 3000); // Poll every 3 seconds
+            } else {
+                completeStage(stageRelease);
+                stageRelease.innerHTML = '✓ Git';
+                setProgress(100, `✅ Upload complete!`, `${formatMediaSize(finalSize)}${optStatus} · ${response.storage}`, '');
+                progressBar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+
+                // Auto-switch to detail view after 2 seconds
+                setTimeout(async () => {
+                    progressContainer.style.display = 'none';
+                    await loadMedia();
+                    mediaSelectItem(response.id);
+                }, 2000);
+            }
         } else {
-            contentLog(`❌ Upload failed: ${data.error}`, true);
+            throw new Error(response.error || 'Upload failed');
         }
+
     } catch (error) {
+        if (window._mediaOptInterval) clearInterval(window._mediaOptInterval);
+        _mediaActiveXhr = null;
+
+        if (error.message === 'Upload cancelled') {
+            // User cancelled — already handled by mediaCancelUploadInProgress
+            return;
+        }
+
+        setProgress(100, `❌ Failed: ${error.message}`, '', '');
+        progressBar.style.background = 'var(--danger, #ef4444)';
         contentLog(`❌ Upload error: ${error.message}`, true);
+
+        // Allow retry after 3 seconds
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+            mediaUploadPrompt();
+        }, 3000);
     } finally {
         btn.disabled = false;
         btn.textContent = '📤 Upload';
@@ -409,8 +875,22 @@ async function mediaDeleteSelected() {
     if (!confirm(`Delete "${name}"? This will remove the file and cannot be undone.`)) return;
 
     try {
-        const resp = await fetch(`/api/content/media/${mediaSelectedId}`, { method: 'DELETE' });
-        const data = await resp.json();
+        let resp = await fetch(`/api/content/media/${mediaSelectedId}`, { method: 'DELETE' });
+        let data = await resp.json();
+
+        // Handle reference block (409)
+        if (resp.status === 409 && data.requires_force) {
+            const refs = (data.referenced_by || []).join(', ');
+            if (!confirm(
+                `⚠️ This media is referenced by: ${refs}\n\n` +
+                `Deleting it will break those references.\n` +
+                `Force delete anyway?`
+            )) return;
+
+            // Retry with force
+            resp = await fetch(`/api/content/media/${mediaSelectedId}?force=true`, { method: 'DELETE' });
+            data = await resp.json();
+        }
 
         if (data.success) {
             contentLog(`🗑️ Deleted media: ${data.id} (${data.original_name})`);
