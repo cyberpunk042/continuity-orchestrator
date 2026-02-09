@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-09T20:53:53.461623Z",
+        "updated_at_iso": "2026-02-09T21:07:04.203907+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -31,22 +31,14 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "REMIND_1",
-        "state_entered_at_iso": "2026-02-09T20:53:53.308939Z",
-        "last_transition_rule_id": "R10_ESCALATE_TO_REMIND_1",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-09T21:07:04.203907+00:00",
+        "last_transition_rule_id": "MANUAL_RESET",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "remind_email_primary": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T20:53:53.461393+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "remind_email_primary"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
         "triggered": false,

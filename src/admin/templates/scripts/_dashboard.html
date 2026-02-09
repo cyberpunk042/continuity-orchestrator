@@ -154,6 +154,22 @@
                         </div>
                     ` : data.state.stage === 'OK' || data.state.stage === 'WARNING' || data.state.stage === 'REMIND_1' || data.state.stage === 'REMIND_2' ? `
                         <div style="padding-top: 1rem;">
+                            ${data.state.stage === 'REMIND_1' || data.state.stage === 'REMIND_2' ? `
+                            <div style="border: 1px solid var(--accent); border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem; background: rgba(99, 102, 241, 0.08);">
+                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--accent);">
+                                    ⏰ Escalation active — renew to return to OK
+                                </div>
+                                <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0 0 0.6rem 0;">
+                                    Renewing extends the deadline and resets the stage to OK, cancelling further escalation.
+                                </p>
+                                <div class="actions" style="gap: 0.5rem;">
+                                    <button class="btn" onclick="renewDeadline(24)" style="flex: 1;">+24h</button>
+                                    <button class="btn primary" onclick="renewDeadline(48)" style="flex: 1;">+48h</button>
+                                    <button class="btn" onclick="renewDeadline(72)" style="flex: 1;">+72h</button>
+                                    <button class="btn" onclick="returnToOK()" style="padding: 0 0.6rem;" title="Return to OK without extending deadline">🔙 OK</button>
+                                </div>
+                            </div>
+                            ` : ''}
                             <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.75rem; color: var(--text-dim);">⚡ Manual Trigger</div>
                             <div class="actions" style="flex-direction: column; gap: 0.5rem;">
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch;">
