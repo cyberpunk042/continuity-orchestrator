@@ -39,6 +39,9 @@ concurrency:
 
 jobs:
   build:
+    # Skip when Docker handles site building and serving via nginx.
+    # Set DEPLOY_MODE=docker as a GitHub repository variable to disable.
+    if: vars.DEPLOY_MODE != 'docker'
     runs-on: ubuntu-latest
     
     steps:

@@ -6,8 +6,9 @@ Prefix: /api/docker
 Routes:
     /api/docker/status     GET   Container status for all Continuity services
     /api/docker/restart    POST  Restart services (profile-aware)
-    /api/docker/start      POST  Start services with specified profiles
-    /api/docker/stop       POST  Stop services (profile-aware)
+    /api/docker/start      POST  Start/rebuild services (always passes --build)
+    /api/docker/stop       POST  Stop services (with optional volume/image cleanup)
+    /api/docker/build      POST  Build images (with optional --no-cache)
     /api/docker/logs       GET   Fetch recent container logs
 """
 
@@ -294,6 +295,10 @@ def docker_restart():
 def docker_start():
     """Start services with specified profiles.
 
+    Always passes --build so Docker's layer cache handles image
+    freshness automatically. If nothing changed, the build is near-instant.
+    If source files changed, only invalidated layers are rebuilt.
+
     Body: { "profiles": ["git-sync"] }
       or: { "profiles": ["git-sync", "tunnel"] }
       or: {} for standalone mode
@@ -313,7 +318,46 @@ def docker_start():
                 "error": f"Unknown profile: {p}",
             }), 400
 
-    result = _run_compose("up", "-d", profiles=profiles, timeout=120)
+    # --build: Docker's layer cache ensures this is fast when nothing changed
+    result = _run_compose("up", "-d", "--build", profiles=profiles, timeout=300)
+
+    return jsonify({
+        "success": result["success"],
+        "output": result["output"],
+        "error": result["error"],
+    })
+
+
+@docker_bp.route("/build", methods=["POST"])
+def docker_build():
+    """Build (or rebuild) images.
+
+    Uses Docker's layer cache by default, so unchanged layers are
+    reused automatically. Pass no_cache to force a full rebuild.
+
+    Body: { "profiles": ["git-sync"], "no_cache": false }
+    """
+    if not _docker_available():
+        return jsonify({"success": False, "error": "Docker CLI not found"}), 400
+
+    data = request.json or {}
+    profiles = data.get("profiles", [])
+    no_cache = data.get("no_cache", False)
+
+    # Validate profiles
+    allowed_profiles = {"git-sync", "tunnel"}
+    for p in profiles:
+        if p not in allowed_profiles:
+            return jsonify({
+                "success": False,
+                "error": f"Unknown profile: {p}",
+            }), 400
+
+    args = ["build"]
+    if no_cache:
+        args.append("--no-cache")
+
+    result = _run_compose(*args, profiles=profiles, timeout=600)
 
     return jsonify({
         "success": result["success"],
@@ -324,16 +368,35 @@ def docker_start():
 
 @docker_bp.route("/stop", methods=["POST"])
 def docker_stop():
-    """Stop services using auto-detected profiles."""
+    """Stop services using auto-detected profiles.
+
+    Body (all optional):
+        remove_volumes: bool  — also remove named volumes (data loss!)
+        remove_images:  bool  — also remove locally-built images
+    """
     if not _docker_available():
         return jsonify({"success": False, "error": "Docker CLI not found"}), 400
 
-    result = _run_compose("down", timeout=60)
+    data = request.json or {}
+    remove_volumes = data.get("remove_volumes", False)
+    remove_images = data.get("remove_images", False)
+
+    args = ["down"]
+    if remove_volumes:
+        args.append("-v")
+    if remove_images:
+        args.extend(["--rmi", "local"])
+
+    result = _run_compose(*args, timeout=120)
 
     return jsonify({
         "success": result["success"],
         "output": result["output"],
         "error": result["error"],
+        "cleaned": {
+            "volumes": remove_volumes,
+            "images": remove_images,
+        },
     })
 
 

@@ -221,7 +221,7 @@
                     </label>
                 </div>`;
 
-            // Action buttons
+            // Action buttons — primary row
             const anyRunning = containers.some(c => c.status === 'running');
             html += `<div class="actions" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">`;
             if (anyRunning) {
@@ -238,10 +238,10 @@
             } else {
                 html += `
                     <button class="btn primary" onclick="_dockerStart(['git-sync'])" id="btn-docker-start">
-                        ▶️ Start (git-sync)
+                        ▶️ Start & Build (git-sync)
                     </button>
                     <button class="btn" onclick="_dockerStart([])" id="btn-docker-start-standalone">
-                        ▶️ Start (standalone)
+                        ▶️ Start & Build (standalone)
                     </button>`;
             }
 
@@ -253,6 +253,25 @@
                     </button>`;
             }
             html += `</div>`;
+
+            // Secondary actions — Build & Clean
+            html += `
+                <details style="margin-top: 0.5rem;">
+                    <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-dim); user-select: none;">
+                        🔧 Build & Clean options
+                    </summary>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                        <button class="btn" onclick="_dockerBuild(false)" id="btn-docker-build">
+                            🔨 Build Images
+                        </button>
+                        <button class="btn" onclick="_dockerBuild(true)" id="btn-docker-build-clean" title="Ignores Docker layer cache — full rebuild from scratch">
+                            🔨 Build (no cache)
+                        </button>
+                        <button class="btn" onclick="_dockerClean()" id="btn-docker-clean" style="color: var(--danger);" title="Stop + remove volumes and/or images">
+                            🧹 Clean
+                        </button>
+                    </div>
+                </details>`;
 
             // Restart awareness (Task D)
             const changedSecrets = _getChangedSecrets();
@@ -377,7 +396,7 @@
             const statusDiv = document.getElementById('deploy-action-status');
             const profileText = profiles.length > 0 ? profiles.join(' + ') : 'standalone';
 
-            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">▶️ Starting Docker (${profileText})...</span>`;
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">▶️ Building & starting (${profileText})... this may take a moment</span>`;
 
             try {
                 const resp = await fetch('/api/docker/start', {
@@ -388,10 +407,84 @@
                 const data = await resp.json();
 
                 if (data.success) {
-                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Containers started (${profileText})</span>`;
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Containers built & started (${profileText})</span>`;
                     setTimeout(loadDeployStatus, 3000);
                 } else {
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Failed to start'}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function _dockerBuild(noCache) {
+            const statusDiv = document.getElementById('deploy-action-status');
+            const label = noCache ? 'full rebuild (no cache)' : 'build (cached)';
+
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">🔨 Running ${label}... this may take a while</span>`;
+
+            try {
+                const resp = await fetch('/api/docker/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profiles: ['git-sync'], no_cache: noCache }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Images built successfully (${label})</span>`;
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Build failed: ${data.error || 'Unknown'}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function _dockerClean() {
+            const statusDiv = document.getElementById('deploy-action-status');
+
+            // Build confirmation with options
+            const choices = prompt(
+                '🧹 Docker Clean\n\n' +
+                'This will stop all containers and optionally remove data.\n' +
+                'Enter the numbers of what to clean (comma-separated):\n\n' +
+                '  1 — Stop containers only (docker compose down)\n' +
+                '  2 — Also remove named volumes (⚠️ deletes repo data, state)\n' +
+                '  3 — Also remove locally-built images\n\n' +
+                'Example: "2,3" for full clean, or "1" for just stop.\n' +
+                'Cancel to abort.'
+            );
+
+            if (!choices) return;
+
+            const nums = choices.split(',').map(s => s.trim());
+            const removeVolumes = nums.includes('2');
+            const removeImages = nums.includes('3');
+
+            const parts = ['Stop containers'];
+            if (removeVolumes) parts.push('remove volumes');
+            if (removeImages) parts.push('remove images');
+            const desc = parts.join(' + ');
+
+            if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--info);">🧹 Cleaning: ${desc}...</span>`;
+
+            try {
+                const resp = await fetch('/api/docker/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        remove_volumes: removeVolumes,
+                        remove_images: removeImages,
+                    }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--accent);">✅ Clean complete: ${desc}</span>`;
+                    setTimeout(loadDeployStatus, 2000);
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Clean failed: ${data.error || 'Unknown'}</span>`;
                 }
             } catch (e) {
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
