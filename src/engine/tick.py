@@ -271,7 +271,6 @@ def run_tick(
     state.actions.last_tick_actions = []
 
     if not dry_run and actions_for_stage:
-        import os
         from pathlib import Path
 
         from ..adapters.base import ExecutionContext
