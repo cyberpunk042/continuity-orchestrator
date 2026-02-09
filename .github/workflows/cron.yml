@@ -137,8 +137,39 @@ jobs:
             for i in 1 2 3; do
               git push && break
               echo "Push attempt $i failed, retrying..."
-              sleep 5
-              git pull --rebase
+              sleep 2
+              
+              # Stash our authoritative state and audit before pulling
+              cp state/current.json /tmp/state_ours.json
+              cp audit/ledger.ndjson /tmp/audit_ours.ndjson 2>/dev/null || true
+              
+              # Try rebase first
+              if ! git pull --rebase; then
+                echo "Rebase conflict — resolving automatically..."
+                git rebase --abort 2>/dev/null || true
+                
+                # Merge instead, auto-resolving state/audit conflicts
+                git pull --no-rebase -X ours || true
+              fi
+              
+              # Restore our authoritative state (tick just produced it)
+              cp /tmp/state_ours.json state/current.json
+              
+              # For audit: keep remote lines + ours (append-only ledger)
+              if [ -f /tmp/audit_ours.ndjson ]; then
+                # Get any new remote audit lines not in our version
+                git show HEAD:audit/ledger.ndjson 2>/dev/null > /tmp/audit_remote.ndjson || true
+                if [ -f /tmp/audit_remote.ndjson ]; then
+                  # Combine: remote lines + our unique lines
+                  sort -u /tmp/audit_remote.ndjson /tmp/audit_ours.ndjson > audit/ledger.ndjson
+                else
+                  cp /tmp/audit_ours.ndjson audit/ledger.ndjson
+                fi
+              fi
+              
+              # Re-stage and amend
+              git add state/ audit/
+              git commit --amend --no-edit
             done
             
             echo "state_changed=true" >> $GITHUB_OUTPUT
