@@ -850,6 +850,7 @@
             {
                 id: 'sentinel',
                 title: 'Sentinel',
+                skip: () => (wizardData.DEPLOY_MODE || 'github-pages') === 'docker',
                 content: () => {
                     const sentinelUrl = getSecretValue('SENTINEL_URL');
                     const sentinelToken = getSecretValue('SENTINEL_TOKEN');

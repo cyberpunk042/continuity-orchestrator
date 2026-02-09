@@ -51,14 +51,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
       
-      # Install only what's needed for site generation
-      - name: Install minimal dependencies
+      # Install with uv — fast enough to install the full package
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip --quiet
-          pip install pyyaml pydantic jinja2 python-dateutil python-dotenv click cryptography --quiet
-          pip install -e . --no-deps --quiet
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv pip install --system -e . --quiet
       
       - name: Build site
         env:

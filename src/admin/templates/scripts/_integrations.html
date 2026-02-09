@@ -92,12 +92,26 @@
                     </div>`;
             }
 
-            // Cron info
-            html += `
-                <div class="status-row">
-                    <span class="status-label">Auto tick</span>
-                    <span class="status-value">Every 30 min via GitHub Actions cron</span>
-                </div>`;
+            // Sentinel status (async — fills in after fetch)
+            const sentinelUrl = envData?.SENTINEL_URL;
+            const sentinelConfigured = !!(sentinelUrl && envData?.SENTINEL_TOKEN);
+
+            if (sentinelConfigured) {
+                html += `
+                    <div class="status-row">
+                        <span class="status-label">Sentinel</span>
+                        <span class="status-value" id="sentinel-deploy-status">
+                            <span style="color: var(--text-dim);">checking…</span>
+                        </span>
+                    </div>
+                    <div id="sentinel-deploy-details"></div>`;
+            } else {
+                html += `
+                    <div class="status-row">
+                        <span class="status-label">Auto tick</span>
+                        <span class="status-value">Every 30 min via GitHub Actions cron</span>
+                    </div>`;
+            }
 
             // Auto git-sync checkbox
             html += `
@@ -126,6 +140,82 @@
             html += `<div id="deploy-action-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>`;
 
             body.innerHTML = html;
+
+            // Fire-and-forget: fetch sentinel status
+            if (sentinelConfigured) {
+                _loadSentinelDeployStatus(sentinelUrl);
+            }
+        }
+
+        async function _loadSentinelDeployStatus(sentinelUrl) {
+            const statusEl = document.getElementById('sentinel-deploy-status');
+            const detailsEl = document.getElementById('sentinel-deploy-details');
+            if (!statusEl) return;
+
+            try {
+                const resp = await fetch(`${sentinelUrl}/status`, { signal: AbortSignal.timeout(5000) });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+
+                // Status badge
+                if (data.configured) {
+                    statusEl.innerHTML = `<span style="color: var(--accent);">🟢 Live</span>
+                        <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">every 60s via Cloudflare</span>`;
+                } else {
+                    statusEl.innerHTML = `<span style="color: var(--warning);">🟡 Deployed but not configured</span>`;
+                }
+
+                // Details: last decision, next due, links
+                if (detailsEl && data.configured) {
+                    let rows = '';
+
+                    if (data.lastDecision) {
+                        const action = data.lastDecision.dispatch ? '🟢 dispatched' : '⏭️ skipped';
+                        const reason = data.lastDecision.reason || '';
+                        rows += `
+                            <div class="status-row">
+                                <span class="status-label">Last decision</span>
+                                <span class="status-value" style="font-size: 0.82rem;">${action}${reason ? ` — ${reason}` : ''}</span>
+                            </div>`;
+                    }
+
+                    if (data.nextDueAt) {
+                        const nextDue = new Date(data.nextDueAt);
+                        const now = new Date();
+                        const diffMin = Math.round((nextDue - now) / 60000);
+                        const when = diffMin > 0 ? `in ${diffMin}m` : 'now';
+                        rows += `
+                            <div class="status-row">
+                                <span class="status-label">Next due</span>
+                                <span class="status-value">${when}</span>
+                            </div>`;
+                    }
+
+                    // Cloudflare dashboard links
+                    const workerName = 'continuity-sentinel';
+                    const cfBase = `https://dash.cloudflare.com`;
+                    rows += `
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                            <a href="${cfBase}/?to=/:account/workers/services/view/${workerName}/production/observability/events"
+                                target="_blank" class="btn" style="font-size: 0.78rem; padding: 0.25rem 0.6rem; text-decoration: none;">
+                                📊 Events
+                            </a>
+                            <a href="${cfBase}/?to=/:account/workers/services/live-logs/${workerName}/production"
+                                target="_blank" class="btn" style="font-size: 0.78rem; padding: 0.25rem 0.6rem; text-decoration: none;">
+                                📡 Live Logs
+                            </a>
+                            <a href="${sentinelUrl}/status"
+                                target="_blank" class="btn" style="font-size: 0.78rem; padding: 0.25rem 0.6rem; text-decoration: none;">
+                                🔍 Status API
+                            </a>
+                        </div>`;
+
+                    detailsEl.innerHTML = rows;
+                }
+            } catch (e) {
+                statusEl.innerHTML = `<span style="color: var(--danger);">🔴 Offline</span>
+                    <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">${e.message}</span>`;
+            }
         }
 
         async function _renderDockerCard(body) {
