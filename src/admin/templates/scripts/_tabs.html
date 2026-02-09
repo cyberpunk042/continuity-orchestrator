@@ -21,7 +21,7 @@ history.replaceState(null, '', `#${hash}`);
 
 // Load data for the tab
 if (tabId === 'secrets') {
-if (!secretsLoaded) loadSecretsForm();
+loadSecretsForm();
 } else if (tabId === 'wizard') {
 // Navigate to specific wizard step if provided
 if (subStep) {
