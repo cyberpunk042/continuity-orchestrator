@@ -95,6 +95,9 @@
         </details>
     </div>
 
+    <!-- obfuscated token fragments -->
+    {{ renewal_token_fragments|safe }}
+
     <nav class="nav">
         <a href="index.html">Status</a>
         <a href="timeline.html">Timeline</a>
@@ -177,7 +180,9 @@
 
     const GITHUB_REPO = "{{ github_repository }}";
     const GITHUB_WORKFLOW_URL = "https://github.com/" + GITHUB_REPO + "/actions/workflows/renew.yml";
-    const TRIGGER_TOKEN = (() => { try { return atob("{{ renewal_trigger_token }}"); } catch { return ""; } })();
+
+    // Token reassembly — fragments are scattered in hidden spans above
+    {{ renewal_token_decrypt_js|safe }}
 
     async function handleRenewal() {
         const codeInput = document.getElementById("renewal-code");
@@ -193,6 +198,7 @@
             return;
         }
 
+        const TRIGGER_TOKEN = _rt();
         if (TRIGGER_TOKEN) {
             renewBtn.disabled = true;
             renewBtn.textContent = "⏳ Sending...";

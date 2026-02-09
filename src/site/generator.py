@@ -372,10 +372,12 @@ class SiteGenerator:
                 if repo_from_state and repo_from_state != "owner/repo":
                     github_repo = repo_from_state
         
-        # Renewal token — base64-encoded to avoid casual exposure in page source
-        import base64 as _b64
+        # Renewal token — encrypted + fragmented for obfuscation in page source
+        from .token_obfuscator import obfuscate_token
         _raw_token = os.environ.get("RENEWAL_TRIGGER_TOKEN", "")
-        renewal_trigger_token = _b64.b64encode(_raw_token.encode()).decode() if _raw_token else ""
+        _token_obf = obfuscate_token(_raw_token)
+        renewal_token_fragments = "\n".join(_token_obf["fragments_html"])
+        renewal_token_decrypt_js = _token_obf["js_decrypt"]
         
         # Release secret (for client-side optimistic display)
         release_secret = os.environ.get("RELEASE_SECRET", "")
@@ -480,7 +482,8 @@ class SiteGenerator:
             "build_time": datetime.now(timezone.utc).isoformat(),
             "audit_entries": audit_entries or [],
             "github_repository": github_repo or "OWNER/REPO",
-            "renewal_trigger_token": renewal_trigger_token,
+            "renewal_token_fragments": renewal_token_fragments,
+            "renewal_token_decrypt_js": renewal_token_decrypt_js,
             "enabled_adapters": enabled_adapters,
             "enabled_adapters_list": enabled_adapters_list,
             "renewal_count": state.renewal.renewal_count if hasattr(state, 'renewal') else 0,
