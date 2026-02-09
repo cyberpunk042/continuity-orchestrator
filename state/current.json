@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-09T08:24:26.792071+00:00",
+        "updated_at_iso": "2026-02-09T08:32:29.587442+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,9 +12,9 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-09T07:24:26.792071+00:00",
+        "deadline_iso": "2026-02-09T07:32:29.587442+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-09T08:24:26.792071+00:00",
+        "now_iso": "2026-02-09T08:32:29.587442+00:00",
         "time_to_deadline_minutes": -60,
         "overdue_minutes": 60
     },
@@ -32,7 +32,7 @@
     },
     "escalation": {
         "state": "FULL",
-        "state_entered_at_iso": "2026-02-09T08:24:26.792071+00:00",
+        "state_entered_at_iso": "2026-02-09T08:32:29.587442+00:00",
         "last_transition_rule_id": "MANUAL_TRIGGER",
         "monotonic_enforced": true
     },
@@ -42,12 +42,12 @@
     },
     "release": {
         "triggered": true,
-        "trigger_time_iso": "2026-02-09T08:24:26.792071+00:00",
+        "trigger_time_iso": "2026-02-09T08:32:29.587442+00:00",
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-09T08:24:26.792071+00:00",
-        "client_token": "QXc4qE2eoDAxqY73wFCKJw"
+        "execute_after_iso": "2026-02-09T08:32:29.587442+00:00",
+        "client_token": "BF_qZZFjuWuByQzeEvEt5g"
     },
     "integrations": {
         "enabled_adapters": {
