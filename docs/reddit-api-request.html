@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Reddit API Access Request — Continuity Orchestrator</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.7; font-size: 14px; }
+  h1 { font-size: 1.6rem; border-bottom: 2px solid #e1e4e8; padding-bottom: 0.5rem; }
+  h2 { font-size: 1.25rem; margin-top: 2rem; border-bottom: 1px solid #e1e4e8; padding-bottom: 0.3rem; }
+  h3 { font-size: 1.05rem; }
+  table { border-collapse: collapse; width: 100%%; margin: 1rem 0; }
+  th, td { border: 1px solid #d0d7de; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.9rem; }
+  th { background: #f6f8fa; font-weight: 600; }
+  code { background: #f6f8fa; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
+  a { color: #0969da; }
+  ul, ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+  hr { border: none; border-top: 1px solid #d0d7de; margin: 1.5rem 0; }
+  blockquote { border-left: 3px solid #d0d7de; margin: 1rem 0; padding: 0.5rem 1rem; color: #57606a; }
+</style>
+</head><body><h1>Reddit API Access Request — Continuity Orchestrator</h1>
+<h2>Application Name</h2>
+<p>Continuity Orchestrator</p>
+<h2>Developer / Maintainer</h2>
+<ul>
+<li><strong>Reddit Username</strong>: u/SpecialZestyclose255</li>
+<li><strong>GitHub Repository</strong>: https://github.com/cyberpunk042/continuity-orchestrator</li>
+<li><strong>Published Site</strong>: https://cyberpunk042.github.io/continuity-orchestrator/</li>
+<li><strong>Contact</strong>: jfm.devops.expert@gmail.com</li>
+</ul>
+<hr />
+<h2>1. What is Continuity Orchestrator?</h2>
+<p>Continuity Orchestrator is an <strong>open-source, self-hosted personal safety and accountability tool</strong>. It works like a programmable continuity plan: the operator checks in on a schedule, and if they fail to do so, the system escalates through configured notification channels — email, SMS, social media — to alert designated contacts or make information available.</p>
+<h3>Real-world use cases:</h3>
+<p><strong>Safety / Solo travel:</strong></p>
+<blockquote>
+<p>"I was gone hiking for X days and have not been able to check in. I am possibly in danger. Please contact me if you are worried about me."</p>
+</blockquote>
+<p><strong>Journalism / Research:</strong></p>
+<blockquote>
+<p>"I was recently reporting about ABC, and I have not been able to check in. I am possibly in danger. Details about the situation will be available in 24 hours."</p>
+</blockquote>
+<p>And then, if the escalation continues:</p>
+<blockquote>
+<p>"I was recently investigating ABC. Per my failure to check in, here is what I had gathered so far, available at: https://cyberpunk042.github.io/continuity-orchestrator/"</p>
+</blockquote>
+<p><strong>The Reddit integration is one of several optional notification channels.</strong> It allows posting automated status updates to the operator's <strong>own subreddit</strong> as part of this escalation pipeline.</p>
+<p><strong>This is a non-commercial, personal-use project.</strong> It is not a scraper, data harvester, or content aggregator. The complete source code is available for review.</p>
+<hr />
+<h2>2. Intended Reddit API Usage</h2>
+<h3>What the app does on Reddit:</h3>
+<ul>
+<li><strong>Posts text-only self-posts</strong> to the operator's own subreddit or user profile</li>
+<li>Posts are <strong>automated status updates</strong> triggered by missed check-ins</li>
+<li>All posts are clearly marked as automated (see Bot Identification, §5)</li>
+</ul>
+<h3>What the app does NOT do:</h3>
+<ul>
+<li>❌ Does not read, scrape, or collect any Reddit content</li>
+<li>❌ Does not interact with other users' posts or comments</li>
+<li>❌ Does not vote, follow, or engage with other accounts</li>
+<li>❌ Does not access any subreddit other than the operator's own</li>
+<li>❌ Does not collect, store, or process any Reddit user data</li>
+<li>❌ Does not use Reddit data for AI/ML training or any model</li>
+<li>❌ Does not operate commercially or generate revenue</li>
+<li>❌ Does not serve third-party users — single operator only</li>
+</ul>
+<h3>API Endpoints Used:</h3>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/v1/access_token</code></td>
+<td>POST</td>
+<td>OAuth2 token refresh (script app flow)</td>
+</tr>
+<tr>
+<td><code>/api/submit</code></td>
+<td>POST</td>
+<td>Submit a self-post to operator's subreddit</td>
+</tr>
+<tr>
+<td><code>/api/v1/me</code></td>
+<td>GET</td>
+<td>Credential verification (setup/testing only)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>No other endpoints are used.</strong> The app is write-only — it never reads Reddit content.</p>
+<hr />
+<h2>3. App Type &amp; Authentication</h2>
+<ul>
+<li><strong>App Type</strong>: <code>script</code> (personal use, single-user)</li>
+<li><strong>OAuth2 Flow</strong>: <code>password</code> grant (script app — operator authenticates as themselves)</li>
+<li><strong>Redirect URI</strong>: <code>http://localhost:8080</code> (not used in script flow, but required by Reddit)</li>
+<li><strong>Single User</strong>: The app only ever authenticates as the one operator who deployed it. It cannot and does not act on behalf of any other Reddit user.</li>
+</ul>
+<hr />
+<h2>4. Expected Volume &amp; Rate Limits</h2>
+<p>This is an extremely low-volume application:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Expected Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Posts per day</td>
+<td>0–3 (only during active escalation)</td>
+</tr>
+<tr>
+<td>Posts per month</td>
+<td>0–10 typical</td>
+</tr>
+<tr>
+<td>API calls per minute</td>
+<td>&lt; 1 (well below the 100 QPM limit)</td>
+</tr>
+<tr>
+<td>Peak burst</td>
+<td>2 requests (token refresh + post)</td>
+</tr>
+<tr>
+<td>Concurrent users</td>
+<td>1 (single operator)</td>
+</tr>
+<tr>
+<td>Data read from Reddit</td>
+<td>None — write-only</td>
+</tr>
+</tbody>
+</table>
+<p>The application implements:
+- <strong>Exponential backoff</strong> on HTTP 429 responses
+- <strong>Descriptive User-Agent header</strong> per Reddit API guidelines
+- <strong>Minimum 2-second delay</strong> between any API calls
+- <strong>No polling or scraping</strong> — only outbound posts triggered by escalation events</p>
+<hr />
+<h2>5. Bot Identification &amp; Transparency</h2>
+<p>All automated posts include:
+- <code>[Automated]</code> prefix in the post title
+- A footer identifying the post as system-generated
+- A link to the project's public status page</p>
+<p>The Reddit account profile will clearly state:</p>
+<blockquote>
+<p>"This account is used for automated status notifications from the Continuity Orchestrator system. Posts are generated by software, not written manually."</p>
+</blockquote>
+<p><strong>User-Agent header</strong>: <code>python:continuity-orchestrator:v1.0 (by /u/SpecialZestyclose255)</code></p>
+<hr />
+<h2>6. Responsible Builder Policy Compliance</h2>
+<table>
+<thead>
+<tr>
+<th>Policy Requirement</th>
+<th>How We Comply</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Transparency</strong></td>
+<td>Open-source code; bot clearly identified; posts labeled as automated</td>
+</tr>
+<tr>
+<td><strong>No data collection</strong></td>
+<td>Write-only — we POST status updates and never read Reddit content</td>
+</tr>
+<tr>
+<td><strong>No commercial use</strong></td>
+<td>Personal project with no revenue, ads, or monetization</td>
+</tr>
+<tr>
+<td><strong>Respect rate limits</strong></td>
+<td>&lt; 1 QPM average; exponential backoff; 2s minimum between calls</td>
+</tr>
+<tr>
+<td><strong>No AI/ML training</strong></td>
+<td>No Reddit data is accessed, stored, or used for any ML purpose</td>
+</tr>
+<tr>
+<td><strong>User consent</strong></td>
+<td>Single-user script app; no third-party access or delegation</td>
+</tr>
+<tr>
+<td><strong>No circumvention</strong></td>
+<td>No workarounds for limits, bans, or platform restrictions</td>
+</tr>
+<tr>
+<td><strong>Descriptive User-Agent</strong></td>
+<td>Set per Reddit API guidelines with app name and maintainer</td>
+</tr>
+<tr>
+<td><strong>Accurate use case</strong></td>
+<td>All details in this document are accurate and verifiable in the source code</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>7. Technical Architecture</h2>
+<pre><code>┌─────────────────────────────────────────────┐
+│         Continuity Orchestrator             │
+│         (self-hosted / GitHub Actions)       │
+├─────────────────────────────────────────────┤
+│                                             │
+│  ┌──────────────────┐   ┌───────────────┐   │
+│  │  Timer / State   │──▶│  Escalation   │   │
+│  │  Engine          │   │  Engine       │   │
+│  └──────────────────┘   └───────┬───────┘   │
+│                                 │           │
+│                    ┌────────────┼──────┐    │
+│                    ▼            ▼      ▼    │
+│              ┌─────────┐ ┌─────────┐ ┌──┐  │
+│              │  Email   │ │   SMS   │ │X │  │
+│              │ (Resend) │ │(Twilio) │ │  │  │
+│              └─────────┘ └─────────┘ └──┘  │
+│                                      ▼     │
+│                               ┌──────────┐ │
+│                               │  Reddit  │ │
+│                               │  (API)   │ │
+│                               └────┬─────┘ │
+│                                    │       │
+└────────────────────────────────────┼───────┘
+                                     │
+                                     ▼
+                          ┌──────────────────┐
+                          │  Operator's Own   │
+                          │  Subreddit        │
+                          │  (self-posts)     │
+                          └──────────────────┘
+</code></pre>
+<p>The Reddit adapter is triggered <strong>only</strong> during escalation events (missed check-ins). Most deployments will see fewer than 10 Reddit posts per month. Many months will see zero.</p>
+<hr />
+<h2>8. Public Presence &amp; Legal</h2>
+<p>The project maintains a public-facing site with full transparency:</p>
+<table>
+<thead>
+<tr>
+<th>Page</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Status Dashboard</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/</td>
+</tr>
+<tr>
+<td><strong>About This Project</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/articles/project.html</td>
+</tr>
+<tr>
+<td><strong>Privacy Policy</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/privacy.html</td>
+</tr>
+<tr>
+<td><strong>Terms of Use</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/terms.html</td>
+</tr>
+<tr>
+<td><strong>Contact</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/privacy.html#contact</td>
+</tr>
+<tr>
+<td><strong>RSS Feed</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/feed.xml</td>
+</tr>
+<tr>
+<td><strong>Sitemap</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/sitemap.xml</td>
+</tr>
+<tr>
+<td><strong>robots.txt</strong></td>
+<td>https://cyberpunk042.github.io/continuity-orchestrator/robots.txt</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>9. Source Code</h2>
+<p>The complete codebase is available for review:</p>
+<ul>
+<li><strong>Repository</strong>: https://github.com/cyberpunk042/continuity-orchestrator</li>
+<li><strong>Reddit adapter</strong>: <code>src/adapters/reddit.py</code></li>
+<li><strong>Site generator</strong>: <code>src/site/generator.py</code></li>
+<li><strong>Content manifest</strong>: <code>content/manifest.yaml</code></li>
+<li><strong>License</strong>: Open source</li>
+</ul>
+<p>Every claim in this document can be verified by inspecting the source code.</p>
+<hr />
+<h2>10. Supporting Materials</h2>
+<p>The following artifacts are available for reference:</p>
+<table>
+<thead>
+<tr>
+<th>Artifact</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docs/reddit-api-request.md</code></td>
+<td>This document</td>
+</tr>
+<tr>
+<td><code>docs/reddit-flow-diagram.png</code></td>
+<td>Visual diagram showing the Reddit API integration flow</td>
+</tr>
+<tr>
+<td><code>docs/reddit-post-example.png</code></td>
+<td>Mock-up of what an automated Reddit post looks like</td>
+</tr>
+<tr>
+<td>Public site</td>
+<td>Live deployment at the URLs listed in §8</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>11. Summary</h2>
+<p>I'm requesting access to create a <strong>script-type app</strong> for personal, non-commercial use.</p>
+<p>The application:
+- Posts infrequent, clearly-labeled automated status updates to <strong>my own subreddit</strong>
+- Uses only 3 API endpoints (<code>access_token</code>, <code>submit</code>, <code>me</code>)
+- Never reads, scrapes, or interacts with any Reddit content
+- Is open-source, with the complete source code available for review
+- Complies fully with the Responsible Builder Policy, Developer Terms, and Data API Terms
+- Maintains a professional public presence with Privacy Policy, Terms of Use, and Contact information</p>
+<p>Thank you for reviewing this request.</p>
+<p>— u/SpecialZestyclose255 / jfm.devops.expert@gmail.com</p></body></html>
