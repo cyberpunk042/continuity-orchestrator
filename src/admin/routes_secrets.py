@@ -414,3 +414,20 @@ def api_sentinel_setup():
         "command": "./scripts/setup-sentinel.sh",
         "message": "Could not open terminal. Run this in your terminal:",
     })
+
+
+@secrets_bp.route("/sentinel/setup-status")
+def api_sentinel_setup_status():
+    """Check sentinel setup progress via signal file."""
+    project_root = _project_root()
+    signal_file = project_root / ".sentinel-setup-result"
+
+    if not signal_file.exists():
+        return jsonify({"status": "unknown"})
+
+    try:
+        import json as _json
+        data = _json.loads(signal_file.read_text())
+        return jsonify(data)
+    except Exception:
+        return jsonify({"status": "unknown"})

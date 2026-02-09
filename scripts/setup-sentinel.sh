@@ -21,8 +21,13 @@
 
 set -euo pipefail
 
+# ── Signal file for web UI polling ──────────────────────────────────
+SIGNAL_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.sentinel-setup-result"
+rm -f "$SIGNAL_FILE"  # Clean from any previous run
+echo '{"status":"running","ts":"'$(date -Iseconds)'"}' > "$SIGNAL_FILE"
+
 # Trap errors to keep terminal open so the user can read the output
-trap 'echo ""; echo -e "\033[0;31m✗ Setup failed. See error above.\033[0m"; echo ""; read -p "Press Enter to close…"' ERR
+trap 'echo "{\"status\":\"failed\",\"ts\":\"'$(date -Iseconds)'\"}" > "$SIGNAL_FILE"; echo ""; echo -e "\033[0;31m✗ Setup failed. See error above.\033[0m"; echo ""; read -p "Press Enter to close…"' ERR
 
 # ── Colors ──────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -477,6 +482,9 @@ else
 fi
 
 # ── Done ────────────────────────────────────────────────────────────
+# Write success signal for web UI
+echo '{"status":"success","url":"'"$SENTINEL_URL"'","ts":"'$(date -Iseconds)'"}' > "$SIGNAL_FILE"
+
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}${BOLD}✅ Sentinel is deployed and configured!${NC}"
