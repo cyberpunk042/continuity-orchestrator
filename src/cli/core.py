@@ -92,6 +92,7 @@ def reset(
             include_audit=full and audit_path.exists(),
             include_articles=include_content,
             include_media=include_content,
+            include_policy=True,
             decrypt_content=decrypt_content and include_content,
             trigger="factory_reset",
         )

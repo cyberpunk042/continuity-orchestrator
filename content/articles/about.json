@@ -1,11 +1,51 @@
 {
-    "encrypted": true,
-    "version": 1,
-    "algorithm": "aes-256-gcm",
-    "kdf": "pbkdf2-sha256",
-    "kdf_iterations": 100000,
-    "salt": "40pm9Et+MvYn1JFUULY2zg==",
-    "iv": "CkxsxPxQSdGKfndQ",
-    "tag": "+c7daij6CdsR0EKz+oqTrQ==",
-    "ciphertext": "onxTx8c/iLNxEhBiRz/QbDTUbNSmbZv2Y3Bxp32ANPrlF0PG3mitC2MDYYm0VuKpiy0mFJDqp65pl+r5rQnZQPZVBEFcZhpqrG3M3iN4nQs9i4EGafXPQ0RQn4SHCSAPuGWQY44MjR++1j8lA1G6zqxfjdNk56M4pe0OfE3IeFusfKUMAreOBVidbU0OfpXU4Djh+G/a9RbGtEV3d0psUpez24ghmAH3VQ0sPyZ930xKQrJUNNt/Dl6lCiJvG696WdCYhwXQlPhNBlmT9rYyYAfa5/7aFCv8aLFvixUqAWTk+HVUvvJsdV/leBFQlRaxh1o+MzvwUOGTZMElAfpWLJ/a0e2/9TPUI3KFpHqv09zPo2emIyoqD8YK0GvnSpGwrY7qWA6PnWHQIZ6zBvVKojDiFwQtrtL+oTODtX9k1EOUBZhjmH/mTxdytIPmVhUpHhwdXZXvDK31p8P1/lW9ag2V/7xIN3NyLmgFSu4ioMirOuONkVqv5epALRVnTbE1q5uv76Pp/lRooBwjX1I/DjRsWTh/ihO4L5EkO+qu7wKtX0TMNgPnJydOKhlPWPvGOCupzj9VOqlW705Y7+PWIh/GDgW1Ryqw/ZnkHVa8K9rvt9F3UJFzGFpNN4GhUFiwK4ERMDcG9928i1l8evap5FrCfTVhnBpAMjZIqp2Z7f23wkZ3ClUsbj6waQlvsXydnQRaFSoNCxF0zWB7vNa+X09BfpFi2oIZOBaTJBZRu47nvGKo9FIEFYqq1Ac9h6aCPzBdvVsi4AlzPhaRAdHjBDCu05aqjrzIf31/TiRI+kcpxv+BMUdrRbFOmMPNH2HVRXXAOVUd5FJbe46HDAbGzncipQSI/4TB08/GQWVKiFmdFpGMIweU7VLGrl1rkJAJwMsPRQpXejynsHFoVrqDBaRxPkU1uz/GLJ5zcIpNVwb7bAh/1yURmZV4iaZPQ3TKkmktqUG+Us60orWYTDRj6skyyW6O/1Accup/OYJD6/ja2JM5/eS/rgX64qY+MWe9UFPsCA8y/0OLrABwvwVSTthMP254g4W3wy0TTP9UsjfSi6CcNbySEdJArerqWuOSx84/6Q0vS77GaOFm1OQUbn+3m0KVN7TQwZWflXjCJJB+ygo7RwqEMPHpk3x/+CzUvw0KxA0CWyHfp2VOZKOxQUm9gnf9vNH6fEFuWaml6ibZ0cZubs2FAjaiZxpiHCpQAl5rjHKeeXjN3o14cj2F8BG8uaulg3RhjAHEXvAh2E9K5mEDGjyMKRJPHPCFGZrhIJNeipwPmMA8sos9/R0Kz9tzMfuHdkilg+mJtPAFoQcZXYbJ3ICIDP6X3++b4AAR3QJFuykx4M9kGfzy3j+Mb3JTXUTkmY4TCUXmUWte/+CcJJH3LppmXQ=="
+  "time": 1770583780694,
+  "version": "2.28.2",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "data": {
+        "text": "This project implements a continuity orchestration system designed for scheduled operations with escalating disclosure."
+      }
+    },
+    {
+      "type": "header",
+      "data": {
+        "text": "How It Works",
+        "level": 2
+      }
+    },
+    {
+      "type": "paragraph",
+      "data": {
+        "text": "The system operates on a simple principle: maintain regular check-ins to confirm continuity. If check-ins stop, the system escalates through defined stages."
+      }
+    },
+    {
+      "type": "list",
+      "data": {
+        "style": "ordered",
+        "items": [
+          "<b>OK</b> — Normal operation. All systems go.",
+          "<b>REMIND</b> — Deadline approaching. Reminders sent.",
+          "<b>PRE_RELEASE</b> — Final warning before escalation.",
+          "<b>PARTIAL</b> — Limited disclosure begins.",
+          "<b>FULL</b> — Complete disclosure activated."
+        ]
+      }
+    },
+    {
+      "type": "header",
+      "data": {
+        "text": "Renewal Process",
+        "level": 2
+      }
+    },
+    {
+      "type": "paragraph",
+      "data": {
+        "text": "To extend the deadline and reset the timer, use the Check In feature on the countdown page. You will need your renewal code and can choose how many hours to extend."
+      }
+    }
+  ]
 }
