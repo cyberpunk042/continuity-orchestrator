@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260208",
-        "updated_at_iso": "2026-02-09T00:37:17.552316Z",
+        "updated_at_iso": "2026-02-09T00:41:11.562132Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-10T20:49:40.172031+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-09T00:37:17.550358Z",
-        "time_to_deadline_minutes": 2652,
+        "now_iso": "2026-02-09T00:41:11.557192Z",
+        "time_to_deadline_minutes": 2648,
         "overdue_minutes": 0
     },
     "renewal": {
