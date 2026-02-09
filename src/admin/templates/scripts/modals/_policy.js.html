@@ -210,36 +210,11 @@
             const partDelay = parseInt(document.getElementById('pc-partial_after_overdue_minutes')?.value) || 0;
             const fullDelay = parseInt(document.getElementById('pc-full_after_overdue_minutes')?.value) || 0;
 
-            // Build stages array — each represents a segment on the timeline
-            // Timeline goes from left (earliest) to right (latest)
-            const stages = [];
-            const total = Math.max(r1 + fullDelay, 1);  // Total span for proportional widths
-
-            // Before-deadline stages (negative time, min before)
-            const beforeStages = [
-                { label: 'OK', start: -r1, end: -r2, color: '#22c55e' },
-                { label: 'R1', start: -r2, end: -pre, color: '#eab308' },
-                { label: 'R2', start: -pre, end: 0, color: '#f97316' },
-                { label: 'PRE', start: 0, end: 0, color: '#ef4444' },
-            ];
-
-            // After-deadline stages
-            const afterStages = [
-                { label: 'PART', start: partDelay, end: fullDelay, color: '#ef4444' },
-                { label: 'FULL', start: fullDelay, end: fullDelay + 30, color: '#dc2626' },
-            ];
-
-            // Render as a horizontal bar
-            const barWidth = 100;  // percentage
-            const allPoints = [r1, r2, pre, 0, partDelay, fullDelay].filter(v => v >= 0);
             const maxSpan = r1 + fullDelay + 30;
 
             // Build the bar segments
-            let barHtml = '<div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">';
-
             const segments = [];
             if (r1 > 0) {
-                // OK segment: from -r1 to -r2
                 const w = r2 < r1 ? ((r1 - r2) / maxSpan * 100) : (r1 / maxSpan * 100);
                 segments.push({ label: 'OK', width: Math.max(w, 3), color: '#22c55e33', text: '#22c55e' });
             }
@@ -269,6 +244,42 @@
                 segments.push({ label: 'FULL', width: Math.max(w, 5), color: '#dc262666', text: '#dc2626' });
             }
 
+            // ── NOW cursor position ─────────────────────────────────
+            // The timeline spans from -r1 (left edge) to +fullDelay+30 (right edge)
+            // "minutesBeforeDeadline" is how many minutes until T=0
+            // Positive = before deadline, negative = after deadline
+            let nowPct = null;
+            let nowLabel = '';
+            if (typeof appData !== 'undefined' && appData?.state?.deadline) {
+                const deadlineMs = new Date(appData.state.deadline).getTime();
+                const nowMs = Date.now();
+                const minutesBeforeDeadline = (deadlineMs - nowMs) / 60000;
+
+                // Position on timeline: -r1 maps to 0%, +fullDelay+30 maps to 100%
+                // "minutesFromStart" = how far from the left edge (-r1)
+                const minutesFromStart = r1 - minutesBeforeDeadline;
+                nowPct = (minutesFromStart / maxSpan) * 100;
+
+                // Clamp to visible range with small margin
+                if (nowPct >= -2 && nowPct <= 102) {
+                    nowPct = Math.max(0, Math.min(100, nowPct));
+                    // Build label
+                    const absMins = Math.abs(Math.round(minutesBeforeDeadline));
+                    if (minutesBeforeDeadline > 0) {
+                        nowLabel = _fmtMinutes(absMins) + ' left';
+                    } else {
+                        nowLabel = _fmtMinutes(absMins) + ' overdue';
+                    }
+                } else {
+                    nowPct = null;  // Out of visible range
+                }
+            }
+
+            // ── Render HTML ─────────────────────────────────────────
+            let barHtml = '<div style="position: relative;">';
+
+            // Bar segments
+            barHtml += '<div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">';
             for (const seg of segments) {
                 barHtml += `<div style="
                     width: ${seg.width}%; min-width: ${seg.isMark ? '3px' : '24px'};
@@ -279,11 +290,46 @@
                     white-space: nowrap; overflow: hidden; text-overflow: clip;
                 ">${seg.label}</div>`;
             }
-
             barHtml += '</div>';
 
-            // Labels below
-            barHtml += '<div style="display: flex; justify-content: space-between; margin-top: 0.35rem; font-size: 0.72rem; color: var(--text-dim);">';
+            // NOW cursor overlay
+            if (nowPct !== null) {
+                barHtml += `<div style="
+                    position: absolute; top: -6px; bottom: -22px;
+                    left: ${nowPct}%; transform: translateX(-50%);
+                    width: 2px; pointer-events: none; z-index: 5;
+                ">
+                    <div style="
+                        width: 2px; height: calc(28px + 6px);
+                        background: var(--accent, #60a5fa);
+                        box-shadow: 0 0 6px var(--accent, #60a5fa);
+                        animation: policyNowPulse 2s ease-in-out infinite;
+                    "></div>
+                    <div style="
+                        position: absolute; top: -5px; left: 50%;
+                        transform: translateX(-50%);
+                        width: 0; height: 0;
+                        border-left: 5px solid transparent;
+                        border-right: 5px solid transparent;
+                        border-top: 6px solid var(--accent, #60a5fa);
+                        filter: drop-shadow(0 0 3px var(--accent, #60a5fa));
+                    "></div>
+                    <div style="
+                        position: absolute; bottom: -2px; left: 50%;
+                        transform: translateX(-50%);
+                        font-size: 0.62rem; font-weight: 700;
+                        color: var(--accent, #60a5fa);
+                        white-space: nowrap;
+                        text-shadow: 0 0 4px rgba(0,0,0,0.8);
+                        letter-spacing: 0.03em;
+                    ">NOW</div>
+                </div>`;
+            }
+
+            barHtml += '</div>';  // Close position: relative wrapper
+
+            // Labels below — extra margin to avoid NOW label collision
+            barHtml += '<div style="display: flex; justify-content: space-between; margin-top: 0.55rem; font-size: 0.72rem; color: var(--text-dim);">';
             barHtml += `<span>-${_fmtMinutes(r1)}</span>`;
             if (r2 > 0 && r2 !== r1) barHtml += `<span>-${_fmtMinutes(r2)}</span>`;
             if (pre > 0 && pre !== r2) barHtml += `<span>-${_fmtMinutes(pre)}</span>`;
@@ -292,7 +338,29 @@
             barHtml += `<span>+${_fmtMinutes(fullDelay)}</span>`;
             barHtml += '</div>';
 
+            // Status line showing current position in text
+            if (nowPct !== null && nowLabel) {
+                barHtml += `<div style="
+                    text-align: center; margin-top: 0.35rem;
+                    font-size: 0.72rem; color: var(--accent, #60a5fa);
+                    font-weight: 600;
+                ">📍 ${nowLabel}</div>`;
+            }
+
             el.innerHTML = barHtml;
+
+            // Inject pulse animation if not already present
+            if (!document.getElementById('policy-now-pulse-style')) {
+                const style = document.createElement('style');
+                style.id = 'policy-now-pulse-style';
+                style.textContent = `
+                    @keyframes policyNowPulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.4; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
         }
 
         async function savePolicyConstants() {

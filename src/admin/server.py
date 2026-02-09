@@ -18,17 +18,17 @@ from threading import Timer
 
 from flask import Flask
 
-from .routes_core import core_bp
 from .routes_archive import archive_bp
+from .routes_backup import backup_bp
+from .routes_content import content_bp
+from .routes_core import core_bp
+from .routes_docker import docker_bp
 from .routes_env import env_bp
 from .routes_git import git_bp
+from .routes_media import media_bp
 from .routes_mirror import mirror_bp
 from .routes_secrets import secrets_bp
-from .routes_content import content_bp
-from .routes_media import media_bp
 from .routes_vault import vault_bp
-from .routes_backup import backup_bp
-from .routes_docker import docker_bp
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,9 @@ def create_app() -> Flask:
     def internal_server_error(e):
         """Catch-all: return JSON for any unhandled 500 so clients never see raw HTML."""
         import traceback
-        from flask import jsonify as _jsonify, request
+
+        from flask import jsonify as _jsonify
+        from flask import request
         tb = traceback.format_exc()
         logger.error(
             f"Unhandled 500 on {request.method} {request.path}: {e}\n{tb}"
@@ -102,6 +104,7 @@ def create_app() -> Flask:
     def log_request_start():
         """Record request start time and track vault activity."""
         import time
+
         from flask import request
         request._start_time = time.time()
 
@@ -113,6 +116,7 @@ def create_app() -> Flask:
     def log_request_end(response):
         """Log request with duration for API endpoints."""
         import time
+
         from flask import request
         duration_ms = 0
         if hasattr(request, '_start_time'):
@@ -232,7 +236,7 @@ def run_server(
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
     if debug:
-        print(f"  🐛 Debug mode ON — log level: DEBUG")
+        print("  🐛 Debug mode ON — log level: DEBUG")
 
     app = create_app()
 
@@ -267,7 +271,7 @@ def run_server(
 
     def _vault_shutdown():
         try:
-            from .vault import auto_lock, _session_passphrase
+            from .vault import _session_passphrase, auto_lock
             if _session_passphrase is not None:
                 print("\n🔒 Locking vault on shutdown...")
                 result = auto_lock()

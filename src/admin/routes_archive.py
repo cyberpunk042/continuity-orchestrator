@@ -137,7 +137,6 @@ def api_archive():
             return jsonify(result)
 
     except Exception as e:
-        import traceback
         logger.error(f"Archive exception: {e}", exc_info=True)
         return jsonify({
             "success": False,

@@ -20,6 +20,7 @@ import click
 def mirror_status(ctx: click.Context, as_json: bool) -> None:
     """Show mirror configuration and sync status."""
     import json as json_lib
+
     from ..mirror.config import MirrorSettings
     from ..mirror.state import MirrorState
 
@@ -118,6 +119,7 @@ def mirror_status(ctx: click.Context, as_json: bool) -> None:
 def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_only: bool, jsonl: bool) -> None:
     """Run mirror sync operations with real-time progress."""
     import json as _json
+
     from ..mirror.manager import MirrorManager
 
     def emit(data: dict):
@@ -187,7 +189,12 @@ def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_on
 
         # --- SECRETS ---
         if sync_all or secrets_only:
-            from ..mirror.github_sync import sync_secret, SYNCABLE_SECRETS, RENAMED_SECRETS, secrets_fingerprint
+            from ..mirror.github_sync import (
+                RENAMED_SECRETS,
+                SYNCABLE_SECRETS,
+                secrets_fingerprint,
+                sync_secret,
+            )
             synced = 0
             secret_errors = []
 
@@ -283,6 +290,7 @@ def mirror_clean(ctx: click.Context, clean_code: bool, clean_secrets: bool, clea
     import json as _json
     import subprocess
     import tempfile
+
     from ..mirror.config import MirrorSettings
 
     def emit(data: dict):

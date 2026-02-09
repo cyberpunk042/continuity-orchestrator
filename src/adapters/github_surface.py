@@ -36,15 +36,13 @@ actions:
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
-from uuid import uuid4
+from typing import Dict
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 

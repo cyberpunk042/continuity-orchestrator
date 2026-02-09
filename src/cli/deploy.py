@@ -94,7 +94,7 @@ def export_secrets(format: str):
                 click.echo(f" = {masked}")
             else:
                 click.secho(f"    ⬚  {name}", fg="dim", nl=False)
-                click.echo(f" = (not set)")
+                click.echo(" = (not set)")
         click.echo()
 
         click.echo("  Adapter credentials (only those you use):")
@@ -107,10 +107,10 @@ def export_secrets(format: str):
 
         click.echo("  Renewal secret (for manual check-in):")
         if renewal_secret:
-            click.secho(f"    ✅ RENEWAL_SECRET", fg="green", nl=False)
+            click.secho("    ✅ RENEWAL_SECRET", fg="green", nl=False)
             click.echo(f" = {renewal_secret[:6]}...")
         else:
-            click.secho(f"    ⚠️  RENEWAL_SECRET", fg="yellow", nl=False)
+            click.secho("    ⚠️  RENEWAL_SECRET", fg="yellow", nl=False)
             click.echo(" = (generate one)")
             click.echo()
             click.echo('    Generate with: python -c "import secrets; print(secrets.token_hex(16))"')
@@ -118,10 +118,10 @@ def export_secrets(format: str):
 
         click.echo("  One-click renewal from website (optional but recommended):")
         if renewal_trigger_token:
-            click.secho(f"    ✅ RENEWAL_TRIGGER_TOKEN", fg="green", nl=False)
+            click.secho("    ✅ RENEWAL_TRIGGER_TOKEN", fg="green", nl=False)
             click.echo(f" = {renewal_trigger_token[:12]}...")
         else:
-            click.secho(f"    ⬚  RENEWAL_TRIGGER_TOKEN", fg="dim", nl=False)
+            click.secho("    ⬚  RENEWAL_TRIGGER_TOKEN", fg="dim", nl=False)
             click.echo(" = (not set)")
             click.echo()
             click.echo("    Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta")
@@ -203,7 +203,7 @@ def explain_stages(ctx: click.Context, policy_dir: str, stage: str):
             color = "red"
             icon = "💀"
 
-        click.secho(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", bold=True)
+        click.secho("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", bold=True)
         click.secho(f"{icon} {stage_name}", fg=color, bold=True)
         click.echo(f"   {stage_config.description}")
         click.echo()
@@ -304,8 +304,7 @@ def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_di
     click.echo(f"   Current stage: {state.escalation.state}")
     click.echo()
 
-    # Calculate when each stage would trigger based on rules
-    minutes_to_deadline = (deadline - now).total_seconds() / 60
+    # Show escalation stages below
 
     click.secho("   If you DON'T renew:", bold=True)
     click.echo()
@@ -323,7 +322,7 @@ def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_di
     for stage_name, when, color in stages:
         if stage_name == state.escalation.state:
             click.secho(f"   → {stage_name}", fg=color, bold=True, nl=False)
-            click.echo(f" ← YOU ARE HERE")
+            click.echo(" ← YOU ARE HERE")
         else:
             click.secho(f"     {stage_name}", fg=color, nl=False)
             click.echo(f" — {when}")

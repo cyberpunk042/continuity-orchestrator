@@ -12,7 +12,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -339,7 +339,7 @@ class SiteGenerator:
         self,
         media_map: Dict[str, str],
         base_path: str = "",
-    ) -> "Callable[[str], Optional[str]]":
+    ) -> Callable[[str], Optional[str]]:
         """
         Create a media resolver callback for EditorJSRenderer.
         
@@ -378,9 +378,6 @@ class SiteGenerator:
         _token_obf = obfuscate_token(_raw_token)
         renewal_token_fragments = "\n".join(_token_obf["fragments_html"])
         renewal_token_decrypt_js = _token_obf["js_decrypt"]
-        
-        # Release secret (for client-side optimistic display)
-        release_secret = os.environ.get("RELEASE_SECRET", "")
         
         # Enabled adapters
         enabled_adapters = {}
@@ -612,7 +609,6 @@ class SiteGenerator:
     def _generate_articles(self, context: Dict[str, Any]) -> List[Path]:
         """Generate article pages from Editor.js JSON files."""
         files_generated = []
-        stage = context.get("stage", "OK")
         visible_articles = context.get("visible_articles", [])
         
         if not visible_articles:

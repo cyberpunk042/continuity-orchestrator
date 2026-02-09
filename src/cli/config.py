@@ -37,7 +37,7 @@ def check_config(ctx: click.Context) -> None:
             if status.missing:
                 click.echo(f" — missing: {', '.join(status.missing)}")
             else:
-                click.echo(f" — not configured")
+                click.echo(" — not configured")
 
     click.echo()
     click.secho(f"Summary: {len(configured)} configured, {len(not_configured)} not configured", bold=True)
@@ -67,7 +67,8 @@ def config_status(ctx: click.Context, as_json: bool, output_format: str) -> None
     Use --json for API-compatible output.
     """
     import json as json_lib
-    from ..config.system_status import get_system_status, format_status_cli
+
+    from ..config.system_status import format_status_cli, get_system_status
 
     status = get_system_status()
 

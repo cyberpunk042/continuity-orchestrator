@@ -64,7 +64,7 @@ def test_email(to: str, subject: str, body: str):
         })
 
         email_id = result.get("id") if isinstance(result, dict) else str(result)
-        click.secho(f"✅ Email sent successfully!", fg="green")
+        click.secho("✅ Email sent successfully!", fg="green")
         click.echo(f"   Email ID: {email_id}")
         click.echo()
         click.echo(f"   Check your inbox at {to_email}")
@@ -126,7 +126,7 @@ def test_sms(to: str, message: str):
             to=to_number,
         )
 
-        click.secho(f"✅ SMS sent successfully!", fg="green")
+        click.secho("✅ SMS sent successfully!", fg="green")
         click.echo(f"   Message SID: {result.sid}")
         click.echo(f"   Status: {result.status}")
 
@@ -159,11 +159,11 @@ def test_webhook(url: str, payload: str):
         response = httpx.post(url, json=data, timeout=30)
 
         if response.status_code < 400:
-            click.secho(f"✅ Webhook successful!", fg="green")
+            click.secho("✅ Webhook successful!", fg="green")
             click.echo(f"   Status: {response.status_code}")
             click.echo(f"   Response: {response.text[:200]}")
         else:
-            click.secho(f"⚠️ Webhook returned error", fg="yellow")
+            click.secho("⚠️ Webhook returned error", fg="yellow")
             click.echo(f"   Status: {response.status_code}")
             click.echo(f"   Response: {response.text[:200]}")
 
@@ -215,7 +215,7 @@ def test_github(repo: str):
             raise SystemExit(1)
 
         user_data = user_response.json()
-        click.secho(f"✅ Token valid!", fg="green")
+        click.secho("✅ Token valid!", fg="green")
         click.echo(f"   User: {user_data.get('login')}")
 
         # Test repository access
@@ -227,12 +227,12 @@ def test_github(repo: str):
 
         if repo_response.status_code == 200:
             repo_data = repo_response.json()
-            click.secho(f"✅ Repository accessible!", fg="green")
+            click.secho("✅ Repository accessible!", fg="green")
             click.echo(f"   Name: {repo_data.get('full_name')}")
             click.echo(f"   Visibility: {repo_data.get('visibility')}")
         elif repo_response.status_code == 404:
-            click.secho(f"⚠️ Repository not found or no access", fg="yellow")
-            click.echo(f"   Check repository exists and token has permissions")
+            click.secho("⚠️ Repository not found or no access", fg="yellow")
+            click.echo("   Check repository exists and token has permissions")
         else:
             click.secho(f"⚠️ Repository check failed: {repo_response.status_code}", fg="yellow")
 
@@ -261,16 +261,16 @@ def test_all():
         if status.configured:
             if status.mode == "real":
                 click.secho(f"  ✅ {name}", fg="green", nl=False)
-                click.echo(f" — ready (real mode)")
+                click.echo(" — ready (real mode)")
             else:
                 click.secho(f"  ⚠️  {name}", fg="yellow", nl=False)
-                click.echo(f" — configured but mock mode enabled")
+                click.echo(" — configured but mock mode enabled")
         else:
             click.secho(f"  ❌ {name}", fg="red", nl=False)
             if status.missing:
                 click.echo(f" — missing: {', '.join(status.missing)}")
             else:
-                click.echo(f" — not configured")
+                click.echo(" — not configured")
 
     click.echo()
     click.echo("To test an adapter:")

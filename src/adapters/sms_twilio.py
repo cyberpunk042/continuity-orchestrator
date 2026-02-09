@@ -31,15 +31,15 @@ import logging
 import os
 from typing import Optional
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 
 # Optional twilio import — graceful degradation
 try:
-    from twilio.rest import Client as TwilioClient
     from twilio.base.exceptions import TwilioException
+    from twilio.rest import Client as TwilioClient
     TWILIO_AVAILABLE = True
 except ImportError:
     TWILIO_AVAILABLE = False

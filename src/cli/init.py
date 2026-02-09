@@ -61,7 +61,6 @@ def init(
 ) -> None:
     """Initialize a new Continuity Orchestrator project."""
     import json
-    import shutil
 
     root = ctx.obj["root"]
     state_path = root / "state" / "current.json"
@@ -161,7 +160,7 @@ def init(
 
     with open(state_path, "w") as f:
         json.dump(state_data, f, indent=4)
-    click.secho(f"  ✅ Created state/current.json", fg="green")
+    click.secho("  ✅ Created state/current.json", fg="green")
 
     # Initialize audit log
     audit_path = root / "audit" / "ledger.ndjson"
@@ -177,7 +176,7 @@ def init(
         }
         with open(audit_path, "w") as f:
             f.write(json.dumps(init_entry) + "\n")
-        click.secho(f"  ✅ Created audit/ledger.ndjson", fg="green")
+        click.secho("  ✅ Created audit/ledger.ndjson", fg="green")
 
     # Create sample content manifest
     manifest_path = root / "content" / "manifest.yaml"
@@ -230,7 +229,7 @@ stages:
 '''
         with open(manifest_path, "w") as f:
             f.write(manifest_content)
-        click.secho(f"  ✅ Created content/manifest.yaml", fg="green")
+        click.secho("  ✅ Created content/manifest.yaml", fg="green")
 
     click.echo()
     click.secho("✅ Initialization complete!", fg="green", bold=True)

@@ -7,8 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from ..models.state import State
 from ..models.receipt import Receipt
+from ..models.state import State
 from ..policy.models import ActionDefinition
 
 

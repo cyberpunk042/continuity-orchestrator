@@ -15,9 +15,7 @@ Routes:
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -127,7 +125,7 @@ def api_download(filename: str):
 @backup_bp.route("/preview/<filename>", methods=["GET"])
 def api_preview(filename: str):
     """Preview the manifest of a backup archive."""
-    from ..cli.backup import read_archive_manifest, list_archive_contents
+    from ..cli.backup import list_archive_contents, read_archive_manifest
 
     if not _safe_filename(filename):
         return jsonify({"error": "Invalid filename"}), 400
@@ -235,7 +233,7 @@ def api_restore():
 @backup_bp.route("/import", methods=["POST"])
 def api_import():
     """Import (ADDITIVE) content from a backup archive."""
-    from ..cli.backup import read_archive_manifest, import_from_archive
+    from ..cli.backup import import_from_archive, read_archive_manifest
 
     data = request.json or {}
     filename = data.get("filename")

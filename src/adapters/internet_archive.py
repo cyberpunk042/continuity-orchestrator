@@ -18,21 +18,19 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import time
-import ssl
-import http.client
-from typing import Optional, Tuple
-import urllib.request
-import urllib.parse
 import json
 import logging
+import os
 import re
+import time
+import urllib.parse
+import urllib.request
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 
 class InternetArchiveAdapter(Adapter):
@@ -275,7 +273,7 @@ def archive_url_now(url: str, max_retries: int = 2) -> dict:
             elif error_code in (520, 521, 522, 523, 524):
                 # 520 errors can be transient OR indicate the URL can't be archived
                 # Some sites (GitHub profiles, dynamic JS apps) can't be archived
-                if "github.com/" in url and not ".github.io" in url:
+                if "github.com/" in url and ".github.io" not in url:
                     last_error = "GitHub profile/repo pages often can't be archived (use GitHub Pages URL instead)"
                     break  # Don't retry - this is a permanent issue
                 else:

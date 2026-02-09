@@ -30,9 +30,9 @@ Content is truncated to fit Twitter's character limit.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
-import base64
 import logging
 import os
 import time
@@ -40,8 +40,8 @@ import urllib.parse
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 

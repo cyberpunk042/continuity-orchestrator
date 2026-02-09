@@ -44,16 +44,15 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import uuid4
 
-from ..models.state import State, ActionReceipt
-from ..policy.models import Policy
+from ..models.state import ActionReceipt, State
 from ..persistence.audit import AuditWriter
-from .time_eval import compute_time_fields
+from ..policy.models import Policy
 from .rules import evaluate_rules
 from .state import apply_rules
-
+from .time_eval import compute_time_fields
 
 logger = logging.getLogger(__name__)
 
@@ -261,10 +260,11 @@ def run_tick(
     if not dry_run and actions_for_stage:
         import os
         from pathlib import Path
-        from ..adapters.registry import AdapterRegistry
+
         from ..adapters.base import ExecutionContext
-        from ..templates.resolver import TemplateResolver
+        from ..adapters.registry import AdapterRegistry
         from ..templates.context import build_template_context
+        from ..templates.resolver import TemplateResolver
 
         # Check environment for mock mode (default to True for safety)
         mock_mode = os.environ.get("ADAPTER_MOCK_MODE", "true").lower() in ("true", "1", "yes")

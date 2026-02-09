@@ -182,7 +182,7 @@ def api_secret_set():
             env_file = project_root / ".env"
             existing = {}
             if env_file.exists():
-                with open(env_file, "r") as f:
+                with open(env_file) as f:
                     for line in f:
                         line = line.strip()
                         if line and not line.startswith("#") and "=" in line:
@@ -241,7 +241,7 @@ def api_secret_remove():
             env_file = project_root / ".env"
             if env_file.exists():
                 lines = []
-                with open(env_file, "r") as f:
+                with open(env_file) as f:
                     for line in f:
                         if not line.strip().startswith(f"{name}="):
                             lines.append(line)

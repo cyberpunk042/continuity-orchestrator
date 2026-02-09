@@ -170,9 +170,9 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
     Returns:
         32-byte derived key.
     """
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -282,7 +282,7 @@ def decrypt_content(envelope: Dict[str, Any], passphrase: str) -> Dict[str, Any]
         raise ValueError(f"Failed to decode envelope fields: {e}") from e
 
     # Derive key from passphrase + salt
-    iterations = envelope.get("kdf_iterations", KDF_ITERATIONS)
+    _iterations = envelope.get("kdf_iterations", KDF_ITERATIONS)  # noqa: F841 — reserved for future per-envelope iteration count
     key = _derive_key(passphrase, salt)
 
     # Reconstruct ciphertext + tag (AESGCM expects them concatenated)

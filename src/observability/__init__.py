@@ -2,8 +2,8 @@
 Observability Module — Metrics, health checks, and monitoring.
 """
 
-from .metrics import metrics, MetricsRegistry, Counter, Gauge, Histogram
-from .health import HealthChecker, HealthStatus, SystemHealth, ComponentHealth
+from .health import ComponentHealth, HealthChecker, HealthStatus, SystemHealth
+from .metrics import Counter, Gauge, Histogram, MetricsRegistry, metrics
 
 __all__ = [
     "metrics",

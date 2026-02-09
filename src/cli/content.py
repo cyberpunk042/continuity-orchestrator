@@ -33,7 +33,7 @@ def content_keygen() -> None:
     click.secho(f"  CONTENT_ENCRYPTION_KEY={key}", fg="cyan")
     click.echo()
     click.echo("And to GitHub Secrets:")
-    click.secho(f"  gh secret set CONTENT_ENCRYPTION_KEY -R <owner>/<repo>", fg="cyan")
+    click.secho("  gh secret set CONTENT_ENCRYPTION_KEY -R <owner>/<repo>", fg="cyan")
     click.echo()
     click.secho("⚠  Store this key safely — if lost, encrypted articles cannot be recovered.", fg="yellow")
 
@@ -43,7 +43,6 @@ def content_keygen() -> None:
 def content_status(ctx: click.Context) -> None:
     """Show encryption status of all articles."""
     import json
-    from pathlib import Path
 
     from ..content.crypto import ENV_VAR, get_encryption_key, is_encrypted
 
@@ -125,7 +124,6 @@ def content_encrypt(ctx: click.Context, slug: str, encrypt_all: bool, skip_publi
     Requires CONTENT_ENCRYPTION_KEY to be set in .env or environment.
     """
     import json
-    from pathlib import Path
 
     from ..content.crypto import (
         ENV_VAR,
@@ -220,7 +218,6 @@ def content_decrypt(
     Use --dry-run to preview without modifying files.
     """
     import json
-    from pathlib import Path
 
     from ..content.crypto import (
         ENV_VAR,

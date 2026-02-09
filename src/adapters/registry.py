@@ -7,17 +7,16 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
+from ..models.receipt import Receipt
+from ..policy.models import ActionDefinition
 from .base import Adapter, ExecutionContext
 from .mock import (
     MockAdapter,
     MockEmailAdapter,
+    MockGitHubSurfaceAdapter,
     MockSMSAdapter,
     MockWebhookAdapter,
-    MockGitHubSurfaceAdapter,
 )
-from ..models.receipt import Receipt
-from ..policy.models import ActionDefinition
-
 
 logger = logging.getLogger(__name__)
 

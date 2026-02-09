@@ -161,7 +161,7 @@ def _article_meta(slug: str, data: dict, manifest) -> dict:
 @content_bp.route("/articles", methods=["GET"])
 def api_list_articles():
     """List all articles with metadata."""
-    from ..content.crypto import get_encryption_key, is_encrypted
+    from ..content.crypto import get_encryption_key
 
     articles_dir = _articles_dir()
     manifest = _load_manifest()
@@ -201,7 +201,7 @@ def api_list_articles():
 @content_bp.route("/articles/<slug>", methods=["GET"])
 def api_get_article(slug: str):
     """Get article content (decrypted if encrypted and key available)."""
-    from ..content.crypto import get_encryption_key, is_encrypted, decrypt_content
+    from ..content.crypto import decrypt_content, get_encryption_key, is_encrypted
 
     path = _articles_dir() / f"{slug}.json"
     if not path.exists():
@@ -265,7 +265,7 @@ def api_get_article(slug: str):
 @content_bp.route("/articles/<slug>", methods=["POST"])
 def api_save_article(slug: str):
     """Save article content, optionally encrypting article + referenced media."""
-    from ..content.crypto import encrypt_content, get_encryption_key, is_encrypted
+    from ..content.crypto import encrypt_content, get_encryption_key
 
     body = request.get_json()
     if not body:
@@ -413,7 +413,7 @@ def _reconcile_media_encryption(media_ids: list, should_encrypt: bool, key: str 
     Returns:
         Number of media files whose encryption state was changed.
     """
-    from ..content.crypto import encrypt_file, decrypt_file, is_encrypted_file
+    from ..content.crypto import decrypt_file, encrypt_file, is_encrypted_file
     from ..content.media import MediaManifest
 
     media_dir = _project_root() / "content" / "media"

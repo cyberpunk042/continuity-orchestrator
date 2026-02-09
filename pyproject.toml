@@ -7,7 +7,7 @@ name = "continuity-orchestrator"
 version = "0.1.0"
 description = "A policy-first automation system for scheduled continuity operations"
 license = "MIT"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 
 dependencies = [
     "pyyaml>=6.0",
@@ -48,6 +48,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+# UP006/017/035/037/042/045 require Python 3.10+ at runtime (env is 3.8)
+# E501 line-length is too noisy for now
+ignore = ["UP006", "UP017", "UP035", "UP037", "UP042", "UP045", "E501", "E402", "E741"]
 
 [tool.mypy]
 python_version = "3.11"

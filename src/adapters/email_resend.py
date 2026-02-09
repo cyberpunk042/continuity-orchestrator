@@ -21,15 +21,12 @@ The first line of the template (if it starts with #) is used as subject.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-from typing import Optional
-from uuid import uuid4
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 

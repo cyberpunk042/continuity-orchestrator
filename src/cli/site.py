@@ -48,7 +48,7 @@ def build_site(ctx: click.Context, output: str, clean: bool, archive: bool) -> N
     audit_path = root / "audit" / "ledger.ndjson"
     audit_entries = []
     if audit_path.exists():
-        with open(audit_path, "r") as f:
+        with open(audit_path) as f:
             for line in f:
                 if line.strip():
                     try:
@@ -112,7 +112,7 @@ def build_site(ctx: click.Context, output: str, clean: bool, archive: bool) -> N
                 archive_result = archive_url_now(page_url)
 
                 if archive_result.get("success"):
-                    click.secho(f" ✓", fg="green")
+                    click.secho(" ✓", fg="green")
                     success_count += 1
                 else:
                     click.secho(f" ✗ {archive_result.get('error', '?')}", fg="red")

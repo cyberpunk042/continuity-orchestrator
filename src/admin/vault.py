@@ -21,7 +21,8 @@ import logging
 import os
 import time
 from pathlib import Path
-from threading import Timer, Lock as ThreadLock
+from threading import Lock as ThreadLock
+from threading import Timer
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,8 @@ def _vault_path() -> Path:
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
     """Derive AES-256 key from passphrase using PBKDF2."""
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -509,8 +510,9 @@ def export_vault_file(passphrase: str) -> dict:
     Returns:
         Dict envelope ready to serialize as JSON.
     """
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from datetime import datetime, timezone
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     if not passphrase or len(passphrase) < 8:
         raise ValueError("Password must be at least 8 characters")
@@ -560,8 +562,9 @@ def import_vault_file(vault_data: dict, passphrase: str, *, dry_run: bool = Fals
     Returns:
         {"success": True, "changes": [...], "key_count": int}
     """
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     import hashlib
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     fmt = vault_data.get("format")
     if fmt != EXPORT_FORMAT:

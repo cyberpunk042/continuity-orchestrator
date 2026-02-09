@@ -15,7 +15,7 @@ import subprocess
 
 from flask import Blueprint, current_app, jsonify, request
 
-from .helpers import fresh_env, gh_repo_flag, trigger_mirror_sync_bg
+from .helpers import gh_repo_flag, trigger_mirror_sync_bg
 
 env_bp = Blueprint("env", __name__)
 
@@ -31,7 +31,7 @@ def api_env_read():
     values = {}
 
     if env_file.exists():
-        with open(env_file, "r") as f:
+        with open(env_file) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -58,7 +58,7 @@ def api_env_write():
     # Read existing .env
     existing = {}
     if env_file.exists():
-        with open(env_file, "r") as f:
+        with open(env_file) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -114,7 +114,7 @@ def api_push_secrets():
         env_file = project_root / ".env"
         existing = {}
         if env_file.exists():
-            with open(env_file, "r") as f:
+            with open(env_file) as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:

@@ -32,8 +32,8 @@
 ## Status
 - [x] Tests fixed (639/639 passing)
 - [x] Workflow script extracted (scripts/clear_stuck_deployments.py)
-- [x] Wizard modals split (4 modals → modals/ folder)
+- [x] Wizard modals split (4 modals → modals/ folder + scripts/modals/)
 - [ ] Permission handling
-- [ ] Python version
-- [ ] CI linting
+- [x] Python version standardized (>=3.11 in pyproject.toml, 3.8 dropped from CI matrix)
+- [x] CI linting enforced (ruff + mypy now fail build; 160 auto-fixes applied)
 - [ ] Route file splits

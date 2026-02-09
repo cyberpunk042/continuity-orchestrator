@@ -20,7 +20,6 @@ from typing import Dict, List, Optional, Tuple
 
 import click
 
-
 # ── Archive creation ────────────────────────────────────────────────
 
 
@@ -165,7 +164,8 @@ def create_backup_archive(
                 tar.add(str(content_manifest), arcname="content/manifest.yaml")
 
             if decrypt_content and passphrase:
-                from ..content.crypto import decrypt_content as _decrypt_article, is_encrypted
+                from ..content.crypto import decrypt_content as _decrypt_article
+                from ..content.crypto import is_encrypted
                 for f in sorted(article_files):
                     try:
                         data = json.loads(f.read_text())
@@ -547,7 +547,7 @@ def backup_export(
     click.secho(f"\n✅ Export complete: {archive_path.name}", fg="green", bold=True)
     click.echo(f"  Path:     {archive_path}")
     click.echo(f"  Size:     {size_kb:.1f} KB")
-    click.echo(f"  Contains:")
+    click.echo("  Contains:")
     if include_state:
         click.echo("    • State (current.json)")
     if include_audit:
@@ -618,7 +618,7 @@ def backup_restore(
         restore_content=restore_content,
     )
 
-    click.secho(f"\n✅ Restore complete", fg="green", bold=True)
+    click.secho("\n✅ Restore complete", fg="green", bold=True)
     click.echo(f"  Restored: {len(result['restored'])} file(s)")
     for f in result["restored"]:
         click.echo(f"    ✓ {f}")
@@ -673,7 +673,7 @@ def backup_import(
 
     result = import_from_archive(root, archive_path)
 
-    click.secho(f"\n✅ Import complete", fg="green", bold=True)
+    click.secho("\n✅ Import complete", fg="green", bold=True)
     click.echo(f"  Imported: {len(result['imported'])} item(s)")
     for item in result["imported"]:
         click.echo(f"    + {item}")

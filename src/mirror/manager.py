@@ -22,12 +22,11 @@ import logging
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from .config import MirrorSettings, MirrorConfig
-from .state import MirrorState, ROLE_SLAVE
-from . import git_sync
-from . import github_sync
+from . import git_sync, github_sync
+from .config import MirrorConfig, MirrorSettings
+from .state import ROLE_SLAVE, MirrorState
 
 logger = logging.getLogger(__name__)
 

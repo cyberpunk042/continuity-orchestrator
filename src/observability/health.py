@@ -18,13 +18,11 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from ..models.state import State
 
 logger = logging.getLogger(__name__)
 
@@ -177,9 +175,6 @@ class HealthChecker:
                     message="Audit directory not found",
                 )
             
-            # Check if writable
-            writable = self.audit_path.parent.exists()
-            
             latency = (time.time() - start) * 1000
             
             # Get log size if exists
@@ -268,7 +263,7 @@ class HealthChecker:
                 message=message,
                 details=stats,
             )
-        except Exception as e:
+        except Exception:
             return ComponentHealth(
                 name="retry_queue",
                 status=HealthStatus.HEALTHY,
@@ -295,7 +290,7 @@ class HealthChecker:
                     status=HealthStatus.HEALTHY,
                     message="All circuits closed",
                 )
-        except Exception as e:
+        except Exception:
             return ComponentHealth(
                 name="circuit_breakers",
                 status=HealthStatus.HEALTHY,

@@ -7,7 +7,7 @@ for the current countdown, escalation, and execution status.
 
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 

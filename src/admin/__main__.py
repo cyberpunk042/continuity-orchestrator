@@ -8,7 +8,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 from .server import run_server
 

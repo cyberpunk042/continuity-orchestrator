@@ -478,7 +478,7 @@ class EditorJSRenderer:
     
     def _render_unknown(self, data: Dict) -> str:
         """Fallback for unknown block types."""
-        return f'<!-- Unknown block type -->'
+        return '<!-- Unknown block type -->'
 
 
 class ContentManager:
@@ -501,7 +501,7 @@ class ContentManager:
         if not self.content_dir.exists():
             return []
         
-        from ..content.crypto import is_encrypted, get_encryption_key, load_article
+        from ..content.crypto import get_encryption_key, is_encrypted, load_article
         
         articles = []
         for path in sorted(self.content_dir.glob("*.json")):

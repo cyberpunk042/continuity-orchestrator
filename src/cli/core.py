@@ -55,7 +55,6 @@ def reset(
     root = ctx.obj["root"]
     state_path = root / state_file
     audit_path = root / "audit" / "ledger.ndjson"
-    backup_dir = root / "backups"
     articles_dir = root / "content" / "articles"
     media_dir = root / "content" / "media"
 
@@ -102,9 +101,19 @@ def reset(
     if full:
         # Full factory reset - create new state
         from ..models.state import (
-            State, Meta, Mode, Timer, Renewal, Security,
-            Escalation, Actions, ReleaseConfig, Integrations, EnabledAdapters,
-            Routing, Pointers
+            Actions,
+            EnabledAdapters,
+            Escalation,
+            Integrations,
+            Meta,
+            Mode,
+            Pointers,
+            ReleaseConfig,
+            Renewal,
+            Routing,
+            Security,
+            State,
+            Timer,
         )
 
         # Read operator email from env or existing state
@@ -498,9 +507,9 @@ def renew(ctx: click.Context, hours: int, state_file: str) -> None:
     with open(audit_path, "a") as f:
         f.write(json.dumps(audit_entry) + "\n")
 
-    click.secho(f"✅ Renewal successful", fg="green")
+    click.secho("✅ Renewal successful", fg="green")
     click.echo(f"  Previous state: {old_state}")
-    click.echo(f"  New state: OK")
+    click.echo("  New state: OK")
     click.echo(f"  Extended by: {hours} hours")
     click.echo(f"  New deadline: {new_deadline.isoformat()}")
     click.echo(f"  Renewal count: {state.renewal.renewal_count}")
@@ -613,7 +622,7 @@ def trigger_release(
         f.write(json.dumps(audit_entry) + "\n")
 
     if not silent:
-        click.secho(f"⚠️  RELEASE TRIGGERED", fg="red", bold=True)
+        click.secho("⚠️  RELEASE TRIGGERED", fg="red", bold=True)
         click.echo(f"  Previous state: {old_state}")
         click.echo(f"  Target state: {stage}")
         click.echo(f"  Delay: {delay} minutes ({delay_scope})")

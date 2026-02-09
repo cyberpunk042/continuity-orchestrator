@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-deadman",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-09T08:56:34.051041Z",
+        "updated_at_iso": "2026-02-09T09:53:12.875034+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -31,61 +31,23 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "FULL",
-        "state_entered_at_iso": "2026-02-09T08:51:04.076907+00:00",
-        "last_transition_rule_id": "MANUAL_TRIGGER",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-09T09:53:12.875034+00:00",
+        "last_transition_rule_id": "MANUAL_RESET",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "post_x_full": {
-                "status": "ok",
-                "last_delivery_id": "mock_14e65540",
-                "last_executed_iso": "2026-02-09T08:56:33.974725+00:00"
-            },
-            "post_reddit_full": {
-                "status": "ok",
-                "last_delivery_id": "mock_e4bc949c",
-                "last_executed_iso": "2026-02-09T08:56:33.975464+00:00"
-            },
-            "publish_github_full_documents": {
-                "status": "ok",
-                "last_delivery_id": "mock_gh_cdc8a872",
-                "last_executed_iso": "2026-02-09T08:56:33.975758+00:00"
-            },
-            "publish_article": {
-                "status": "ok",
-                "last_delivery_id": "site_e6cceccc",
-                "last_executed_iso": "2026-02-09T08:56:34.050305+00:00"
-            },
-            "notify_all_webhooks": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-09T08:56:34.050626+00:00"
-            },
-            "persist_final_state": {
-                "status": "ok",
-                "last_delivery_id": "mock_ff2f6997",
-                "last_executed_iso": "2026-02-09T08:56:34.050897+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "post_x_full",
-            "post_reddit_full",
-            "publish_github_full_documents",
-            "publish_article",
-            "notify_all_webhooks",
-            "persist_final_state"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
-        "triggered": true,
+        "triggered": false,
         "trigger_time_iso": "2026-02-09T08:51:04.076907+00:00",
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
         "execute_after_iso": "2026-02-09T08:51:04.076907+00:00",
-        "client_token": "mYknQYuAPyu1xmUwG7mBuw"
+        "client_token": null
     },
     "integrations": {
         "enabled_adapters": {

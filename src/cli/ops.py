@@ -113,7 +113,7 @@ def retry_queue_cmd(ctx: click.Context, action: str) -> None:
 @click.pass_context
 def circuit_breakers_cmd(ctx: click.Context, do_reset: bool) -> None:
     """View and manage circuit breakers."""
-    from ..reliability.circuit_breaker import get_registry, CircuitState
+    from ..reliability.circuit_breaker import get_registry
 
     registry = get_registry()
 

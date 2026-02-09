@@ -26,7 +26,7 @@ def fresh_env(project_root: Path) -> dict:
     env = {**os.environ, "TERM": "dumb"}
     env_file = project_root / ".env"
     if env_file.exists():
-        with open(env_file, "r") as f:
+        with open(env_file) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:

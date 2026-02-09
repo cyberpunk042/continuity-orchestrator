@@ -2,15 +2,15 @@
 Reliability Module — Retry queues, circuit breakers, and fault tolerance.
 """
 
-from .retry_queue import RetryQueue, RetryItem
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerRegistry,
-    CircuitState,
     CircuitConfig,
+    CircuitState,
     get_circuit_breaker,
     get_registry,
 )
+from .retry_queue import RetryItem, RetryQueue
 
 __all__ = [
     "RetryQueue",

@@ -27,8 +27,8 @@ import logging
 import os
 from typing import List, Optional
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 

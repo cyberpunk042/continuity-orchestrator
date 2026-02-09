@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import subprocess
 
-from flask import Blueprint, current_app, jsonify, request, render_template
-from pathlib import Path
+from flask import Blueprint, current_app, jsonify, render_template, request
 
 from .helpers import fresh_env
 

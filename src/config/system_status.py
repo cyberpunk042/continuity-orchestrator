@@ -19,7 +19,7 @@ import logging
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -448,7 +448,7 @@ def format_status_cli(status: SystemStatus) -> str:
                 mins = status.time_to_deadline_minutes % 60
                 lines.append(f"│  Deadline: {hours}h {mins}m remaining")
             else:
-                lines.append(f"│  Deadline: ⚠️ PASSED")
+                lines.append("│  Deadline: ⚠️ PASSED")
         else:
             lines.append(f"│  Deadline: {status.deadline}")
     

@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import os
 import random
-import string
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 
 def _xor_bytes(data: bytes, key: bytes) -> bytes:

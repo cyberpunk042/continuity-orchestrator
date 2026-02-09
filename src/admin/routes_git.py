@@ -12,7 +12,7 @@ import subprocess
 
 from flask import Blueprint, current_app, jsonify, request
 
-from .helpers import fresh_env, trigger_mirror_sync_bg
+from .helpers import trigger_mirror_sync_bg
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def api_git_status():
         ahead, behind = 0, 0
         tracking = _git("rev-parse", "--abbrev-ref", "@{upstream}")
         if tracking:
-            ab = _git("rev-list", "--left-right", "--count", f"HEAD...@{{upstream}}")
+            ab = _git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
             if ab:
                 parts = ab.split()
                 if len(parts) == 2:

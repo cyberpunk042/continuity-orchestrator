@@ -33,14 +33,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from .base import Adapter, ExecutionContext
 from ..models.receipt import Receipt
 from ..site.generator import SiteGenerator
+from .base import Adapter, ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +146,7 @@ class ArticlePublishAdapter(Adapter):
         
         entries = []
         try:
-            with open(audit_path, "r") as f:
+            with open(audit_path) as f:
                 for line in f:
                     if line.strip():
                         try:

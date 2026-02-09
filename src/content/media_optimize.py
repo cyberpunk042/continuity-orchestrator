@@ -32,7 +32,6 @@ from __future__ import annotations
 import gzip
 import io
 import logging
-import os
 import shutil
 import subprocess
 import tempfile

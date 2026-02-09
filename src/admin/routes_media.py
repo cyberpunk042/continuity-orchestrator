@@ -105,8 +105,8 @@ def _upload_to_release_bg(media_id: str, enc_path: Path) -> None:
     'media-vault' release. Creates the release if it doesn't exist.
     Runs as a background thread so progress can be tracked and cancelled.
     """
-    import subprocess
     import shutil
+    import subprocess
     import threading
     import time
 
@@ -296,8 +296,8 @@ def _restore_large_media(manifest) -> dict:
     Returns:
         Dict with 'restored', 'failed', 'skipped' lists and 'gh_available' bool.
     """
-    import subprocess
     import shutil
+    import subprocess
 
     result = {
         "gh_available": bool(shutil.which("gh")),
@@ -446,8 +446,8 @@ def api_reoptimize():
     smaller, replaces the file on disk and updates the manifest entry.
     Handles storage tier migration (e.g. git → git if file shrinks).
     """
-    from ..content.media_optimize import optimize_media, classify_storage
-    from ..content.crypto import is_encrypted_file, decrypt_file, encrypt_file, get_encryption_key
+    from ..content.crypto import decrypt_file, encrypt_file, get_encryption_key, is_encrypted_file
+    from ..content.media_optimize import classify_storage, optimize_media
 
     manifest = _load_manifest()
     results = {"optimized": [], "skipped": [], "failed": [], "total": len(manifest.entries)}
@@ -623,7 +623,7 @@ def api_upload_media():
         # ── Optimize media (images, video, audio) ──
         upload_stage = "optimize"
 
-        from ..content.media_optimize import optimize_media, classify_storage
+        from ..content.media_optimize import classify_storage, optimize_media
 
         original_size = len(file_data)
         logger.info(
@@ -831,8 +831,8 @@ def api_delete_media(media_id: str):
     # Delete GitHub Release asset if large tier
     storage = entry.storage or "git"
     if storage == "large":
-        import subprocess
         import shutil as _shutil
+        import subprocess
         if _shutil.which("gh"):
             asset_name = f"{media_id}.enc"
             project_root = current_app.config["PROJECT_ROOT"]
@@ -872,7 +872,7 @@ def api_toggle_encryption(media_id: str):
     If currently plaintext → encrypts it (requires CONTENT_ENCRYPTION_KEY).
     If currently encrypted → decrypts it (requires CONTENT_ENCRYPTION_KEY).
     """
-    from ..content.crypto import encrypt_file, decrypt_file, is_encrypted_file
+    from ..content.crypto import decrypt_file, encrypt_file, is_encrypted_file
 
     manifest = _load_manifest()
     entry = manifest.get(media_id)
@@ -1036,7 +1036,7 @@ def api_editor_upload():
             })
 
         # ── Larger file → optimize if needed, store raw ──
-        from ..content.media_optimize import optimize_media, classify_storage
+        from ..content.media_optimize import classify_storage, optimize_media
 
         # Run universal optimization (images, video, audio)
         original_size = len(file_data)
