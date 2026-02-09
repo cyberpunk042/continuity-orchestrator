@@ -195,6 +195,167 @@ document.getElementById('content-editorjs').innerHTML =
 }
 }
 
+// ── Custom EditorJS tools for media blocks ──────────────
+
+/**
+ * VideoTool — Renders a video player in the editor.
+ * Data: { url, caption, poster }
+ */
+class VideoTool {
+    static get toolbox() {
+        return { title: 'Video', icon: '<svg width="17" height="15" viewBox="0 0 17 15"><path d="M2 2h10v10H2z" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M13 5l3-2v9l-3-2" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>' };
+    }
+    constructor({ data, config, api }) {
+        this.data = Object.assign({ url: '', caption: '', poster: '' }, data);
+        this.api = api;
+        this.wrapper = null;
+    }
+    render() {
+        this.wrapper = document.createElement('div');
+        this.wrapper.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #111;';
+        this._renderContent();
+        return this.wrapper;
+    }
+    _renderContent() {
+        const url = this.data.url;
+        const isPreview = url && (url.startsWith('/api/') || url.startsWith('http') || url.startsWith('blob:'));
+
+        this.wrapper.innerHTML = `
+            <div style="position: relative; min-height: 180px; display: flex; align-items: center; justify-content: center;">
+                ${isPreview
+                    ? `<video controls preload="metadata" style="width: 100%; max-height: 400px; display: block;">
+                        <source src="${url}"></video>`
+                    : `<div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+                        <div style="font-size: 3rem; opacity: 0.3;">🎬</div>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem;">${url ? url : 'No video selected — use 📎 Insert Media'}</p>
+                       </div>`
+                }
+            </div>
+            <input type="text" class="ce-editorjs-caption" value="${(this.data.caption || '').replace(/"/g, '&quot;')}"
+                placeholder="Video caption (optional)"
+                style="width: 100%; padding: 0.6rem 0.8rem; border: none; border-top: 1px solid var(--border);
+                       background: var(--surface); color: var(--text); font-size: 0.85rem; outline: none; box-sizing: border-box;">`;
+    }
+    save(el) {
+        const caption = el.querySelector('.ce-editorjs-caption');
+        return {
+            url: this.data.url,
+            caption: caption ? caption.value : this.data.caption,
+            poster: this.data.poster || '',
+        };
+    }
+    validate(savedData) {
+        return !!savedData.url;
+    }
+}
+
+/**
+ * AudioTool — Renders an audio player in the editor.
+ * Data: { url, caption }
+ */
+class AudioTool {
+    static get toolbox() {
+        return { title: 'Audio', icon: '<svg width="17" height="15" viewBox="0 0 17 15"><circle cx="8.5" cy="7.5" r="6" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M8.5 4v7M6 6.5l2.5-2.5 2.5 2.5" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>' };
+    }
+    constructor({ data, config, api }) {
+        this.data = Object.assign({ url: '', caption: '' }, data);
+        this.api = api;
+        this.wrapper = null;
+    }
+    render() {
+        this.wrapper = document.createElement('div');
+        this.wrapper.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface);';
+        this._renderContent();
+        return this.wrapper;
+    }
+    _renderContent() {
+        const url = this.data.url;
+        const isPreview = url && (url.startsWith('/api/') || url.startsWith('http') || url.startsWith('blob:'));
+
+        this.wrapper.innerHTML = `
+            <div style="padding: 1rem; display: flex; align-items: center; gap: 1rem;">
+                <div style="font-size: 2rem; opacity: 0.5;">🎵</div>
+                <div style="flex: 1;">
+                    ${isPreview
+                        ? `<audio controls preload="metadata" style="width: 100%;"><source src="${url}"></audio>`
+                        : `<div style="color: var(--text-dim); font-size: 0.85rem;">
+                            ${url ? url : 'No audio selected — use 📎 Insert Media'}
+                           </div>`
+                    }
+                </div>
+            </div>
+            <input type="text" class="ce-editorjs-caption" value="${(this.data.caption || '').replace(/"/g, '&quot;')}"
+                placeholder="Audio caption (optional)"
+                style="width: 100%; padding: 0.6rem 0.8rem; border: none; border-top: 1px solid var(--border);
+                       background: var(--surface); color: var(--text); font-size: 0.85rem; outline: none; box-sizing: border-box;">`;
+    }
+    save(el) {
+        const caption = el.querySelector('.ce-editorjs-caption');
+        return {
+            url: this.data.url,
+            caption: caption ? caption.value : this.data.caption,
+        };
+    }
+    validate(savedData) {
+        return !!savedData.url;
+    }
+}
+
+/**
+ * AttachmentTool — Renders a download card in the editor.
+ * Data: { url, title, size }
+ */
+class AttachmentTool {
+    static get toolbox() {
+        return { title: 'File', icon: '<svg width="17" height="15" viewBox="0 0 17 15"><path d="M4 1h6l4 4v9H4z" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M10 1v4h4" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>' };
+    }
+    constructor({ data, config, api }) {
+        this.data = Object.assign({ url: '', title: 'Attachment', size: 0 }, data);
+        this.api = api;
+        this.wrapper = null;
+    }
+    render() {
+        this.wrapper = document.createElement('div');
+        this.wrapper.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface);';
+        this._renderContent();
+        return this.wrapper;
+    }
+    _renderContent() {
+        const url = this.data.url;
+        const sizeStr = this.data.size ? formatMediaSize(this.data.size) : '';
+        const isPreview = url && (url.startsWith('/api/') || url.startsWith('http'));
+
+        this.wrapper.innerHTML = `
+            <div style="padding: 1rem; display: flex; align-items: center; gap: 1rem;">
+                <div style="font-size: 2rem; opacity: 0.5;">📎</div>
+                <div style="flex: 1; min-width: 0;">
+                    <input type="text" class="ce-editorjs-title" value="${(this.data.title || '').replace(/"/g, '&quot;')}"
+                        placeholder="File name"
+                        style="width: 100%; padding: 0.3rem 0; border: none; background: transparent;
+                               color: var(--text); font-size: 0.9rem; font-weight: 500; outline: none;">
+                    <div style="font-size: 0.78rem; color: var(--text-dim);">
+                        ${sizeStr ? `${sizeStr} · ` : ''}${url
+                            ? (isPreview
+                                ? `<a href="${url}" target="_blank" style="color: var(--info);">Preview ↗</a>`
+                                : `<span>${url}</span>`)
+                            : 'No file selected — use 📎 Insert Media'}
+                    </div>
+                </div>
+            </div>`;
+    }
+    save(el) {
+        const titleInput = el.querySelector('.ce-editorjs-title');
+        return {
+            url: this.data.url,
+            title: titleInput ? titleInput.value : this.data.title,
+            size: this.data.size,
+        };
+    }
+    validate(savedData) {
+        return !!savedData.url;
+    }
+}
+
 // ── Editor.js initialization ────────────────────────────
 
 async function initContentEditor(data) {
@@ -239,6 +400,11 @@ if (typeof Table !== 'undefined') toolConfig.table = { class: Table };
 if (typeof Warning !== 'undefined') toolConfig.warning = { class: Warning };
 if (typeof Delimiter !== 'undefined') toolConfig.delimiter = { class: Delimiter };
 
+// Custom media tools (always available — defined above)
+toolConfig.video = { class: VideoTool };
+toolConfig.audio = { class: AudioTool };
+toolConfig.attachment = { class: AttachmentTool };
+
 // Image tool with hybrid upload (inline <100KB, vault ≥100KB)
 if (typeof ImageTool !== 'undefined') {
 toolConfig.image = {
@@ -282,6 +448,8 @@ toolConfig.image = {
     },
 };
 }
+
+// ── EditorJS instantiation ──────────────────────────────
 
 let contentEditorReady = false;
 
@@ -612,6 +780,12 @@ const MEDIA_PREVIEW_PREFIX = '/api/content/media/';
 /**
  * Rewrite media:// URIs ↔ preview endpoint URLs in Editor.js data.
  *
+ * Handles all media block types:
+ *   image:      data.file.url
+ *   video:      data.url, data.poster
+ *   audio:      data.url
+ *   attachment:  data.url
+ *
  * @param {Object} editorData - Editor.js output data (with blocks array)
  * @param {string} direction - 'toPreview' or 'toMedia'
  * @returns {Object} Deep clone with rewritten URLs
@@ -622,26 +796,40 @@ function contentRewriteMediaUrls(editorData, direction) {
     // Deep clone so we don't mutate the original
     const clone = JSON.parse(JSON.stringify(editorData));
     
-    for (const block of clone.blocks) {
-        if (block.type !== 'image') continue;
-        
-        const fileObj = block.data && block.data.file;
-        if (!fileObj || !fileObj.url) continue;
-        
-        const url = fileObj.url;
-        
+    function rewriteUrl(url) {
+        if (!url) return url;
         if (direction === 'toPreview' && url.startsWith(MEDIA_URI_PREFIX)) {
-            // media://img_001 → /api/content/media/img_001/preview
             const mediaId = url.slice(MEDIA_URI_PREFIX.length);
-            fileObj.url = `${MEDIA_PREVIEW_PREFIX}${mediaId}/preview`;
+            return `${MEDIA_PREVIEW_PREFIX}${mediaId}/preview`;
         } else if (direction === 'toMedia' && url.startsWith(MEDIA_PREVIEW_PREFIX)) {
-            // /api/content/media/img_001/preview → media://img_001
             const match = url.match(/^\/api\/content\/media\/([^/]+)\/preview$/);
-            if (match) {
-                fileObj.url = `${MEDIA_URI_PREFIX}${match[1]}`;
-            }
+            if (match) return `${MEDIA_URI_PREFIX}${match[1]}`;
         }
-        // data: and https:// URLs pass through unchanged
+        return url; // data: and https:// pass through unchanged
+    }
+
+    for (const block of clone.blocks) {
+        const d = block.data;
+        if (!d) continue;
+
+        switch (block.type) {
+            case 'image':
+                // EditorJS Image tool: data.file.url
+                if (d.file && d.file.url) d.file.url = rewriteUrl(d.file.url);
+                // Legacy flat format fallback
+                else if (d.url) d.url = rewriteUrl(d.url);
+                break;
+            case 'video':
+                if (d.url) d.url = rewriteUrl(d.url);
+                if (d.poster) d.poster = rewriteUrl(d.poster);
+                break;
+            case 'audio':
+                if (d.url) d.url = rewriteUrl(d.url);
+                break;
+            case 'attachment':
+                if (d.url) d.url = rewriteUrl(d.url);
+                break;
+        }
     }
     
     return clone;
@@ -657,3 +845,239 @@ function formatMediaSize(bytes) {
     return `${val} ${units[i]}`;
 }
 }
+
+// ── Vault Picker Modal ──────────────────────────────────
+
+let vaultPickerEntries = [];
+let vaultPickerSelected = null;  // MediaEntry object
+let vaultPickerCurrentFilter = 'all';
+
+function _vaultPickerMimeCategory(mime) {
+    if (!mime) return 'file';
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
+    return 'file';
+}
+
+async function openVaultPicker() {
+    vaultPickerSelected = null;
+    vaultPickerCurrentFilter = 'all';
+
+    // Reset tab active state
+    document.querySelectorAll('.vault-picker-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.vault-picker-tab[data-filter="all"]').classList.add('active');
+
+    // Show modal
+    document.getElementById('vault-picker-overlay').style.display = 'flex';
+    document.getElementById('vault-picker-actions').style.display = 'none';
+    document.getElementById('vault-picker-status').textContent = '';
+
+    // Fetch media entries
+    const grid = document.getElementById('vault-picker-grid');
+    grid.innerHTML = '<div class="loading">Loading media</div>';
+
+    try {
+        const resp = await fetch('/api/content/media');
+        const data = await resp.json();
+        vaultPickerEntries = data.media || [];
+        _renderVaultPickerGrid();
+    } catch (error) {
+        grid.innerHTML = `<div class="vault-picker-empty">❌ Failed to load media: ${error.message}</div>`;
+    }
+}
+
+function closeVaultPicker(event) {
+    // If called from overlay click, only close if clicking the overlay itself
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('vault-picker-overlay').style.display = 'none';
+    document.getElementById('vault-picker-file-input').value = '';
+    vaultPickerSelected = null;
+}
+
+function vaultPickerFilter(filter, btn) {
+    vaultPickerCurrentFilter = filter;
+    vaultPickerSelected = null;
+    document.getElementById('vault-picker-actions').style.display = 'none';
+
+    document.querySelectorAll('.vault-picker-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+
+    _renderVaultPickerGrid();
+}
+
+function _renderVaultPickerGrid() {
+    const grid = document.getElementById('vault-picker-grid');
+
+    const filtered = vaultPickerCurrentFilter === 'all'
+        ? vaultPickerEntries
+        : vaultPickerEntries.filter(e => _vaultPickerMimeCategory(e.mime_type) === vaultPickerCurrentFilter);
+
+    if (filtered.length === 0) {
+        grid.innerHTML = `<div class="vault-picker-empty">
+            ${vaultPickerEntries.length === 0
+                ? 'No media files yet — upload one below'
+                : 'No matching files in this category'}
+        </div>`;
+        return;
+    }
+
+    let html = '';
+    for (const item of filtered) {
+        const isSelected = vaultPickerSelected && vaultPickerSelected.id === item.id;
+        const isImage = item.mime_type?.startsWith('image/');
+        const icon = typeof getMediaIcon !== 'undefined' ? getMediaIcon(item.mime_type) : '📁';
+
+        html += `
+        <div class="vault-picker-item ${isSelected ? 'selected' : ''}"
+             onclick="vaultPickerSelect('${item.id}')"
+             title="${item.original_name}\n${item.mime_type} · ${formatMediaSize(item.size_bytes)}">
+            <div class="vault-picker-thumb">
+                ${isImage
+                    ? `<img src="/api/content/media/${item.id}/preview" alt="${item.original_name}" loading="lazy"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                       <div style="display: none; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 1.5rem; opacity: 0.4;">🔒</div>`
+                    : `<div style="font-size: 1.8rem; opacity: 0.5;">${icon}</div>`
+                }
+            </div>
+            <div class="vault-picker-label">${item.original_name}</div>
+        </div>`;
+    }
+
+    grid.innerHTML = html;
+}
+
+function vaultPickerSelect(mediaId) {
+    const item = vaultPickerEntries.find(e => e.id === mediaId);
+    if (!item) return;
+
+    vaultPickerSelected = item;
+    _renderVaultPickerGrid();
+
+    // Show action buttons
+    const actions = document.getElementById('vault-picker-actions');
+    actions.style.display = 'flex';
+
+    // Determine if embed is possible (only for image/video/audio)
+    const cat = _vaultPickerMimeCategory(item.mime_type);
+    const canEmbed = ['image', 'video', 'audio'].includes(cat);
+
+    const embedBtn = document.getElementById('vault-picker-embed-btn');
+    embedBtn.style.display = canEmbed ? '' : 'none';
+
+    // Update status
+    document.getElementById('vault-picker-status').textContent =
+        `Selected: ${item.original_name} (${formatMediaSize(item.size_bytes)})`;
+}
+
+function vaultPickerInsert(mode) {
+    if (!vaultPickerSelected || !contentEditor) return;
+
+    const item = vaultPickerSelected;
+    const cat = _vaultPickerMimeCategory(item.mime_type);
+    const previewUrl = `/api/content/media/${item.id}/preview`;
+
+    let blockType, blockData;
+
+    if (mode === 'attach') {
+        blockType = 'attachment';
+        blockData = {
+            url: previewUrl,
+            title: item.original_name,
+            size: item.size_bytes,
+        };
+    } else {
+        // Embed
+        switch (cat) {
+            case 'image':
+                blockType = 'image';
+                blockData = {
+                    file: { url: previewUrl },
+                    caption: item.caption || '',
+                    stretched: false,
+                    withBorder: false,
+                    withBackground: false,
+                };
+                break;
+            case 'video':
+                blockType = 'video';
+                blockData = {
+                    url: previewUrl,
+                    caption: item.caption || item.original_name,
+                    poster: '',
+                };
+                break;
+            case 'audio':
+                blockType = 'audio';
+                blockData = {
+                    url: previewUrl,
+                    caption: item.caption || item.original_name,
+                };
+                break;
+            default:
+                // Shouldn't reach here since embed is hidden for non-media
+                blockType = 'attachment';
+                blockData = { url: previewUrl, title: item.original_name, size: item.size_bytes };
+        }
+    }
+
+    // Insert the block at the end of the editor
+    contentEditor.blocks.insert(blockType, blockData);
+    contentDirty = true;
+
+    const modeLabel = mode === 'attach' ? '📎 attached' : '▶ embedded';
+    contentLog(`✅ Inserted ${item.original_name} as ${blockType} (${modeLabel})`);
+
+    closeVaultPicker();
+}
+
+async function vaultPickerUploadFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const status = document.getElementById('vault-picker-status');
+    status.textContent = `⏳ Uploading ${file.name}...`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('min_stage', 'FULL');
+
+    try {
+        const resp = await fetch('/api/content/media/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            status.textContent = `✅ Uploaded: ${data.original_name}`;
+
+            // Refresh and select the new entry
+            const resp2 = await fetch('/api/content/media');
+            const data2 = await resp2.json();
+            vaultPickerEntries = data2.media || [];
+
+            // Auto-select the uploaded file
+            vaultPickerSelected = vaultPickerEntries.find(e => e.id === data.id) || null;
+            _renderVaultPickerGrid();
+            if (vaultPickerSelected) vaultPickerSelect(data.id);
+
+            // Invalidate media panel cache
+            mediaLoaded = false;
+        } else {
+            status.textContent = `❌ Upload failed: ${data.error}`;
+        }
+    } catch (error) {
+        status.textContent = `❌ Upload error: ${error.message}`;
+    }
+
+    // Reset file input
+    document.getElementById('vault-picker-file-input').value = '';
+}
+
+// Close vault picker on Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('vault-picker-overlay').style.display !== 'none') {
+        closeVaultPicker();
+    }
+});

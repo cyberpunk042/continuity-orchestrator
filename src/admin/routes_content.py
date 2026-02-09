@@ -328,8 +328,8 @@ def api_save_article(slug: str):
 def _extract_media_info(content: dict) -> dict:
     """Extract media IDs and their captions from Editor.js content.
 
-    Scans all blocks for media:// URIs. For image blocks, also captures
-    the Editor.js caption so we can backfill the media manifest caption.
+    Scans all blocks for media:// URIs. For image, video, audio, and
+    attachment blocks, captures the caption/title for manifest backfill.
 
     Returns:
         Dict of {media_id: caption_or_empty_string}
@@ -341,15 +341,44 @@ def _extract_media_info(content: dict) -> dict:
     blocks = content.get("blocks", [])
     for block in blocks:
         data = block.get("data", {})
+        btype = block.get("type", "")
 
-        # Image blocks have structured data with caption + file.url
-        if block.get("type") == "image":
+        # Image blocks: data.file.url + data.caption
+        if btype == "image":
             file_info = data.get("file", {})
             url = file_info.get("url", "")
             match = pattern.search(url)
             if match:
                 caption = data.get("caption", "").strip()
                 media_map[match.group(1)] = caption
+            continue
+
+        # Video blocks: data.url + data.caption + data.poster
+        if btype == "video":
+            for field in ("url", "poster"):
+                url = data.get(field, "")
+                match = pattern.search(url)
+                if match and match.group(1) not in media_map:
+                    caption = data.get("caption", "").strip()
+                    media_map[match.group(1)] = caption
+            continue
+
+        # Audio blocks: data.url + data.caption
+        if btype == "audio":
+            url = data.get("url", "")
+            match = pattern.search(url)
+            if match:
+                caption = data.get("caption", "").strip()
+                media_map[match.group(1)] = caption
+            continue
+
+        # Attachment blocks: data.url + data.title
+        if btype == "attachment":
+            url = data.get("url", "")
+            match = pattern.search(url)
+            if match:
+                title = data.get("title", "").strip()
+                media_map[match.group(1)] = title
             continue
 
         # For any other block type, scan all string values for media:// URIs

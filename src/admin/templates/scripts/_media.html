@@ -452,6 +452,11 @@ function getMediaIcon(mimeType) {
     if (mimeType.startsWith('video/')) return '🎬';
     if (mimeType.startsWith('audio/')) return '🎵';
     if (mimeType === 'application/pdf') return '📄';
+    if (mimeType === 'application/json' || mimeType === 'application/xml') return '🗂️';
+    if (mimeType.startsWith('text/')) return '📝';
+    if (mimeType === 'message/rfc822') return '✉️';
+    if (['application/zip', 'application/gzip', 'application/x-tar',
+         'application/x-7z-compressed'].includes(mimeType)) return '📦';
     return '📁';
 }
 
