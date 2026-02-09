@@ -29,6 +29,7 @@ dev = [
 adapters = [
     "httpx>=0.25",
     "resend>=1.0",
+    "twilio>=8.0",
 ]
 admin = [
     "flask>=3.0",

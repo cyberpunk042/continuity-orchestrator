@@ -2126,6 +2126,9 @@
             // Refresh status
             loadStatus();
 
+            // Invalidate secrets tab so it reloads with new values
+            secretsLoaded = false;
+
             // Wizard data has been saved — no longer dirty
             wizardDirty = false;
         }
