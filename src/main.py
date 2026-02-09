@@ -41,6 +41,7 @@ from .cli.core import reset, renew, trigger_release, scaffold
 from .cli.init import init
 from .cli.content import content_keygen, content_status, content_encrypt, content_decrypt
 from .cli.backup import backup_export, backup_restore, backup_import, backup_list
+from .cli.policy import policy_constants
 
 # Initialize logging
 setup_logging()
@@ -216,6 +217,9 @@ cli.add_command(backup_export)
 cli.add_command(backup_restore)
 cli.add_command(backup_import)
 cli.add_command(backup_list)
+
+# Policy commands — extracted to src/cli/policy.py
+cli.add_command(policy_constants)
 
 
 if __name__ == "__main__":

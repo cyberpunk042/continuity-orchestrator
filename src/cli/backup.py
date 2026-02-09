@@ -48,6 +48,7 @@ def create_backup_archive(
     include_audit: bool = True,
     include_articles: bool = False,
     include_media: bool = False,
+    include_policy: bool = False,
     decrypt_content: bool = False,
     trigger: str = "manual_export",
 ) -> Tuple[Path, dict]:
@@ -116,6 +117,7 @@ def create_backup_archive(
             "audit": include_audit,
             "content_articles": include_articles,
             "content_media": include_media,
+            "policy": include_policy,
         },
         "stats": {
             "article_count": len(article_files) if include_articles else 0,
@@ -212,6 +214,15 @@ def create_backup_archive(
                 for f in sorted(media_files):
                     tar.add(str(f), arcname=f"content/media/{f.name}")
 
+        # Policy
+        if include_policy:
+            policy_dir = root / "policy"
+            if policy_dir.exists():
+                for f in sorted(policy_dir.rglob("*")):
+                    if f.is_file():
+                        arcname = f"policy/{f.relative_to(policy_dir)}"
+                        tar.add(str(f), arcname=arcname)
+
     return archive_path, manifest
 
 
@@ -249,6 +260,7 @@ def restore_from_archive(
     restore_state: bool = True,
     restore_audit: bool = True,
     restore_content: bool = True,
+    restore_policy: bool = True,
 ) -> Dict[str, List[str]]:
     """
     Restore (OVERRIDE) files from an archive.
@@ -279,6 +291,8 @@ def restore_from_archive(
             elif member.name.startswith("audit/") and restore_audit:
                 should_restore = True
             elif member.name.startswith("content/") and restore_content:
+                should_restore = True
+            elif member.name.startswith("policy/") and restore_policy:
                 should_restore = True
 
             if should_restore:

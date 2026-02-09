@@ -221,6 +221,8 @@ def evaluate_rules(state: State, rules_policy: RulesPolicy) -> List[Rule]:
     matched: List[Rule] = []
     
     for rule in rules_policy.rules:
+        if not rule.enabled:
+            continue
         if evaluate_rule(rule, state, rules_policy.constants):
             matched.append(rule)
             if rule.stop:

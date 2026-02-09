@@ -288,10 +288,31 @@ def api_factory_reset():
             text=True,
             timeout=timeout,
         )
+
+        output = result.stdout
+        error = result.stderr if result.returncode != 0 else None
+
+        # If reset succeeded and policy reset requested, apply default preset
+        reset_policy = data.get("reset_policy", False)
+        if result.returncode == 0 and reset_policy:
+            policy_result = subprocess.run(
+                ["python", "-m", "src.main", "policy-constants",
+                 "--preset", "default", "--json-output"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env=_env(),
+            )
+            if policy_result.returncode == 0:
+                output += "\n✅ Policy reset to defaults"
+            else:
+                output += f"\n⚠️ Policy reset failed: {policy_result.stderr}"
+
         return jsonify({
             "success": result.returncode == 0,
-            "output": result.stdout,
-            "error": result.stderr if result.returncode != 0 else None,
+            "output": output,
+            "error": error,
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -359,4 +380,73 @@ def api_scaffold():
         "created": result["created"],
         "skipped": result["skipped"],
     })
+
+
+@core_bp.route("/api/policy/constants")
+def api_policy_constants():
+    """Read current policy constants and rule status."""
+    project_root = _project_root()
+    try:
+        result = subprocess.run(
+            ["python", "-m", "src.main", "policy-constants", "--json-output"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_env(),
+        )
+        if result.returncode == 0:
+            import json
+            data = json.loads(result.stdout)
+            return jsonify(data)
+        return jsonify({"error": result.stderr or "Command failed"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@core_bp.route("/api/policy/constants", methods=["POST"])
+def api_policy_constants_update():
+    """Update policy constants, toggle rules, or apply presets."""
+    project_root = _project_root()
+    data = request.json or {}
+
+    cmd = ["python", "-m", "src.main", "policy-constants", "--json-output"]
+
+    # Apply preset
+    preset = data.get("preset")
+    if preset:
+        cmd += ["--preset", preset]
+
+    # Set constants
+    constants = data.get("constants", {})
+    for key, value in constants.items():
+        cmd += ["--set", f"{key}={value}"]
+
+    # Enable/disable rules
+    for rule_id in data.get("enable", []):
+        cmd += ["--enable", rule_id]
+    for rule_id in data.get("disable", []):
+        cmd += ["--disable", rule_id]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_env(),
+        )
+        if result.returncode == 0:
+            import json
+            updated = json.loads(result.stdout)
+            updated["success"] = True
+            return jsonify(updated)
+        return jsonify({
+            "success": False,
+            "error": result.stderr or "Command failed",
+        }), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 

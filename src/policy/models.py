@@ -69,6 +69,7 @@ class Rule(BaseModel):
     when: Dict[str, Any]  # Conditions to evaluate
     then: Dict[str, Any]  # Mutations when matched
     stop: bool = False
+    enabled: bool = True  # Disabled rules are skipped during evaluation
 
 
 class RulesPolicy(BaseModel):

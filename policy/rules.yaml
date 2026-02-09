@@ -1,165 +1,140 @@
 # policy/rules.yaml
+# Managed by Continuity Orchestrator — edit via admin panel or CLI
 
 version: 1
-
 notes:
-  - Rules are evaluated top-to-bottom on each tick.
-  - The first matching rule with stop: true ends evaluation.
-  - The engine must enforce monotonic escalation unless a rule explicitly resets state.
-  - Reminders must not include any entry point or link to the renewal interface.
-
+- Rules are evaluated top-to-bottom on each tick.
+- The first matching rule with stop: true ends evaluation.
+- The engine must enforce monotonic escalation unless a rule explicitly resets state.
+- Reminders must not include any entry point or link to the renewal interface.
 inputs:
   time:
-    - time_to_deadline_minutes
-    - overdue_minutes
+  - time_to_deadline_minutes
+  - overdue_minutes
   renewal:
-    - renewed_this_tick
-    - last_renewal_iso
+  - renewed_this_tick
+  - last_renewal_iso
   security:
-    - failed_attempts
-    - lockout_active
+  - failed_attempts
+  - lockout_active
   mode:
-    - name
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ESCALATION TIMING — When each stage triggers automatically
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# BEFORE DEADLINE (reminders):
-#   T-6h  → REMIND_1 (first reminder)
-#   T-1h  → REMIND_2 (second reminder) 
-#   T-15m → PRE_RELEASE (final warning)
-#
-# AFTER DEADLINE (disclosure):
-#   T+0   → PARTIAL disclosure (immediate if partial_after_overdue_minutes=0)
-#   T+2h  → FULL disclosure (2 hours after deadline)
-#
-# ═══════════════════════════════════════════════════════════════════════════
+  - name
 constants:
-  # REMINDERS (before deadline)
-  remind_1_at_minutes: 360              # First reminder X minutes before deadline
-  remind_2_at_minutes: 60               # Second reminder X minutes before deadline
-  pre_release_at_minutes: 15            # Final warning X minutes before deadline
-  
-  # DISCLOSURE (after deadline passes)
-  partial_after_overdue_minutes: 0      # Delay before PARTIAL disclosure (0 = immediate)
-  full_after_overdue_minutes: 120       # Delay before FULL disclosure (e.g. 120 = 2 hours)
-  
-  # SECURITY
-  max_failed_attempts: 3                # Lockout after X failed renewal attempts
-
+  remind_1_at_minutes: 0
+  remind_2_at_minutes: 0
+  pre_release_at_minutes: 0
+  partial_after_overdue_minutes: 0
+  full_after_overdue_minutes: 0
+  max_failed_attempts: 3
 rules:
-
-  - id: R00_RENEWAL_SUCCESS_RESETS
-    description: If renewal succeeded on this tick, reset to OK and clear escalation.
-    when:
-      renewal.renewed_this_tick: true
-    then:
-      set_state: OK
-      clear:
-        - security.failed_attempts
-        - security.lockout_active
-        - time.overdue_minutes
-      audit:
-        event: renewal_success
-    stop: true
-
-  - id: R01_LOCKOUT_ON_MAX_FAILED_ATTEMPTS
-    description: If failed attempts meet or exceed max, activate lockout and audit it.
-    when:
-      security.failed_attempts_gte: constants.max_failed_attempts
-      security.lockout_active: false
-    then:
-      set:
-        security.lockout_active: true
-      audit:
-        event: lockout_activated
-        fields:
-          - security.failed_attempts
-    stop: false
-
-  - id: R10_ESCALATE_TO_REMIND_1
-    description: Enter REMIND_1 when within the first reminder window before deadline.
-    when:
-      state_is: OK
-      time.time_to_deadline_minutes_lte: constants.remind_1_at_minutes
-      time.time_to_deadline_minutes_gt: constants.remind_2_at_minutes
-    then:
-      set_state: REMIND_1
-      audit:
-        event: state_transition
-        fields:
-          - time.time_to_deadline_minutes
-    stop: true
-
-  - id: R11_ESCALATE_TO_REMIND_2
-    description: Enter REMIND_2 when within the second reminder window before deadline.
-    when:
-      state_in:
-        - OK
-        - REMIND_1
-      time.time_to_deadline_minutes_lte: constants.remind_2_at_minutes
-      time.time_to_deadline_minutes_gt: constants.pre_release_at_minutes
-    then:
-      set_state: REMIND_2
-      audit:
-        event: state_transition
-        fields:
-          - time.time_to_deadline_minutes
-    stop: true
-
-  - id: R12_ESCALATE_TO_PRE_RELEASE
-    description: Enter PRE_RELEASE shortly before deadline.
-    when:
-      state_in:
-        - OK
-        - REMIND_1
-        - REMIND_2
-      time.time_to_deadline_minutes_lte: constants.pre_release_at_minutes
-      time.time_to_deadline_minutes_gte: 0
-    then:
-      set_state: PRE_RELEASE
-      audit:
-        event: state_transition
-        fields:
-          - time.time_to_deadline_minutes
-    stop: true
-
-  - id: R20_ESCALATE_TO_PARTIAL_ON_EXPIRY
-    description: When overdue begins, enter PARTIAL immediately (or after configured delay).
-    when:
-      state_in:
-        - OK
-        - REMIND_1
-        - REMIND_2
-        - PRE_RELEASE
-      time.overdue_minutes_gt: constants.partial_after_overdue_minutes
-    then:
-      set_state: PARTIAL
-      audit:
-        event: state_transition
-        fields:
-          - time.overdue_minutes
-    stop: true
-
-  - id: R30_ESCALATE_TO_FULL_AFTER_DELAY
-    description: After a configured overdue delay, escalate from PARTIAL to FULL.
-    when:
-      state_is: PARTIAL
-      time.overdue_minutes_gte: constants.full_after_overdue_minutes
-    then:
-      set_state: FULL
-      audit:
-        event: state_transition
-        fields:
-          - time.overdue_minutes
-    stop: true
-
-  - id: R90_ENFORCE_MONOTONIC
-    description: Safety rule to prevent accidental downgrades (handled by engine).
-    when:
-      always: true
-    then:
-      enforce:
-        monotonic_state_progression: true
-    stop: false
+- id: R00_RENEWAL_SUCCESS_RESETS
+  description: If renewal succeeded on this tick, reset to OK and clear escalation.
+  when:
+    renewal.renewed_this_tick: true
+  then:
+    set_state: OK
+    clear:
+    - security.failed_attempts
+    - security.lockout_active
+    - time.overdue_minutes
+    audit:
+      event: renewal_success
+  stop: true
+- id: R01_LOCKOUT_ON_MAX_FAILED_ATTEMPTS
+  description: If failed attempts meet or exceed max, activate lockout and audit it.
+  when:
+    security.failed_attempts_gte: constants.max_failed_attempts
+    security.lockout_active: false
+  then:
+    set:
+      security.lockout_active: true
+    audit:
+      event: lockout_activated
+      fields:
+      - security.failed_attempts
+  stop: false
+- id: R10_ESCALATE_TO_REMIND_1
+  description: Enter REMIND_1 when within the first reminder window before deadline.
+  when:
+    state_is: OK
+    time.time_to_deadline_minutes_lte: constants.remind_1_at_minutes
+    time.time_to_deadline_minutes_gt: constants.remind_2_at_minutes
+  then:
+    set_state: REMIND_1
+    audit:
+      event: state_transition
+      fields:
+      - time.time_to_deadline_minutes
+  stop: true
+  enabled: false
+- id: R11_ESCALATE_TO_REMIND_2
+  description: Enter REMIND_2 when within the second reminder window before deadline.
+  when:
+    state_in:
+    - OK
+    - REMIND_1
+    time.time_to_deadline_minutes_lte: constants.remind_2_at_minutes
+    time.time_to_deadline_minutes_gt: constants.pre_release_at_minutes
+  then:
+    set_state: REMIND_2
+    audit:
+      event: state_transition
+      fields:
+      - time.time_to_deadline_minutes
+  stop: true
+  enabled: false
+- id: R12_ESCALATE_TO_PRE_RELEASE
+  description: Enter PRE_RELEASE shortly before deadline.
+  when:
+    state_in:
+    - OK
+    - REMIND_1
+    - REMIND_2
+    time.time_to_deadline_minutes_lte: constants.pre_release_at_minutes
+    time.time_to_deadline_minutes_gte: 0
+  then:
+    set_state: PRE_RELEASE
+    audit:
+      event: state_transition
+      fields:
+      - time.time_to_deadline_minutes
+  stop: true
+  enabled: false
+- id: R20_ESCALATE_TO_PARTIAL_ON_EXPIRY
+  description: When overdue begins, enter PARTIAL immediately (or after configured
+    delay).
+  when:
+    state_in:
+    - OK
+    - REMIND_1
+    - REMIND_2
+    - PRE_RELEASE
+    time.overdue_minutes_gt: constants.partial_after_overdue_minutes
+  then:
+    set_state: PARTIAL
+    audit:
+      event: state_transition
+      fields:
+      - time.overdue_minutes
+  stop: true
+  enabled: false
+- id: R30_ESCALATE_TO_FULL_AFTER_DELAY
+  description: After a configured overdue delay, escalate from PARTIAL to FULL.
+  when:
+    state_is: PARTIAL
+    time.overdue_minutes_gte: constants.full_after_overdue_minutes
+  then:
+    set_state: FULL
+    audit:
+      event: state_transition
+      fields:
+      - time.overdue_minutes
+  stop: true
+- id: R90_ENFORCE_MONOTONIC
+  description: Safety rule to prevent accidental downgrades (handled by engine).
+  when:
+    always: true
+  then:
+    enforce:
+      monotonic_state_progression: true
+  stop: false

@@ -103,6 +103,9 @@
                     <button class="btn" onclick="openVaultModal()" style="width: 100%; margin-top: 0.25rem;">
                         🔐 Secrets Vault
                     </button>
+                    <button class="btn" onclick="openPolicyModal()" style="width: 100%; margin-top: 0.25rem;">
+                        📋 Escalation Policy
+                    </button>
                 </div>
             </div>
         </div>
@@ -143,6 +146,13 @@
                        style="width: 18px; height: 18px; accent-color: var(--accent);"
                        onchange="toggleContentOptions()">
                 💾 Backup existing state before reset
+            </label>
+
+            <!-- Reset policy -->
+            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin-bottom: 1rem; font-size: 0.9rem;">
+                <input type="checkbox" id="fr-reset-policy"
+                       style="width: 18px; height: 18px; accent-color: var(--accent);">
+                📋 Reset escalation policy to defaults
             </label>
 
             <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0;">
@@ -244,6 +254,11 @@
                 <input type="checkbox" id="bk-export-audit" checked
                        style="width: 17px; height: 17px; accent-color: var(--accent);">
                 Audit log (ledger.ndjson)
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <input type="checkbox" id="bk-export-policy"
+                       style="width: 17px; height: 17px; accent-color: var(--accent);">
+                Policy (rules.yaml, states, plans)
             </label>
 
             <hr style="border: none; border-top: 1px solid var(--border); margin: 0.75rem 0;">
@@ -397,6 +412,159 @@
         <!-- Close -->
         <div style="text-align: right; margin-top: 0.5rem;">
             <button class="btn" onclick="closeVaultModal()" style="min-width: 90px;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Escalation Policy Modal ─────────────────────────────────────── -->
+<div id="policy-modal" style="
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    padding: 2rem; overflow-y: auto;
+    justify-content: center; align-items: flex-start;
+" onclick="if(event.target===this) closePolicyModal()">
+    <div style="
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; max-width: 580px; width: 100%;
+        padding: 2rem; margin: 2rem auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    ">
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.3rem;">📋 Escalation Policy</h2>
+        <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem; line-height: 1.6;">
+            Control escalation timing and which stages are active.
+            Changes take effect on the next engine tick.
+        </p>
+
+        <!-- Loading state -->
+        <div id="policy-loading" style="text-align: center; padding: 2rem; color: var(--text-dim);">
+            ⏳ Loading policy...
+        </div>
+
+        <!-- Modal body (hidden until loaded) -->
+        <div id="policy-body" style="display: none;">
+
+            <!-- Preset selector -->
+            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <select id="policy-preset" style="
+                        flex: 1; padding: 0.45rem 0.7rem;
+                        background: var(--bg-card); border: 1px solid var(--border);
+                        border-radius: 6px; color: var(--text); font-size: 0.88rem;
+                    ">
+                        <option value="">— Custom —</option>
+                        <option value="default">Default (standard escalation)</option>
+                        <option value="testing">Testing (fast cycle)</option>
+                        <option value="direct_full">Direct to FULL (skip reminders)</option>
+                        <option value="gentle">Gentle (slow ramp, extended delays)</option>
+                    </select>
+                    <button class="btn" onclick="applyPolicyPreset()" style="white-space: nowrap;">Apply</button>
+                </div>
+            </div>
+
+            <!-- Timing constants -->
+            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="font-weight: 600; margin-bottom: 1rem; font-size: 0.95rem;">⏱ Timing Constants</div>
+
+                <!-- Reminders (before deadline) -->
+                <div style="margin-bottom: 1rem;">
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Reminders (before deadline)</div>
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                            <span style="flex: 1;">1st reminder</span>
+                            <input type="number" id="pc-remind_1_at_minutes" min="0" max="10080"
+                                   style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;"
+                                   oninput="renderPolicyTimeline()">
+                            <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;" id="pc-remind_1_label">min before</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                            <span style="flex: 1;">2nd reminder</span>
+                            <input type="number" id="pc-remind_2_at_minutes" min="0" max="10080"
+                                   style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;"
+                                   oninput="renderPolicyTimeline()">
+                            <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;" id="pc-remind_2_label">min before</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                            <span style="flex: 1;">Final warning</span>
+                            <input type="number" id="pc-pre_release_at_minutes" min="0" max="10080"
+                                   style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;"
+                                   oninput="renderPolicyTimeline()">
+                            <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;" id="pc-pre_release_label">min before</span>
+                        </label>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border); margin: 0.75rem 0;">
+
+                <!-- Disclosure (after deadline) -->
+                <div style="margin-bottom: 1rem;">
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Disclosure (after deadline)</div>
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                            <span style="flex: 1;">Partial delay</span>
+                            <input type="number" id="pc-partial_after_overdue_minutes" min="0" max="10080"
+                                   style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;"
+                                   oninput="renderPolicyTimeline()">
+                            <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;" id="pc-partial_label">min after</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                            <span style="flex: 1;">Full delay</span>
+                            <input type="number" id="pc-full_after_overdue_minutes" min="0" max="10080"
+                                   style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;"
+                                   oninput="renderPolicyTimeline()">
+                            <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;" id="pc-full_label">min after</span>
+                        </label>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border); margin: 0.75rem 0;">
+
+                <!-- Security -->
+                <div>
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Security</div>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                        <span style="flex: 1;">Max failed attempts</span>
+                        <input type="number" id="pc-max_failed_attempts" min="1" max="100"
+                               style="width: 80px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: right; font-size: 0.88rem;">
+                        <span style="color: var(--text-dim); font-size: 0.8rem; width: 7em;"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Rules toggle -->
+            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">⚙️ Rules <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-dim);">(toggle on/off)</span></div>
+                <div id="policy-rules-list" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="margin-top: 0.75rem; font-size: 0.78rem; color: var(--text-dim);">
+                    🔒 = system integrity rule (cannot be disabled)
+                </div>
+            </div>
+
+            <!-- Visual timeline -->
+            <div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem;">📊 Timeline Preview</div>
+                <div id="policy-timeline" style="font-family: monospace; font-size: 0.82rem; line-height: 1.6; overflow-x: auto;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div id="policy-status" style="font-size: 0.85rem; margin-bottom: 1rem; min-height: 1.2em;"></div>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; margin-right: auto;">
+                    <input type="checkbox" id="policy-git-sync" style="accent-color: var(--accent);">
+                    🔄 Git sync
+                </label>
+                <button class="btn" onclick="closePolicyModal()" style="min-width: 90px;">
+                    Cancel
+                </button>
+                <button class="btn primary" id="policy-save-btn" onclick="savePolicyConstants()" style="min-width: 140px;">
+                    💾 Save & Apply
+                </button>
+            </div>
         </div>
     </div>
 </div>

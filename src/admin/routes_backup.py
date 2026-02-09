@@ -59,6 +59,7 @@ def api_export():
         include_audit=data.get("include_audit", True),
         include_articles=data.get("include_articles", False),
         include_media=data.get("include_media", False),
+        include_policy=data.get("include_policy", False),
         decrypt_content=data.get("decrypt_content", False),
         trigger="admin_export",
     )
@@ -218,6 +219,7 @@ def api_restore():
         restore_state=data.get("restore_state", True),
         restore_audit=data.get("restore_audit", True),
         restore_content=data.get("restore_content", True),
+        restore_policy=data.get("restore_policy", True),
     )
 
     return jsonify({
