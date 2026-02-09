@@ -208,33 +208,39 @@ jobs:
         with:
           path: ./public
       
-      - name: Cancel stuck Pages deployments
+      - name: Clear stuck Pages deployments
         if: steps.build.outputs.site_built == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DEPLOYMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/pages/deployments?per_page=5" 2>/dev/null || echo "[]")
-          echo "$DEPLOYMENTS" | python3 -c "
+          echo "Checking for stuck deployments..."
+          DEPS=$(gh api "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=5" 2>/dev/null || echo "[]")
+          echo "$DEPS" | python3 -c "
           import sys, json, subprocess
           try:
               deps = json.load(sys.stdin)
               if not isinstance(deps, list): deps = []
               for d in deps:
-                  if d.get('status') == 'in_progress':
-                      dep_id = d.get('id', '')
-                      if dep_id:
-                          print(f'Cancelling stuck deployment: {dep_id}')
+                  dep_id = d.get('id')
+                  sha = d.get('sha', '?')[:12]
+                  statuses = subprocess.run(
+                      ['gh', 'api', f'repos/\${{ github.repository }}/deployments/{dep_id}/statuses'],
+                      capture_output=True, text=True, timeout=10
+                  )
+                  if statuses.returncode == 0:
+                      status_list = json.loads(statuses.stdout)
+                      latest = status_list[0]['state'] if status_list else 'unknown'
+                      if latest in ('in_progress', 'queued', 'waiting', 'pending'):
+                          print(f'Clearing stuck deployment {dep_id} (sha:{sha}, state:{latest})')
                           subprocess.run([
-                              'curl', '-s', '-X', 'POST',
-                              '-H', 'Authorization: Bearer $GITHUB_TOKEN',
-                              '-H', 'Accept: application/vnd.github+json',
-                              f'https://api.github.com/repos/${{ github.repository }}/pages/deployments/{dep_id}/cancel'
-                          ], env={**__import__('os').environ}, timeout=15)
+                              'gh', 'api', '-X', 'POST',
+                              f'repos/\${{ github.repository }}/deployments/{dep_id}/statuses',
+                              '-f', 'state=inactive',
+                              '-f', 'description=Auto-cleared before new deployment'
+                          ], timeout=10)
           except Exception as e: print(f'Cleanup skipped: {e}')
           " || true
-          sleep 3
+          sleep 2
 
       - name: Deploy to GitHub Pages
         if: steps.build.outputs.site_built == 'true'
