@@ -616,7 +616,6 @@ def api_simulate():
 
     Returns JSON with ``simulation`` metadata and ``events`` list.
     """
-    from pathlib import Path
 
     from ..cli.deploy import _run_simulation
     from ..persistence.state_file import load_state

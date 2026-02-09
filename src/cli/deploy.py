@@ -423,7 +423,7 @@ def simulate_timeline(ctx: click.Context, hours: int, state_file: str, policy_di
             delta_str = _format_delta(delta)
 
             color = stage_colors.get(ev["to"], "white")
-            click.echo(f"   ", nl=False)
+            click.echo("   ", nl=False)
             click.secho(f"{ev['from']} → {ev['to']}", fg=color, bold=True, nl=False)
             click.echo(f"  at {ev_time.strftime('%a %d %b %H:%M UTC')}  ({delta_str})")
             click.echo(f"      Rule: {ev['rule']}")
