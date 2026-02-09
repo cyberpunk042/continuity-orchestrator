@@ -415,23 +415,37 @@
                 content: () => `
                     <h2 style="margin-bottom: 1rem;">🐦 X/Twitter Integration</h2>
                     <p style="color: var(--text-dim); margin-bottom: 1rem;">
-                        <em>Optional</em> — Post automated updates to X (Twitter). Free tier: 1,500 posts/month.
+                        <em>Optional</em> — Post automated updates to X (Twitter). Free tier: ~500 posts/month.
                     </p>
                     <details style="margin-bottom: 1.25rem;">
-                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide (5 steps)</summary>
+                        <summary style="cursor: pointer; color: var(--info); font-weight: 600;">📖 Setup Guide</summary>
                         <ol style="color: var(--text-dim); line-height: 2; margin: 0.75rem 0 0 1.5rem; font-size: 0.9rem;">
-                            <li>Sign up for a developer account at <a href="https://developer.x.com/en/portal/petition/essential/basic-info" target="_blank" style="color: var(--info);">developer.x.com</a></li>
-                            <li>In the <a href="https://developer.x.com/en/portal/dashboard" target="_blank" style="color: var(--info);">Developer Portal</a>, create a <strong>Project</strong>, then create an <strong>App</strong> inside it</li>
-                            <li>Go to your App → <strong>Settings</strong> → <strong>User authentication</strong> → set App permissions to <strong>Read and Write</strong></li>
-                            <li>Go to <strong>Keys and Tokens</strong> tab → under "Consumer Keys" find your <strong>API Key</strong> and <strong>API Secret</strong> (regenerate if needed)</li>
-                            <li>On the same page → under "Authentication Tokens" → click <strong>Generate</strong> for <strong>Access Token</strong> and <strong>Access Token Secret</strong></li>
+                            <li>Go to <a href="https://developer.x.com/en/portal/dashboard" target="_blank" style="color: var(--info);">developer.x.com/portal/dashboard</a> and sign in (sign up for a developer account if prompted)</li>
+                            <li>Create a <strong>Project</strong>, then create an <strong>App</strong> inside it</li>
+                            <li>In your App → <strong>Settings</strong> → <strong>User authentication settings</strong> → click <strong>Set up</strong>:
+                                <ul style="margin: 0.25rem 0 0.25rem 1rem; line-height: 1.8;">
+                                    <li>App permissions: <strong>Read and Write</strong></li>
+                                    <li>Type of App: <strong>Web App, Automated App or Bot</strong></li>
+                                    <li>Callback URL: <code style="background: var(--bg-input); padding: 0.1rem 0.4rem; border-radius: 3px;">https://example.com/callback</code> (any valid URL — not actually used)</li>
+                                    <li>Website URL: any valid URL</li>
+                                </ul>
+                            </li>
+                            <li>Go to <strong>Keys and Tokens</strong> tab:
+                                <ul style="margin: 0.25rem 0 0.25rem 1rem; line-height: 1.8;">
+                                    <li><strong>Consumer Keys</strong> section → copy <strong>API Key</strong> and <strong>API Key Secret</strong> (regenerate if needed)</li>
+                                    <li><strong>Authentication Tokens</strong> section → click <strong>Generate</strong> to get <strong>Access Token</strong> and <strong>Access Token Secret</strong></li>
+                                </ul>
+                            </li>
                         </ol>
+                        <div style="margin-top: 0.75rem; padding: 0.6rem 0.8rem; border-radius: 6px; background: rgba(245,158,11,0.1); font-size: 0.82rem; color: var(--warning);">
+                            ⚠️ <strong>Important:</strong> You must set up User Authentication (step 3) with Read+Write <em>before</em> generating tokens. If you already generated tokens, regenerate them after changing permissions.
+                        </div>
                     </details>
                     <div class="form-group">
                         <label class="form-label">API Key</label>
                         <input type="password" class="form-input" id="wiz-x-api-key" placeholder="xxxxxxxxxx"
                                title="Also called 'Consumer Key'. Found in Developer Portal → App → Keys and Tokens → Consumer Keys.">
-                        <div class="form-hint">Also called Consumer Key ${appData?.secrets?.find(s => s.name === 'X_API_KEY')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
+                        <div class="form-hint">Also called Consumer Key — under "Consumer Keys" ${appData?.secrets?.find(s => s.name === 'X_API_KEY')?.set ? '<span style="color: var(--accent);">✓ Already set</span>' : ''}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">API Secret</label>
@@ -446,7 +460,7 @@
                         <div class="form-hint">Under "Authentication Tokens" — click Generate</div>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Access Secret</label>
+                        <label class="form-label">Access Token Secret</label>
                         <input type="password" class="form-input" id="wiz-x-access-secret" placeholder="xxxxxxxxxx"
                                title="Your account's access token secret. Shown only once when generated — save it immediately.">
                         <div class="form-hint">Paired with Access Token — shown once at generation</div>
