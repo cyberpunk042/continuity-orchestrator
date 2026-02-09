@@ -1,1 +1,1 @@
-REMINDER: Continuity renewal required. Approx ${{time_to_deadline_hours}}h remaining. Use offline procedure.
+⚠️ URGENT: ${{project}} renewal expires in ~${{time_to_deadline_minutes}}min. Escalation is imminent. Renew now using offline procedure.

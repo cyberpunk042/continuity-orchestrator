@@ -1,12 +1,15 @@
-# Action Required
+# ⚠️ URGENT — Renewal Required Immediately
 
-This is an urgent reminder.
+**Your deadline expires in approximately ${{time_to_deadline_minutes}} minutes.**
 
-The renewal deadline is approaching. If renewal is not completed before the configured deadline, the system will proceed to automated escalation.
+If renewal is not completed before the deadline, the system will escalate automatically. Once escalation begins, it cannot be stopped except by manual intervention.
 
-**Time remaining**: Approximately ${{time_to_deadline_minutes}} minutes
+**Project**: ${{project}}
+**Current stage**: ${{stage}}
+**Time remaining**: ${{time_to_deadline_minutes}} minutes
 
-Please complete your renewal using your offline procedure immediately.
+**You must renew now using your offline procedure.**
 
 ---
-*This is an automated message. Do not reply.*
+*This is an automated escalation alert from ${{project}} • Tick ${{tick_id}}*
+*Do not reply to this email.*

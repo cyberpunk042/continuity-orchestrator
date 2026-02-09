@@ -1,13 +1,14 @@
-# Scheduled Reminder
+# ⏰ Scheduled Reminder — Renewal Due
 
-This is a scheduled reminder from the continuity system.
+Your continuity system deadline is approaching.
 
-**Status**: Active countdown  
-**Time remaining**: Approximately ${{time_to_deadline_hours}} hours
+**Project**: ${{project}}
+**Time remaining**: ~${{time_to_deadline_hours}} hours (${{time_to_deadline_minutes}} min)
+**Stage**: ${{stage}}
 
-Please complete your renewal using your offline procedure.
+Please complete your renewal using your offline procedure when convenient.
 
-No action is required if already completed.
+No action is required if you have already renewed.
 
 ---
-*This is an automated message.*
+*Automated message from ${{project}} • Tick ${{tick_id}}*
