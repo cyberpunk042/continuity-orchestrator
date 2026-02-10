@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T04:39:46.219995Z",
+        "updated_at_iso": "2026-02-10T04:44:44.203620Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-10T05:43:14.580419+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T04:39:45.676675Z",
-        "time_to_deadline_minutes": 63,
+        "now_iso": "2026-02-10T04:44:43.350798Z",
+        "time_to_deadline_minutes": 58,
         "overdue_minutes": 0
     },
     "renewal": {
@@ -31,9 +31,9 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "REMIND_1",
-        "state_entered_at_iso": "2026-02-10T03:40:00.586186Z",
-        "last_transition_rule_id": "R10_ESCALATE_TO_REMIND_1",
+        "state": "REMIND_2",
+        "state_entered_at_iso": "2026-02-10T04:44:43.350798Z",
+        "last_transition_rule_id": "R11_ESCALATE_TO_REMIND_2",
         "monotonic_enforced": true
     },
     "actions": {
@@ -42,9 +42,22 @@
                 "status": "ok",
                 "last_delivery_id": "9158fe32-8079-4cc0-b14e-e06f067cc60c",
                 "last_executed_iso": "2026-02-10T03:40:01.597307+00:00"
+            },
+            "remind_email_secondary": {
+                "status": "ok",
+                "last_delivery_id": "4faa5208-f84d-472a-a6b6-db62e8a52c5c",
+                "last_executed_iso": "2026-02-10T04:44:44.202635+00:00"
+            },
+            "remind_sms": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-10T04:44:44.203408+00:00"
             }
         },
-        "last_tick_actions": []
+        "last_tick_actions": [
+            "remind_email_secondary",
+            "remind_sms"
+        ]
     },
     "release": {
         "triggered": false,
