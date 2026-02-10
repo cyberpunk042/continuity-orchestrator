@@ -2497,6 +2497,7 @@
             const policyPreset = secrets._POLICY_PRESET || '';
             delete secrets._POLICY_PRESET;
             console.log('Wizard secrets to push:', Object.keys(secrets));
+            console.log('DEPLOY_MODE being pushed:', secrets.DEPLOY_MODE, '| wizardData had:', wizardData.DEPLOY_MODE);
 
             if (Object.keys(secrets).length === 0) {
                 statusDiv.innerHTML = '<div class="alert info">No new secrets to push.</div>';
