@@ -295,7 +295,7 @@ def run_tick(
                 logger.info(f"Skipping {action.id}: disabled in plan")
                 state.actions.executed[action.id] = ActionReceipt(
                     status="skipped",
-                    last_executed_iso=now_iso,
+                    last_executed_iso=state.timer.now_iso or "",
                 )
                 state.actions.last_tick_actions.append(action.id)
                 continue
