@@ -613,6 +613,10 @@ for i, t in enumerate(tunnels):
     # Use a background read with poll loop so the script can also detect web UI input
     TUNNEL_TOKEN=""
 
+    # Disable ERR trap during the poll loop — read timeouts and grep misses
+    # are expected, not errors.
+    trap '' ERR
+
     # Try terminal read with a timeout, checking for web UI signal every 2s
     while true; do
         # Check if web UI already provided the token
@@ -626,7 +630,7 @@ for i, t in enumerate(tunnels):
 
         # Check if .env already has the token (web UI route writes directly)
         if [[ -f "$ENV_FILE" ]]; then
-            EXISTING=$(grep '^CLOUDFLARE_TUNNEL_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+            EXISTING=$(grep '^CLOUDFLARE_TUNNEL_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)
             if [[ -n "$EXISTING" ]]; then
                 TUNNEL_TOKEN="$EXISTING"
                 echo ""
@@ -636,18 +640,21 @@ for i, t in enumerate(tunnels):
         fi
 
         # Try to read from terminal with a 2s timeout
-        if read -t 2 -p "  > " RAW_TOKEN_INPUT 2>/dev/null; then
-            if [[ -n "$RAW_TOKEN_INPUT" ]]; then
-                # Extract eyJ... token from pasted command
-                TUNNEL_TOKEN=$(echo "$RAW_TOKEN_INPUT" | grep -oP 'eyJ[A-Za-z0-9_=+/.-]+' | head -1)
-                if [[ -z "$TUNNEL_TOKEN" ]]; then
-                    TUNNEL_TOKEN="$RAW_TOKEN_INPUT"
-                fi
-                echo -e "  ${GREEN}✓ Token received (${#TUNNEL_TOKEN} chars)${NC}"
-                break
+        RAW_TOKEN_INPUT=""
+        read -t 2 -p "  > " RAW_TOKEN_INPUT 2>/dev/null || true
+        if [[ -n "$RAW_TOKEN_INPUT" ]]; then
+            # Extract eyJ... token from pasted command
+            TUNNEL_TOKEN=$(echo "$RAW_TOKEN_INPUT" | grep -oP 'eyJ[A-Za-z0-9_=+/.-]+' | head -1 || true)
+            if [[ -z "$TUNNEL_TOKEN" ]]; then
+                TUNNEL_TOKEN="$RAW_TOKEN_INPUT"
             fi
+            echo -e "  ${GREEN}✓ Token received (${#TUNNEL_TOKEN} chars)${NC}"
+            break
         fi
     done
+
+    # Re-enable ERR trap
+    trap 'echo "{\"status\":\"failed\",\"ts\":\"'"$(date -Iseconds)"'\"}" > "$SIGNAL_FILE"; echo ""; echo -e "\033[0;31m✗ Setup failed. See error above.\033[0m"; echo ""; read -p "Press Enter to close…"' ERR
 
     if [[ -z "$TUNNEL_TOKEN" ]]; then
         echo -e "  ${RED}✗ No token provided.${NC}"

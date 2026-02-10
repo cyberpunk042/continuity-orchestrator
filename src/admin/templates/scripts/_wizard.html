@@ -2301,13 +2301,22 @@
         }
 
         function renderWizard() {
-            // Seed wizardData from envData for keys that the wizard templates read
-            const seedKeys = [
-                'CLOUDFLARE_TUNNEL_TOKEN', 'DEPLOY_MODE', 'PROJECT_NAME',
+            // Seed wizardData from envData for keys that the wizard templates read.
+            // CLOUDFLARE_TUNNEL_TOKEN always syncs from .env (source of truth —
+            // can be set/deleted by secrets tab or setup script).
+            // Other keys: seed once on first render, never overwrite in-session
+            // user choices (e.g. switching deploy mode to Docker).
+            if (envData.CLOUDFLARE_TUNNEL_TOKEN) {
+                wizardData.CLOUDFLARE_TUNNEL_TOKEN = envData.CLOUDFLARE_TUNNEL_TOKEN;
+            } else {
+                delete wizardData.CLOUDFLARE_TUNNEL_TOKEN;
+            }
+            const seedOnceKeys = [
+                'DEPLOY_MODE', 'PROJECT_NAME',
                 'DOCKER_GIT_SYNC_ALPHA', 'DOCKER_GIT_SYNC_TICK_INTERVAL',
                 'DOCKER_GIT_SYNC_SYNC_INTERVAL', 'MODE', 'DEADLINE_HOURS',
             ];
-            for (const key of seedKeys) {
+            for (const key of seedOnceKeys) {
                 if (!wizardData[key] && envData[key]) {
                     wizardData[key] = envData[key];
                 }
