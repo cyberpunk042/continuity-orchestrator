@@ -7,7 +7,7 @@ let mediaLoaded = false;
 let mediaEntries = [];
 let mediaSelectedId = null;
 let mediaPendingFile = null;
-let contentCurrentMode = 'articles'; // 'articles' or 'media'
+let contentCurrentMode = 'articles'; // 'articles', 'media', or 'messages'
 let _mediaActiveXhr = null;  // reference to active upload XHR for cancel
 let _mediaReleasePollInterval = null;  // release upload status polling
 let _mediaReleaseMediaId = null;       // media ID of active release upload
@@ -49,7 +49,12 @@ function contentSwitchMode(mode) {
 
     // Warn if article editor is dirty
     if (contentCurrentMode === 'articles' && contentDirty) {
-        if (!confirm('You have unsaved changes. Switch to Media anyway?')) return;
+        if (!confirm('You have unsaved changes. Switch anyway?')) return;
+    }
+
+    // Warn if messages editor is dirty
+    if (contentCurrentMode === 'messages' && typeof messagesDirty !== 'undefined' && messagesDirty) {
+        if (!confirm('You have unsaved message changes. Switch anyway?')) return;
     }
 
     contentCurrentMode = mode;
@@ -57,18 +62,24 @@ function contentSwitchMode(mode) {
     // Toggle sidebar sections
     document.getElementById('content-sidebar-articles').style.display = mode === 'articles' ? '' : 'none';
     document.getElementById('content-sidebar-media').style.display = mode === 'media' ? '' : 'none';
+    document.getElementById('content-sidebar-messages').style.display = mode === 'messages' ? '' : 'none';
 
     // Toggle right panels
     document.getElementById('content-editor-card').style.display = mode === 'articles' ? 'flex' : 'none';
     document.getElementById('media-panel-card').style.display = mode === 'media' ? 'flex' : 'none';
+    document.getElementById('messages-panel-card').style.display = mode === 'messages' ? 'flex' : 'none';
 
     // Toggle button active state
     document.getElementById('content-mode-articles').classList.toggle('active', mode === 'articles');
     document.getElementById('content-mode-media').classList.toggle('active', mode === 'media');
+    document.getElementById('content-mode-messages').classList.toggle('active', mode === 'messages');
 
-    // Load media data on first switch
+    // Load data on first switch
     if (mode === 'media' && !mediaLoaded) {
         loadMedia();
+    }
+    if (mode === 'messages' && typeof messagesLoaded !== 'undefined' && !messagesLoaded) {
+        messagesLoad();
     }
 }
 

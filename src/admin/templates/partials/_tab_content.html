@@ -33,6 +33,10 @@
                     onclick="contentSwitchMode('media')" title="Manage media files">
                     🖼️ Media
                 </button>
+                <button id="content-mode-messages" class="content-mode-btn"
+                    onclick="contentSwitchMode('messages')" title="Manage notification messages">
+                    ✉️ Messages
+                </button>
             </div>
 
             <!-- ── Articles list (default) ── -->
@@ -61,6 +65,39 @@
                 <div id="media-summary" style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.75rem;"></div>
                 <div id="media-gallery-list">
                     <div class="loading">Loading media</div>
+                </div>
+            </div>
+
+            <!-- ── Messages list (hidden by default) ── -->
+            <div id="content-sidebar-messages" style="display: none;">
+                <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                    <span><span class="icon">✉️</span> Messages</span>
+                    <button class="btn" onclick="messagesNew()" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
+                        title="Create new message">
+                        ➕ New
+                    </button>
+                </h2>
+                <div id="messages-list">
+                    <div class="loading">Loading messages</div>
+                </div>
+
+                <!-- Recipient lists -->
+                <div id="messages-recipients" style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-dim); margin-bottom: 0.5rem;">📬 Subscriber Emails</div>
+                    <div id="messages-subscribers-list" style="margin-bottom: 0.5rem;"></div>
+                    <div style="display: flex; gap: 0.35rem;">
+                        <input class="form-input" id="messages-add-subscriber" type="email" placeholder="email@example.com"
+                            style="padding: 0.35rem 0.5rem; font-size: 0.78rem; flex: 1;">
+                        <button class="btn" onclick="messagesAddRecipient('subscriber')" style="padding: 0.3rem 0.5rem; font-size: 0.72rem;">+ Add</button>
+                    </div>
+
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-dim); margin-top: 1rem; margin-bottom: 0.5rem;">🛡️ Custodian Emails</div>
+                    <div id="messages-custodians-list" style="margin-bottom: 0.5rem;"></div>
+                    <div style="display: flex; gap: 0.35rem;">
+                        <input class="form-input" id="messages-add-custodian" type="email" placeholder="email@example.com"
+                            style="padding: 0.35rem 0.5rem; font-size: 0.78rem; flex: 1;">
+                        <button class="btn" onclick="messagesAddRecipient('custodian')" style="padding: 0.3rem 0.5rem; font-size: 0.72rem;">+ Add</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -325,6 +362,175 @@
                             <button class="btn" onclick="mediaDeleteSelected()"
                                 style="padding: 0.4rem 0.8rem; color: var(--danger); font-size: 0.82rem;">
                                 🗑️ Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Messages panel (hidden by default) ── -->
+        <div class="card" id="messages-panel-card" style="display: none; flex-direction: column; min-height: 600px;">
+            <h2 id="messages-panel-title" style="display: flex; align-items: center; justify-content: space-between;">
+                <span><span class="icon">✉️</span> <span id="messages-panel-name">Select a message</span></span>
+                <div id="messages-panel-badges" translate="no" style="display: flex; gap: 0.35rem;"></div>
+            </h2>
+
+            <!-- No message selected state -->
+            <div id="messages-empty"
+                style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-dim);">
+                <div style="text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.3;">✉️</div>
+                    <p>Select a message from the list, or create a new one.</p>
+                </div>
+            </div>
+
+            <!-- Message editor + preview (hidden until message selected) -->
+            <div id="messages-editor-wrap" style="display: none; flex: 1; flex-direction: column;">
+
+                <!-- Config row: Stage / Adapter / Audience -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div>
+                        <label class="form-label" style="font-size: 0.78rem;">Stage</label>
+                        <select class="form-input" id="messages-edit-stage" style="padding: 0.45rem;" onchange="messagesMarkDirty()">
+                            <option value="REMIND_1">REMIND_1</option>
+                            <option value="REMIND_2">REMIND_2</option>
+                            <option value="PRE_RELEASE">PRE_RELEASE</option>
+                            <option value="PARTIAL">PARTIAL</option>
+                            <option value="FULL">FULL</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 0.78rem;">Adapter</label>
+                        <select class="form-input" id="messages-edit-adapter" style="padding: 0.45rem;" onchange="messagesAdapterChanged()">
+                            <option value="email">📧 Email</option>
+                            <option value="sms">📱 SMS</option>
+                            <option value="x">🐦 X / Twitter</option>
+                            <option value="reddit">🤖 Reddit</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 0.78rem;">Audience</label>
+                        <select class="form-input" id="messages-edit-channel" style="padding: 0.45rem;" onchange="messagesMarkDirty()">
+                            <option value="operator">👤 Operator</option>
+                            <option value="subscribers">📬 Subscribers</option>
+                            <option value="custodians">🛡️ Custodians</option>
+                            <option value="public">🌐 Public</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Template picker row -->
+                <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 0.75rem;">
+                    <div style="flex: 1;">
+                        <label class="form-label" style="font-size: 0.78rem;">Template</label>
+                        <select class="form-input" id="messages-template-picker" style="padding: 0.45rem;"
+                            onchange="messagesTemplatePicked()">
+                            <option value="">— Pick existing template or type new —</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1;">
+                        <input class="form-input" id="messages-edit-template" type="text" placeholder="or type new name…"
+                            style="padding: 0.45rem; font-family: monospace;" onchange="messagesMarkDirty()">
+                    </div>
+                </div>
+
+                <!-- Split: Editor + Preview side by side -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; flex: 1; min-height: 280px;">
+
+                    <!-- LEFT: Content editor -->
+                    <div style="display: flex; flex-direction: column;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                            <label class="form-label" style="font-size: 0.78rem; margin: 0;">Content</label>
+                            <div id="messages-adapter-hints" style="font-size: 0.72rem; color: var(--text-dim);"></div>
+                        </div>
+                        <textarea class="form-input" id="messages-edit-content"
+                            style="flex: 1; min-height: 200px; padding: 0.75rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82rem; resize: none; line-height: 1.5; border-radius: 8px;"
+                            placeholder="Write your message content here…" oninput="messagesContentChanged()"></textarea>
+
+                        <!-- Variable insertion buttons -->
+                        <div id="messages-var-buttons" style="margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                            <span style="font-size: 0.68rem; color: var(--text-dim); align-self: center; margin-right: 0.2rem;">Insert:</span>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Live preview -->
+                    <div style="display: flex; flex-direction: column;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                            <label class="form-label" style="font-size: 0.78rem; margin: 0;">👁️ Live Preview</label>
+                            <span id="messages-preview-meta" style="font-size: 0.72rem; color: var(--text-dim);"></span>
+                        </div>
+
+                        <!-- Email preview (iframe) -->
+                        <iframe id="messages-preview-iframe"
+                            style="flex: 1; border: 1px solid var(--border); border-radius: 8px; background: #1a1a2e; min-height: 200px;"
+                            sandbox="allow-same-origin"></iframe>
+
+                        <!-- SMS preview (phone-style) -->
+                        <div id="messages-preview-sms" style="display: none; flex: 1; flex-direction: column;">
+                            <div style="border: 2px solid var(--border); border-radius: 16px; padding: 1.25rem; background: #0a0a0f; flex: 1; display: flex; flex-direction: column;">
+                                <div style="text-align: center; font-size: 0.72rem; color: #64748b; margin-bottom: 0.75rem;">📱 SMS Preview</div>
+                                <div id="messages-preview-sms-bubble"
+                                    style="background: #1d4ed8; color: #fff; border-radius: 16px 16px 4px 16px; padding: 0.75rem 1rem; font-size: 0.85rem; line-height: 1.5; max-width: 85%; align-self: flex-end; word-break: break-word;">
+                                </div>
+                                <div id="messages-preview-sms-meta"
+                                    style="margin-top: 0.5rem; text-align: right; font-size: 0.72rem; color: #64748b;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- X preview -->
+                        <div id="messages-preview-x" style="display: none; flex: 1; flex-direction: column;">
+                            <div style="border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--bg-input); flex: 1;">
+                                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent);"></div>
+                                    <div>
+                                        <div style="font-size: 0.82rem; font-weight: 600;">Project Account</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-dim);">@project</div>
+                                    </div>
+                                </div>
+                                <div id="messages-preview-x-text" style="font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;"></div>
+                                <div id="messages-preview-x-meta" style="margin-top: 0.75rem; font-size: 0.72rem; color: var(--text-dim);"></div>
+                            </div>
+                        </div>
+
+                        <!-- Reddit preview -->
+                        <div id="messages-preview-reddit" style="display: none; flex: 1; flex-direction: column;">
+                            <div style="border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); flex: 1; padding: 1rem;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                                    <span>🤖</span>
+                                    <span style="font-size: 0.75rem; color: var(--text-dim);">r/target • Posted by u/bot</span>
+                                </div>
+                                <div id="messages-preview-reddit-title" style="font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem;"></div>
+                                <div id="messages-preview-reddit-body" style="font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; color: var(--text-dim);"></div>
+                            </div>
+                        </div>
+
+                        <!-- Generic / article preview -->
+                        <div id="messages-preview-generic" style="display: none; flex: 1; flex-direction: column;">
+                            <div id="messages-preview-generic-content"
+                                style="flex: 1; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); padding: 1rem; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; overflow-y: auto;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Editor controls -->
+                <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span id="messages-save-status"
+                            style="font-size: 0.78rem; color: var(--accent); opacity: 0; transition: opacity 0.3s;"></span>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn" onclick="messagesDelete()"
+                                style="padding: 0.45rem 0.9rem; color: var(--danger);" title="Delete this message">
+                                🗑️ Delete
+                            </button>
+                            <button class="btn" onclick="messagesDiscard()" style="padding: 0.45rem 0.9rem;">
+                                ↩️ Discard
+                            </button>
+                            <button class="btn primary" onclick="messagesSave()" id="messages-save-btn"
+                                style="padding: 0.45rem 0.9rem;">
+                                💾 Save
                             </button>
                         </div>
                     </div>

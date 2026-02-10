@@ -74,20 +74,52 @@ class ResendEmailAdapter(Adapter):
     
     def validate(self, context: ExecutionContext) -> tuple:
         """Validate email can be sent."""
-        to_email = context.routing.operator_email
-        
-        if not to_email:
-            return False, "No operator_email configured"
-        
-        # Basic email format check
-        if "@" not in to_email:
-            return False, f"Invalid email format: {to_email}"
-        
+        recipients = self._get_recipients(context)
+
+        if not recipients:
+            channel = context.action.channel
+            return False, f"No email recipients for channel '{channel}'"
+
+        # Basic format check on all recipients
+        for email in recipients:
+            if "@" not in email:
+                return False, f"Invalid email format: {email}"
+
         return True, None
-    
+
+    def _get_recipients(self, context: ExecutionContext) -> list:
+        """
+        Resolve recipient list based on action channel.
+
+        - operator    → [operator_email]
+        - custodians  → custodian_emails list
+        - subscribers → subscriber_emails list
+        - anything else → [operator_email] (safe fallback)
+        """
+        channel = context.action.channel
+
+        if channel == "custodians":
+            return [e for e in (context.routing.custodian_emails or []) if e]
+        elif channel == "subscribers":
+            return [e for e in (context.routing.subscriber_emails or []) if e]
+        else:
+            # "operator" or any unrecognized channel → operator
+            email = context.routing.operator_email
+            return [email] if email else []
+
     def execute(self, context: ExecutionContext) -> Receipt:
-        """Send email via Resend."""
-        to_email = context.routing.operator_email
+        """Send email via Resend to all resolved recipients."""
+        recipients = self._get_recipients(context)
+
+        if not recipients:
+            return Receipt.failed(
+                adapter=self.name,
+                action_id=context.action.id,
+                channel=context.action.channel,
+                error_code="no_recipients",
+                error_message=f"No email recipients for channel '{context.action.channel}'",
+                retryable=False,
+            )
 
         # Extract subject and body from template
         subject, body = self._parse_template(context)
@@ -96,49 +128,71 @@ class ResendEmailAdapter(Adapter):
         stage = context.escalation.state
         html_body = self._build_styled_email(subject, body, stage, context)
 
-        try:
-            result = resend.Emails.send({
-                "from": self.from_email,
-                "to": [to_email],
-                "subject": subject,
-                "html": html_body,
-                "text": body,
-                "headers": {
-                    "X-Continuity-Tick-ID": context.tick_id,
-                    "X-Continuity-Stage": stage,
-                    "X-Continuity-Action": context.action.id,
-                    # Anti-spam: mark as automated/transactional
-                    "Precedence": "bulk",
-                    "X-Auto-Response-Suppress": "All",
-                },
-            })
+        sent_ids = []
+        errors = []
 
-            # Resend returns {"id": "email-id"} on success
-            email_id = result.get("id") if isinstance(result, dict) else str(result)
+        for to_email in recipients:
+            try:
+                result = resend.Emails.send({
+                    "from": self.from_email,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body,
+                    "text": body,
+                    "headers": {
+                        "X-Continuity-Tick-ID": context.tick_id,
+                        "X-Continuity-Stage": stage,
+                        "X-Continuity-Action": context.action.id,
+                        # Anti-spam: mark as automated/transactional
+                        "Precedence": "bulk",
+                        "X-Auto-Response-Suppress": "All",
+                    },
+                })
 
-            logger.info(f"Email sent to {to_email}: {email_id}")
+                email_id = result.get("id") if isinstance(result, dict) else str(result)
+                sent_ids.append({"to": to_email, "id": email_id})
+                logger.info(f"Email sent to {to_email}: {email_id}")
 
+            except Exception as e:
+                logger.error(f"Resend email failed for {to_email}: {e}")
+                errors.append({"to": to_email, "error": str(e)})
+
+        # Determine result
+        if sent_ids and not errors:
             return Receipt.ok(
                 adapter=self.name,
                 action_id=context.action.id,
                 channel=context.action.channel,
-                delivery_id=email_id,
+                delivery_id=sent_ids[0]["id"] if len(sent_ids) == 1 else "multi",
                 details={
-                    "to": to_email,
+                    "recipients": sent_ids,
                     "subject": subject,
                     "template": context.action.template,
                 },
             )
-
-        except Exception as e:
-            logger.exception(f"Resend email failed: {e}")
-
+        elif sent_ids and errors:
+            # Partial success — still mark as OK (some delivered)
+            logger.warning(f"Partial email delivery: {len(sent_ids)} ok, {len(errors)} failed")
+            return Receipt.ok(
+                adapter=self.name,
+                action_id=context.action.id,
+                channel=context.action.channel,
+                delivery_id="partial",
+                details={
+                    "recipients": sent_ids,
+                    "errors": errors,
+                    "subject": subject,
+                    "template": context.action.template,
+                },
+            )
+        else:
+            # All failed
             return Receipt.failed(
                 adapter=self.name,
                 action_id=context.action.id,
                 channel=context.action.channel,
                 error_code="resend_error",
-                error_message=str(e),
+                error_message=f"All {len(errors)} sends failed: {errors[0]['error']}",
                 retryable=True,
             )
 

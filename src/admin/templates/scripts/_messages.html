@@ -1,0 +1,707 @@
+
+// ========================================
+// MESSAGES MANAGEMENT (Content Tab — Messages Mode)
+// ========================================
+
+let messagesLoaded = false;
+let messagesData = [];
+let messagesTemplateFiles = [];   // Template files on disk
+let messagesSelected = null;
+let messagesDirty = false;
+let messagesIsNew = false;
+let messagesVariables = [];
+let messagesRecipients = {};
+let _messagesPreviewTimer = null; // Debounce timer for live preview
+
+// Hex-escaped template variable delimiters to avoid Jinja2 conflict
+const MSG_VAR_OPEN = '$' + '\x7b\x7b';
+const MSG_VAR_CLOSE = '\x7d\x7d';
+
+// ── Load all messages data ─────────────────────────────
+
+async function messagesLoad() {
+    try {
+        const [msgResp, tplResp, varResp, rcpResp] = await Promise.all([
+            fetch('/api/content/messages/list'),
+            fetch('/api/content/messages/templates'),
+            fetch('/api/content/messages/variables'),
+            fetch('/api/content/messages/recipients'),
+        ]);
+
+        const msgData = await msgResp.json();
+        const tplData = await tplResp.json();
+        const varData = await varResp.json();
+        const rcpData = await rcpResp.json();
+
+        messagesData = msgData.messages || [];
+        messagesTemplateFiles = tplData.templates || [];
+        messagesVariables = varData.variables || [];
+        messagesRecipients = {
+            subscriber_emails: rcpData.subscriber_emails || [],
+            custodian_emails: rcpData.custodian_emails || [],
+            operator_email: rcpData.operator_email || '',
+        };
+
+        messagesLoaded = true;
+        messagesRenderList();
+        messagesRenderVariableButtons();
+        messagesRenderRecipients();
+        messagesPopulateTemplatePicker();
+        contentLog('\u2709\ufe0f Loaded ' + messagesData.length + ' messages, ' + messagesTemplateFiles.length + ' templates on disk');
+    } catch (err) {
+        contentLog('\u274c Failed to load messages: ' + err.message);
+    }
+}
+
+// ── Render message list grouped by stage ───────────────
+
+function messagesRenderList() {
+    const container = document.getElementById('messages-list');
+    if (!messagesData.length) {
+        container.innerHTML = '<div style="color: var(--text-dim); font-size: 0.82rem; padding: 0.5rem 0;">No messages configured</div>';
+        return;
+    }
+
+    const stages = ['REMIND_1', 'REMIND_2', 'PRE_RELEASE', 'PARTIAL', 'FULL'];
+    const grouped = {};
+    for (const s of stages) grouped[s] = [];
+    for (const msg of messagesData) {
+        const stage = msg.stage || 'REMIND_1';
+        if (!grouped[stage]) grouped[stage] = [];
+        grouped[stage].push(msg);
+    }
+
+    let html = '';
+    for (const stage of stages) {
+        const msgs = grouped[stage];
+        if (!msgs.length) continue;
+
+        html += '<div style="margin-bottom: 0.75rem;">';
+        html += '<div style="font-size: 0.68rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; padding-left: 0.25rem;">' + stage.replace(/_/g, ' ') + '</div>';
+
+        for (const msg of msgs) {
+            const isActive = messagesSelected === msg.action_id;
+            const bgColor = isActive ? 'background: var(--accent-dim, rgba(99,102,241,0.15)); border-color: var(--accent);' : '';
+            const opacity = msg.content_exists ? '' : 'opacity: 0.45;';
+
+            html += '<div class="messages-item" data-action-id="' + msg.action_id + '" ';
+            html += 'onclick="messagesSelect(\'' + msg.action_id.replace(/'/g, "\\'") + '\')" ';
+            html += 'style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.5rem; ';
+            html += 'border-radius: 6px; cursor: pointer; border: 1px solid transparent; ';
+            html += 'font-size: 0.82rem; transition: all 0.15s ease; ' + bgColor + opacity + '">';
+            html += '<span style="flex-shrink: 0;">' + msg.icon + '</span>';
+            html += '<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + msg.template + '">' + (msg.template || msg.action_id) + '</span>';
+            html += '<span style="font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 3px; background: var(--bg-input); color: var(--text-dim);">' + msg.channel + '</span>';
+            if (!msg.content_exists) {
+                html += '<span title="Template file missing" style="font-size: 0.72rem;">⚠️</span>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+
+    // Hover effects
+    container.querySelectorAll('.messages-item').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+            if (!el.style.background.includes('accent')) {
+                el.style.background = 'var(--bg-input)';
+            }
+        });
+        el.addEventListener('mouseleave', () => {
+            if (!el.style.background.includes('accent')) {
+                el.style.background = '';
+            }
+        });
+    });
+}
+
+// ── Populate template picker dropdown ──────────────────
+
+function messagesPopulateTemplatePicker() {
+    const picker = document.getElementById('messages-template-picker');
+    if (!picker) return;
+
+    let html = '<option value="">\u2014 Pick existing template or type new \u2014</option>';
+
+    // Group by directory
+    const dirs = {};
+    for (const t of messagesTemplateFiles) {
+        const dir = t.dir || '(root)';
+        if (!dirs[dir]) dirs[dir] = [];
+        dirs[dir].push(t);
+    }
+
+    for (const [dir, templates] of Object.entries(dirs)) {
+        html += '<optgroup label="' + dir + '/">';
+        for (const t of templates) {
+            html += '<option value="' + t.name + '" data-path="' + t.path + '" data-dir="' + t.dir + '">';
+            html += t.name + t.ext;
+            html += '</option>';
+        }
+        html += '</optgroup>';
+    }
+
+    picker.innerHTML = html;
+}
+
+// ── Template picked from dropdown ──────────────────────
+
+async function messagesTemplatePicked() {
+    const picker = document.getElementById('messages-template-picker');
+    const templateName = picker.value;
+    if (!templateName) return;
+
+    // Set the template name input
+    document.getElementById('messages-edit-template').value = templateName;
+
+    // Auto-set the channel based on the template directory
+    const selected = picker.options[picker.selectedIndex];
+    const dir = selected.getAttribute('data-dir') || '';
+    if (dir === 'operator') {
+        document.getElementById('messages-edit-channel').value = 'operator';
+    } else if (dir === 'custodians') {
+        document.getElementById('messages-edit-channel').value = 'custodians';
+    } else if (dir === 'public') {
+        document.getElementById('messages-edit-channel').value = 'public';
+    } else if (dir === 'subscribers') {
+        document.getElementById('messages-edit-channel').value = 'subscribers';
+    }
+
+    // Auto-detect adapter from file extension
+    const ext = (selected.textContent || '').trim();
+    if (ext.endsWith('.txt')) {
+        document.getElementById('messages-edit-adapter').value = 'sms';
+    }
+
+    // Load the template content
+    try {
+        const resp = await fetch('/api/content/messages/' + encodeURIComponent(templateName));
+        if (resp.ok) {
+            const data = await resp.json();
+            document.getElementById('messages-edit-content').value = data.content || '';
+            messagesUpdateAdapterHints(document.getElementById('messages-edit-adapter').value);
+            messagesRefreshPreview();
+            messagesMarkDirty();
+        }
+    } catch (err) {
+        contentLog('\u274c Failed to load template: ' + err.message);
+    }
+}
+
+// ── Render variable insertion buttons ──────────────────
+
+function messagesRenderVariableButtons() {
+    const container = document.getElementById('messages-var-buttons');
+    if (!container) return;
+
+    let html = '<span style="font-size: 0.68rem; color: var(--text-dim); align-self: center; margin-right: 0.2rem;">Insert:</span>';
+
+    for (const v of messagesVariables) {
+        html += '<button class="btn" onclick="messagesInsertVar(\'' + v.name + '\')" ';
+        html += 'title="' + v.description + '" ';
+        html += 'style="padding: 0.1rem 0.35rem; font-size: 0.65rem; font-family: monospace; line-height: 1.2;">';
+        html += v.name;
+        html += '</button>';
+    }
+
+    container.innerHTML = html;
+}
+
+// ── Render recipient lists ─────────────────────────────
+
+function messagesRenderRecipients() {
+    messagesRenderRecipientList('subscribers', messagesRecipients.subscriber_emails || []);
+    messagesRenderRecipientList('custodians', messagesRecipients.custodian_emails || []);
+}
+
+function messagesRenderRecipientList(type, emails) {
+    const container = document.getElementById('messages-' + type + '-list');
+    if (!container) return;
+
+    if (!emails.length) {
+        container.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-dim); font-style: italic;">None configured</div>';
+        return;
+    }
+
+    let html = '';
+    for (const email of emails) {
+        html += '<div style="display: flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0; font-size: 0.78rem;">';
+        html += '<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + email + '</span>';
+        html += '<button class="btn" onclick="messagesRemoveRecipient(\'' + type + '\', \'' + email.replace(/'/g, "\\'") + '\')" ';
+        html += 'style="padding: 0.05rem 0.25rem; font-size: 0.6rem; color: var(--danger); line-height: 1;" title="Remove">\u2715</button>';
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+// ── Select a message ───────────────────────────────────
+
+async function messagesSelect(actionId) {
+    if (messagesDirty) {
+        if (!confirm('You have unsaved changes. Discard?')) return;
+    }
+
+    const msg = messagesData.find(m => m.action_id === actionId);
+    if (!msg) return;
+
+    messagesSelected = actionId;
+    messagesIsNew = false;
+    messagesDirty = false;
+
+    messagesRenderList();
+
+    // Show editor
+    document.getElementById('messages-empty').style.display = 'none';
+    document.getElementById('messages-editor-wrap').style.display = 'flex';
+    document.getElementById('messages-panel-name').textContent = msg.template || msg.action_id;
+
+    // Set dropdowns
+    document.getElementById('messages-edit-stage').value = msg.stage;
+    document.getElementById('messages-edit-adapter').value = msg.adapter;
+    document.getElementById('messages-edit-channel').value = msg.channel;
+    document.getElementById('messages-edit-template').value = msg.template || '';
+
+    // Select in template picker if it matches
+    const picker = document.getElementById('messages-template-picker');
+    picker.value = msg.template || '';
+
+    // Load template content
+    if (msg.template && msg.content_exists) {
+        try {
+            const resp = await fetch('/api/content/messages/' + encodeURIComponent(msg.template));
+            const data = await resp.json();
+            document.getElementById('messages-edit-content').value = data.content || '';
+        } catch (err) {
+            document.getElementById('messages-edit-content').value = '';
+            contentLog('\u274c Failed to load template: ' + err.message);
+        }
+    } else {
+        document.getElementById('messages-edit-content').value = '';
+        if (msg.template && !msg.content_exists) {
+            contentLog('\u26a0\ufe0f Template file "' + msg.template + '" not found on disk');
+        }
+    }
+
+    // Update adapter hints + show correct preview
+    messagesUpdateAdapterHints(msg.adapter);
+    messagesShowPreviewForAdapter(msg.adapter);
+
+    // Update badges
+    const badges = document.getElementById('messages-panel-badges');
+    badges.innerHTML = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
+        + '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-input); color: var(--text-dim);">' + msg.adapter + '</span>';
+
+    // Trigger preview
+    messagesRefreshPreview();
+    messagesDirty = false;
+
+    // Reset status
+    const status = document.getElementById('messages-save-status');
+    if (status) status.style.opacity = '0';
+}
+
+// ── New message ────────────────────────────────────────
+
+function messagesNew() {
+    if (messagesDirty) {
+        if (!confirm('You have unsaved changes. Discard?')) return;
+    }
+
+    messagesSelected = null;
+    messagesIsNew = true;
+    messagesDirty = false;
+
+    messagesRenderList();
+
+    document.getElementById('messages-empty').style.display = 'none';
+    document.getElementById('messages-editor-wrap').style.display = 'flex';
+    document.getElementById('messages-panel-name').textContent = 'New Message';
+
+    // Reset form
+    document.getElementById('messages-edit-stage').value = 'REMIND_1';
+    document.getElementById('messages-edit-adapter').value = 'email';
+    document.getElementById('messages-edit-channel').value = 'operator';
+    document.getElementById('messages-edit-template').value = '';
+    document.getElementById('messages-edit-content').value = '';
+    document.getElementById('messages-template-picker').value = '';
+
+    messagesUpdateAdapterHints('email');
+    messagesShowPreviewForAdapter('email');
+
+    // Clear preview iframe
+    const iframe = document.getElementById('messages-preview-iframe');
+    if (iframe) iframe.srcdoc = '';
+
+    document.getElementById('messages-panel-badges').innerHTML = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--success-dim, rgba(34,197,94,0.15)); color: var(--success, #22c55e);">NEW</span>';
+
+    messagesDirty = false;
+    const status = document.getElementById('messages-save-status');
+    if (status) status.style.opacity = '0';
+}
+
+// ── Dirty tracking + debounced preview ─────────────────
+
+function messagesMarkDirty() {
+    messagesDirty = true;
+    const status = document.getElementById('messages-save-status');
+    if (status) {
+        status.textContent = '\u270f\ufe0f Unsaved changes';
+        status.style.opacity = '1';
+    }
+}
+
+function messagesContentChanged() {
+    messagesMarkDirty();
+    // Debounce the preview refresh (300ms)
+    if (_messagesPreviewTimer) clearTimeout(_messagesPreviewTimer);
+    _messagesPreviewTimer = setTimeout(messagesRefreshPreview, 300);
+}
+
+// ── Adapter change handler ─────────────────────────────
+
+function messagesAdapterChanged() {
+    messagesMarkDirty();
+    const adapter = document.getElementById('messages-edit-adapter').value;
+    messagesUpdateAdapterHints(adapter);
+    messagesShowPreviewForAdapter(adapter);
+    messagesRefreshPreview();
+}
+
+// ── Show / hide the correct preview container ──────────
+
+function messagesShowPreviewForAdapter(adapter) {
+    const panels = {
+        'email': 'messages-preview-iframe',
+        'sms': 'messages-preview-sms',
+        'x': 'messages-preview-x',
+        'reddit': 'messages-preview-reddit',
+    };
+
+    // Hide all
+    document.getElementById('messages-preview-iframe').style.display = 'none';
+    document.getElementById('messages-preview-sms').style.display = 'none';
+    document.getElementById('messages-preview-x').style.display = 'none';
+    document.getElementById('messages-preview-reddit').style.display = 'none';
+    document.getElementById('messages-preview-generic').style.display = 'none';
+
+    // Show the right one
+    const target = panels[adapter];
+    if (target) {
+        document.getElementById(target).style.display = adapter === 'email' ? '' : 'flex';
+    } else {
+        document.getElementById('messages-preview-generic').style.display = 'flex';
+    }
+}
+
+// ── Update adapter-specific hints ──────────────────────
+
+function messagesUpdateAdapterHints(adapter) {
+    const hints = document.getElementById('messages-adapter-hints');
+    if (!hints) return;
+
+    const hintMap = {
+        'email': '\ud83d\udce7 # Header \u2192 subject. Body \u2192 styled HTML.',
+        'sms': '\ud83d\udcf1 Plain text. 160c = 1 segment.',
+        'x': '\ud83d\udc26 280 char limit. No markdown.',
+        'reddit': '\ud83e\udd16 # Header \u2192 post title.',
+    };
+
+    hints.textContent = hintMap[adapter] || '';
+}
+
+// ── Insert variable ────────────────────────────────────
+
+function messagesInsertVar(varName) {
+    const textarea = document.getElementById('messages-edit-content');
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const insert = MSG_VAR_OPEN + varName + MSG_VAR_CLOSE;
+
+    textarea.value = text.substring(0, start) + insert + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + insert.length;
+    textarea.focus();
+    messagesContentChanged();
+}
+
+// ── Live Preview (API call) ────────────────────────────
+
+async function messagesRefreshPreview() {
+    const content = document.getElementById('messages-edit-content').value;
+    const adapter = document.getElementById('messages-edit-adapter').value;
+    const stage = document.getElementById('messages-edit-stage').value;
+    const metaEl = document.getElementById('messages-preview-meta');
+
+    if (!content.trim()) {
+        // Show empty state in all previews
+        const iframe = document.getElementById('messages-preview-iframe');
+        if (iframe) iframe.srcdoc = '<body style="margin:0;background:#1a1a2e;display:flex;align-items:center;justify-content:center;height:100vh;color:#64748b;font-family:sans-serif;font-size:13px;">(empty)</body>';
+        const smsBubble = document.getElementById('messages-preview-sms-bubble');
+        if (smsBubble) smsBubble.textContent = '(empty)';
+        const xText = document.getElementById('messages-preview-x-text');
+        if (xText) xText.textContent = '(empty)';
+        const redditTitle = document.getElementById('messages-preview-reddit-title');
+        if (redditTitle) redditTitle.textContent = '(empty)';
+        const genericContent = document.getElementById('messages-preview-generic-content');
+        if (genericContent) genericContent.textContent = '(empty)';
+        if (metaEl) metaEl.textContent = '';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/content/messages/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, adapter, stage }),
+        });
+
+        const data = await resp.json();
+
+        if (adapter === 'email') {
+            // Render full styled HTML in iframe
+            const iframe = document.getElementById('messages-preview-iframe');
+            if (iframe && data.html) {
+                iframe.srcdoc = data.html;
+            }
+            if (metaEl) metaEl.textContent = 'Subject: ' + (data.subject || '');
+
+        } else if (adapter === 'sms') {
+            const bubble = document.getElementById('messages-preview-sms-bubble');
+            const smsMeta = document.getElementById('messages-preview-sms-meta');
+            if (bubble) bubble.textContent = data.plain_text || data.rendered || '';
+            if (smsMeta) {
+                const chars = data.char_count || 0;
+                const segs = data.segments || 1;
+                const over = data.over_limit ? ' \u26a0\ufe0f OVER' : '';
+                smsMeta.textContent = chars + ' chars \u2022 ' + segs + ' segment' + (segs !== 1 ? 's' : '') + over;
+            }
+            if (metaEl) metaEl.textContent = (data.char_count || 0) + ' chars';
+
+        } else if (adapter === 'x') {
+            const xText = document.getElementById('messages-preview-x-text');
+            const xMeta = document.getElementById('messages-preview-x-meta');
+            if (xText) xText.textContent = data.text || data.rendered || '';
+            if (xMeta) {
+                const cc = data.char_count || 0;
+                const color = cc > 280 ? 'var(--danger)' : 'var(--text-dim)';
+                xMeta.innerHTML = '<span style="color:' + color + '">' + cc + '/280</span>' + (cc > 280 ? ' \u26a0\ufe0f Over limit!' : '');
+            }
+            if (metaEl) metaEl.textContent = (data.char_count || 0) + '/280';
+
+        } else if (adapter === 'reddit') {
+            const rTitle = document.getElementById('messages-preview-reddit-title');
+            const rBody = document.getElementById('messages-preview-reddit-body');
+            if (rTitle) rTitle.textContent = data.title || '';
+            if (rBody) rBody.textContent = data.body || '';
+            if (metaEl) metaEl.textContent = '';
+
+        } else {
+            // Generic / article
+            const genContent = document.getElementById('messages-preview-generic-content');
+            if (genContent) genContent.textContent = data.rendered || '';
+            if (metaEl) metaEl.textContent = '';
+        }
+
+    } catch (err) {
+        if (metaEl) metaEl.textContent = 'Preview error';
+    }
+}
+
+// ── Save message ───────────────────────────────────────
+
+async function messagesSave() {
+    const template = document.getElementById('messages-edit-template').value.trim();
+    const stage = document.getElementById('messages-edit-stage').value;
+    const adapter = document.getElementById('messages-edit-adapter').value;
+    const channel = document.getElementById('messages-edit-channel').value;
+    const content = document.getElementById('messages-edit-content').value;
+
+    if (!template) {
+        contentLog('\u274c Template name is required');
+        return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(template)) {
+        contentLog('\u274c Template name must be alphanumeric with underscores only');
+        return;
+    }
+
+    const body = { template, stage, adapter, channel, content };
+
+    if (!messagesIsNew && messagesSelected) {
+        body.action_id = messagesSelected;
+    }
+
+    try {
+        const resp = await fetch('/api/content/messages/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            contentLog('\u274c Save failed: ' + (data.error || 'Unknown error'));
+            return;
+        }
+
+        messagesDirty = false;
+        messagesIsNew = false;
+        messagesSelected = data.action_id;
+
+        const status = document.getElementById('messages-save-status');
+        if (status) {
+            status.textContent = '\u2705 Saved';
+            status.style.opacity = '1';
+            setTimeout(() => { status.style.opacity = '0'; }, 2000);
+        }
+
+        contentLog('\u2709\ufe0f Saved: ' + template + ' \u2192 ' + stage + ' (' + adapter + ' \u2192 ' + channel + ')');
+
+        // Reload everything
+        await messagesLoad();
+        messagesSelect(data.action_id);
+
+    } catch (err) {
+        contentLog('\u274c Save error: ' + err.message);
+    }
+}
+
+// ── Delete message ─────────────────────────────────────
+
+async function messagesDelete() {
+    if (!messagesSelected && !messagesIsNew) return;
+
+    if (messagesIsNew) {
+        messagesDiscard();
+        return;
+    }
+
+    const msg = messagesData.find(m => m.action_id === messagesSelected);
+    if (!msg) return;
+
+    const name = msg.template || msg.action_id;
+    if (!confirm('Delete message "' + name + '"?\nThis removes the template file and plan action.')) return;
+
+    try {
+        const resp = await fetch('/api/content/messages/' + encodeURIComponent(msg.template) + '?action_id=' + encodeURIComponent(msg.action_id), {
+            method: 'DELETE',
+        });
+
+        const data = await resp.json();
+
+        if (data.success) {
+            contentLog('\ud83d\uddd1\ufe0f Deleted: ' + name);
+            messagesDirty = false;
+            messagesSelected = null;
+            messagesResetEditor();
+            await messagesLoad();
+        } else {
+            contentLog('\u274c Delete failed');
+        }
+    } catch (err) {
+        contentLog('\u274c Delete error: ' + err.message);
+    }
+}
+
+// ── Discard changes ────────────────────────────────────
+
+function messagesDiscard() {
+    messagesDirty = false;
+
+    if (messagesIsNew) {
+        messagesIsNew = false;
+        messagesSelected = null;
+        messagesResetEditor();
+    } else if (messagesSelected) {
+        messagesSelect(messagesSelected);
+    }
+
+    const status = document.getElementById('messages-save-status');
+    if (status) status.style.opacity = '0';
+}
+
+function messagesResetEditor() {
+    document.getElementById('messages-empty').style.display = '';
+    document.getElementById('messages-editor-wrap').style.display = 'none';
+    document.getElementById('messages-panel-name').textContent = 'Select a message';
+    document.getElementById('messages-panel-badges').innerHTML = '';
+
+    // Clear iframe
+    const iframe = document.getElementById('messages-preview-iframe');
+    if (iframe) iframe.srcdoc = '';
+}
+
+// ── Recipient management ───────────────────────────────
+
+async function messagesAddRecipient(type) {
+    const inputId = type === 'subscriber' ? 'messages-add-subscriber' : 'messages-add-custodian';
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const email = input.value.trim();
+    if (!email || !email.includes('@')) {
+        contentLog('\u274c Invalid email address');
+        return;
+    }
+
+    const key = type === 'subscriber' ? 'subscriber_emails' : 'custodian_emails';
+    const current = messagesRecipients[key] || [];
+
+    if (current.includes(email)) {
+        contentLog('\u26a0\ufe0f Already in list');
+        return;
+    }
+
+    const body = {};
+    body[key] = [...current, email];
+
+    try {
+        const resp = await fetch('/api/content/messages/recipients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        const data = await resp.json();
+        if (data.success) {
+            messagesRecipients[key] = data[key] || body[key];
+            messagesRenderRecipients();
+            input.value = '';
+            contentLog('\u2705 Added ' + type + ': ' + email);
+        } else {
+            contentLog('\u274c Failed to update recipients');
+        }
+    } catch (err) {
+        contentLog('\u274c Error: ' + err.message);
+    }
+}
+
+async function messagesRemoveRecipient(type, email) {
+    const key = type === 'subscriber' ? 'subscriber_emails' : 'custodian_emails';
+    const current = messagesRecipients[key] || [];
+    const body = {};
+    body[key] = current.filter(e => e !== email);
+
+    try {
+        const resp = await fetch('/api/content/messages/recipients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        const data = await resp.json();
+        if (data.success) {
+            messagesRecipients[key] = data[key] || body[key];
+            messagesRenderRecipients();
+            contentLog('\ud83d\uddd1\ufe0f Removed ' + type + ': ' + email);
+        }
+    } catch (err) {
+        contentLog('\u274c Error: ' + err.message);
+    }
+}

@@ -27,6 +27,7 @@ from .routes_env import env_bp
 from .routes_git import git_bp
 from .routes_media import media_bp
 from .routes_media_vault import media_vault_bp
+from .routes_messages import messages_bp
 from .routes_mirror import mirror_bp
 from .routes_secrets import secrets_bp
 from .routes_vault import vault_bp
@@ -68,6 +69,7 @@ def create_app() -> Flask:
     app.register_blueprint(content_bp, url_prefix="/api/content")       # /api/content/*
     app.register_blueprint(media_bp, url_prefix="/api/content/media")   # /api/content/media/*
     app.register_blueprint(media_vault_bp, url_prefix="/api/content/media")  # /api/content/media/* (vault)
+    app.register_blueprint(messages_bp, url_prefix="/api/content/messages")  # /api/content/messages/*
     app.register_blueprint(vault_bp, url_prefix="/api")                  # /api/vault/*
     app.register_blueprint(backup_bp, url_prefix="/api/backup")          # /api/backup/*
     app.register_blueprint(docker_bp, url_prefix="/api/docker")           # /api/docker/*

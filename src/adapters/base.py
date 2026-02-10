@@ -58,6 +58,7 @@ class ExecutionContext:
                 "operator_email": self.routing.operator_email,
                 "operator_sms": self.routing.operator_sms,
                 "custodian_emails": self.routing.custodian_emails,
+                "subscriber_emails": self.routing.subscriber_emails,
                 "observer_webhooks": self.routing.observer_webhooks,
             },
             "data": {

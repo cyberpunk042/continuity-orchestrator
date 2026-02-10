@@ -126,6 +126,7 @@ class Routing(BaseModel):
     operator_email: str
     operator_sms: Optional[str] = None
     custodian_emails: List[str] = Field(default_factory=list)
+    subscriber_emails: List[str] = Field(default_factory=list)
     observer_webhooks: List[str] = Field(default_factory=list)
     reddit_targets: List[str] = Field(default_factory=list)
     x_account_ref: Optional[str] = None
