@@ -240,7 +240,7 @@ def api_reoptimize():
 
             # Re-encrypt if it was encrypted before
             if was_encrypted:
-                store_data = encrypt_file(opt_data, passphrase)
+                store_data = encrypt_file(opt_data, entry.original_name, entry.mime_type, passphrase)
             else:
                 store_data = opt_data
 
@@ -413,7 +413,7 @@ def api_upload_media():
                 return jsonify({
                     "error": "Encryption requested but CONTENT_ENCRYPTION_KEY is not set"
                 }), 400
-            write_data = encrypt_file(store_data, passphrase)
+            write_data = encrypt_file(store_data, original_name, store_mime, passphrase)
             is_encrypted = True
             logger.info(f"Encrypting media: {len(store_data):,} → {len(write_data):,} bytes")
 

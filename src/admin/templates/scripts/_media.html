@@ -828,6 +828,14 @@ async function mediaUpdateField(field, value) {
 
         if (data.success) {
             contentLog(`✅ Updated ${field} for ${mediaSelectedId}`);
+            // Flash inline "✓ Saved"
+            const statusEl = document.getElementById('media-save-status');
+            if (statusEl) {
+                statusEl.textContent = '✓ Saved';
+                statusEl.style.opacity = '1';
+                clearTimeout(statusEl._fadeTimer);
+                statusEl._fadeTimer = setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
+            }
             // Update local cache
             const idx = mediaEntries.findIndex(m => m.id === mediaSelectedId);
             if (idx >= 0) Object.assign(mediaEntries[idx], data);

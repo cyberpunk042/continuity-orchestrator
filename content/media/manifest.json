@@ -13,6 +13,19 @@
       "uploaded_at": "2026-02-10T01:54:08.930847+00:00",
       "caption": "",
       "storage": "git"
+    },
+    {
+      "id": "img_20260210_376c",
+      "original_name": "e6e5631ce1237ae4c05b3563eda686400a401df4548d0f9fad40ecac1659c46c.jpg",
+      "mime_type": "image/jpeg",
+      "size_bytes": 12095,
+      "sha256": "c698d1be38af9c1ba3dde17c46f947d98d94fa26baa693a9ba41e29d2a3d05a6",
+      "encrypted": true,
+      "min_stage": "OK",
+      "referenced_by": [],
+      "uploaded_at": "2026-02-10T17:51:41.674078+00:00",
+      "caption": "testfffffffggg",
+      "storage": "inline"
     }
   ]
 }

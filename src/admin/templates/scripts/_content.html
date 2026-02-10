@@ -1078,7 +1078,52 @@ function vaultPickerSelect(mediaId) {
     const canEmbed = ['image', 'video', 'audio'].includes(cat);
 
     const embedBtn = document.getElementById('vault-picker-embed-btn');
+    const attachBtn = document.getElementById('vault-picker-attach-btn');
     embedBtn.style.display = canEmbed ? '' : 'none';
+    embedBtn.disabled = false;
+    embedBtn.title = '';
+
+    // Remove any previous MMS warning
+    const prevWarn = document.getElementById('vault-picker-mms-warning');
+    if (prevWarn) prevWarn.remove();
+
+    // ── SMS MMS compatibility check ──
+    // When inserting into an SMS message, only certain image types work as MMS.
+    // webp, svg, etc. are rejected by Twilio/carriers with error 12300.
+    if (vaultPickerTarget === 'messages') {
+        const adapter = document.getElementById('messages-edit-adapter')?.value;
+        if (adapter === 'sms' && cat === 'image') {
+            const MMS_SAFE_TYPES = [
+                'image/jpeg', 'image/png', 'image/gif',
+                'image/bmp', 'image/tiff',
+            ];
+            const isMmsSafe = MMS_SAFE_TYPES.includes(item.mime_type);
+
+            if (!isMmsSafe) {
+                // Block the embed button (MMS attachment)
+                embedBtn.disabled = true;
+                embedBtn.title = `${item.mime_type} is not supported for MMS`;
+                embedBtn.style.opacity = '0.4';
+
+                // Show warning inline with action buttons
+                const warn = document.createElement('div');
+                warn.id = 'vault-picker-mms-warning';
+                warn.style.cssText = `
+                    font-size: 0.78rem; color: #f59e0b;
+                    padding: 0.4rem 0.65rem; background: rgba(245,158,11,0.1);
+                    border: 1px solid rgba(245,158,11,0.25); border-radius: 6px;
+                    line-height: 1.3; flex: 1;
+                `;
+                warn.innerHTML = `
+                    ⚠️ <strong>${item.mime_type}</strong> not supported for MMS —
+                    use <strong>📎 Attach</strong> (URL in body)
+                `;
+                actions.insertBefore(warn, actions.firstChild);
+            } else {
+                embedBtn.style.opacity = '';
+            }
+        }
+    }
 
     // Update status
     document.getElementById('vault-picker-status').textContent =
