@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T00:49:55.407388Z",
+        "updated_at_iso": "2026-02-10T01:06:07.508264Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-11T23:29:04.016708+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T00:49:54.743625Z",
-        "time_to_deadline_minutes": 2799,
+        "now_iso": "2026-02-10T01:06:06.956170Z",
+        "time_to_deadline_minutes": 2782,
         "overdue_minutes": 0
     },
     "renewal": {
