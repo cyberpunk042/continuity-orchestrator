@@ -158,6 +158,8 @@ class TwilioSMSAdapter(Adapter):
                     )
             
             if validated_media:
+                for i, url in enumerate(validated_media):
+                    logger.info(f"  MMS media [{i+1}]: {url}")
                 logger.info(
                     f"Sending MMS with {len(validated_media)} media attachment(s)"
                 )
