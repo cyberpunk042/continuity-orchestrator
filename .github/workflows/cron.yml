@@ -129,6 +129,8 @@ jobs:
           # Sentinel
           SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
           SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
+          # Content encryption (for encrypted templates)
+          CONTENT_ENCRYPTION_KEY: ${{ secrets.CONTENT_ENCRYPTION_KEY }}
           LOG_FORMAT: json
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
