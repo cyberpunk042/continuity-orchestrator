@@ -434,3 +434,149 @@ def api_sentinel_setup_status():
         return jsonify(data)
     except Exception:
         return jsonify({"status": "unknown"})
+
+
+@secrets_bp.route("/tunnel/setup", methods=["POST"])
+def api_tunnel_setup():
+    """Spawn terminal to run the Cloudflare Tunnel setup script."""
+    project_root = _project_root()
+    script_path = project_root / "scripts" / "setup-tunnel.sh"
+
+    if not script_path.exists():
+        return jsonify({
+            "success": False,
+            "message": "scripts/setup-tunnel.sh not found",
+        }), 404
+
+    # Check if auto-run mode requested
+    data = request.json or {}
+    auto_run = data.get("autoRun", False)
+    y_flag = " -y" if auto_run else ""
+
+    # Wrap the script — in auto mode, close immediately; interactive keeps open
+    if auto_run:
+        wrapper = f'bash {script_path}{y_flag}'
+    else:
+        wrapper = f'bash {script_path}; echo ""; read -p "Press Enter to close…"'
+
+    # Try to open in a terminal
+    terminal_cmds = [
+        ["gnome-terminal", "--", "bash", "-c", wrapper],
+        ["xterm", "-e", f"bash -c '{wrapper}'"],
+        ["konsole", "-e", f"bash -c '{wrapper}'"],
+        ["x-terminal-emulator", "-e", f"bash -c '{wrapper}'"],
+    ]
+
+    for cmd in terminal_cmds:
+        try:
+            subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True)
+            return jsonify({
+                "success": True,
+                "message": "Terminal opened. The setup script will walk you through creating a Cloudflare Tunnel.",
+            })
+        except FileNotFoundError:
+            continue
+
+    # Fallback: return the command
+    return jsonify({
+        "success": False,
+        "fallback": True,
+        "command": f"./scripts/setup-tunnel.sh{y_flag}",
+        "message": "Could not open terminal. Run this in your terminal:",
+    })
+
+
+@secrets_bp.route("/tunnel/setup-status")
+def api_tunnel_setup_status():
+    """Check tunnel setup progress via signal file."""
+    project_root = _project_root()
+    signal_file = project_root / ".tunnel-setup-result"
+
+    if not signal_file.exists():
+        return jsonify({"status": "unknown"})
+
+    try:
+        import json as _json
+        data = _json.loads(signal_file.read_text())
+        return jsonify(data)
+    except Exception:
+        return jsonify({"status": "unknown"})
+
+
+@secrets_bp.route("/tunnel/save-token", methods=["POST"])
+def api_tunnel_save_token():
+    """Save tunnel token from web UI paste.
+
+    Accepts either the raw eyJ... token or a full cloudflared install
+    command like: cloudflared.exe service install eyJhIjoi...
+    Extracts the token, writes it to .env, and signals the running script.
+    """
+    import re
+    import json as _json
+
+    project_root = _project_root()
+    data = request.json or {}
+    raw_input = (data.get("token") or "").strip()
+
+    if not raw_input:
+        return jsonify({"success": False, "error": "No token provided"}), 400
+
+    # Extract eyJ... token from the pasted command
+    match = re.search(r'(eyJ[A-Za-z0-9_=+/.-]+)', raw_input)
+    token = match.group(1) if match else raw_input
+
+    if len(token) < 20:
+        return jsonify({
+            "success": False,
+            "error": "Token looks too short. Copy the full install command.",
+        }), 400
+
+    # Write to .env
+    env_file = project_root / ".env"
+    try:
+        lines = []
+        found = False
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("CLOUDFLARE_TUNNEL_TOKEN="):
+                    lines.append(f"CLOUDFLARE_TUNNEL_TOKEN={token}")
+                    found = True
+                elif line.strip() == "# ── Cloudflare Tunnel ────────────────────────────────────────────────":
+                    continue  # skip old comment (we'll re-add)
+                else:
+                    lines.append(line)
+
+        if not found:
+            lines.append("")
+            lines.append("# ── Cloudflare Tunnel ────────────────────────────────────────────────")
+            lines.append(f"CLOUDFLARE_TUNNEL_TOKEN={token}")
+
+        env_file.write_text("\n".join(lines) + "\n")
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to write .env: {e}"}), 500
+
+    # Signal the running script (if any)
+    token_file = project_root / ".tunnel-token-provided"
+    token_file.write_text(token)
+
+    # Also update the setup-result signal file to success
+    signal_file = project_root / ".tunnel-setup-result"
+    try:
+        existing = {}
+        if signal_file.exists():
+            existing = _json.loads(signal_file.read_text())
+        existing["status"] = "success"
+        existing["token"] = token[:12] + "…"
+        signal_file.write_text(_json.dumps(existing))
+    except Exception:
+        signal_file.write_text(_json.dumps({
+            "status": "success",
+            "token": token[:12] + "…",
+        }))
+
+    return jsonify({
+        "success": True,
+        "token_length": len(token),
+        "message": "Token saved to .env",
+    })
+

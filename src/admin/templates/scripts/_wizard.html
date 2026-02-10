@@ -111,17 +111,61 @@
 
                         <div class="form-group" style="margin-top: 1rem;">
                             <label class="form-label" style="font-size: 0.85rem;">
-                                ☁️ Cloudflare Tunnel Token <span style="color: var(--text-dim);">(optional)</span>
+                                ☁️ Cloudflare Tunnel <span style="color: var(--text-dim);">(optional)</span>
                             </label>
-                            <input type="password" class="form-input" id="wiz-tunnel-token"
-                                value="${wizardData.CLOUDFLARE_TUNNEL_TOKEN || ''}"
-                                placeholder="eyJhIjoi..."
-                                onchange="wizardData.CLOUDFLARE_TUNNEL_TOKEN = this.value"
-                                style="width: 100%; font-family: monospace;">
-                            <span style="color: var(--text-dim); font-size: 0.75rem;">
-                                Get from <a href="https://one.dash.cloudflare.com/" target="_blank" style="color: var(--info);">Cloudflare Zero Trust</a> → Networks → Tunnels → Create.
-                                Add <code style="font-size: 0.75rem;">--profile tunnel</code> to your docker compose command.
-                            </span>
+                            <p style="color: var(--text-dim); font-size: 0.82rem; line-height: 1.5; margin-bottom: 0.75rem;">
+                                Expose your Docker deployment on a public HTTPS URL — no port forwarding needed.<br>
+                                <strong>Prerequisite:</strong> You need a <a href="https://one.dash.cloudflare.com/" target="_blank" style="color: var(--info);">Cloudflare Tunnel</a> already created in the Zero Trust dashboard.
+                            </p>
+
+                            ${wizardData.CLOUDFLARE_TUNNEL_TOKEN ? `<div style="margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 6px; font-size: 0.82rem; display: flex; align-items: center; justify-content: space-between;">
+                                <div><strong style="color: var(--accent);">✅ Tunnel token configured</strong>
+                                    <span style="color: var(--text-dim); margin-left: 0.5rem; font-family: monospace; font-size: 0.78rem;">${wizardData.CLOUDFLARE_TUNNEL_TOKEN.substring(0, 16)}…</span>
+                                </div>
+                                <span style="color: var(--text-dim); font-size: 0.75rem;">Saved in .env</span>
+                            </div>` : `<div style="margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.2); border-radius: 6px; font-size: 0.82rem;">
+                                <strong style="color: var(--warning);">⚠ No tunnel token</strong>
+                                <span style="color: var(--text-dim); margin-left: 0.3rem;">— use Auto-Run or paste it below</span>
+                            </div>`}
+
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                                <div style="flex: 1; background: var(--surface); padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; font-size: 0.85rem;">
+                                    $ ./manage.sh tunnel
+                                </div>
+                                <button class="btn" onclick="setupTunnel(false)" style="padding: 0.4rem 1rem; white-space: nowrap;" title="Interactive — confirms each step">
+                                    ▶️ Run
+                                </button>
+                                <button class="btn primary" onclick="setupTunnel(true)" style="padding: 0.4rem 1rem; white-space: nowrap;" title="Auto-confirm all steps (-y flag)">
+                                    ⚡ Auto-Run
+                                </button>
+                            </div>
+                            <p style="color: var(--text-dim); font-size: 0.78rem; opacity: 0.7; margin-bottom: 0.5rem;">
+                                Requires: <a href="https://dash.cloudflare.com/sign-up" target="_blank" style="color: var(--info);">Cloudflare account</a>
+                                with a tunnel already created.
+                                The script will open the tunnel dashboard so you can copy the connector token.
+                            </p>
+
+                            <details style="margin-top: 0.5rem;" ${wizardData.CLOUDFLARE_TUNNEL_TOKEN ? '' : 'open'}>
+                                <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.82rem;">
+                                    🔧 ${wizardData.CLOUDFLARE_TUNNEL_TOKEN ? 'Change token…' : 'I already have a token…'}
+                                </summary>
+                                <div style="margin-top: 0.5rem;">
+                                    <input type="text" class="form-input" id="wiz-tunnel-token"
+                                        value="${wizardData.CLOUDFLARE_TUNNEL_TOKEN || ''}"
+                                        placeholder="Paste: cloudflared service install eyJhIjoi… or just the token"
+                                        style="width: 100%; font-family: monospace; font-size: 0.82rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem;">
+                                        <button class="btn" id="wiz-tunnel-save-btn" onclick="_saveTunnelTokenFromInput()" style="padding: 0.3rem 0.8rem; font-size: 0.78rem;">
+                                            💾 Save Token
+                                        </button>
+                                        <span id="wiz-tunnel-save-status" style="font-size: 0.75rem;"></span>
+                                    </div>
+                                    <span style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-top: 0.3rem;">
+                                        Paste the full install command or token from
+                                        <a href="https://one.dash.cloudflare.com/" target="_blank" style="color: var(--info);">Cloudflare Zero Trust</a> → Networks → Tunnels → [your tunnel] → Install tab.
+                                    </span>
+                                </div>
+                            </details>
                         </div>
                     </div>
 
@@ -1437,6 +1481,417 @@
             overlay.addEventListener('click', (e) => { if (e.target === overlay) dismissAndRefresh(); });
         }
 
+        // Save tunnel token from the manual input field (accepts full install command or raw token)
+        async function _saveTunnelTokenFromInput() {
+            const input = document.getElementById('wiz-tunnel-token');
+            const statusEl = document.getElementById('wiz-tunnel-save-status');
+            const btn = document.getElementById('wiz-tunnel-save-btn');
+            const rawValue = (input?.value || '').trim();
+
+            if (!rawValue) {
+                if (statusEl) {
+                    statusEl.textContent = '⚠ Paste a token or install command first';
+                    statusEl.style.color = 'var(--warning)';
+                }
+                return;
+            }
+
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
+            if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; }
+
+            try {
+                const res = await fetch('/api/tunnel/save-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: rawValue }),
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Refresh env data and re-render wizard
+                    const envRes = await fetch('/api/env/read');
+                    const freshEnv = await envRes.json();
+                    const token = freshEnv?.values?.CLOUDFLARE_TUNNEL_TOKEN || '';
+                    wizardData.CLOUDFLARE_TUNNEL_TOKEN = token;
+
+                    if (statusEl) {
+                        statusEl.textContent = `✅ Saved (${data.token_length} chars)`;
+                        statusEl.style.color = 'var(--accent)';
+                    }
+
+                    // Re-render wizard to update the configured banner
+                    setTimeout(() => {
+                        secretsLoaded = false;
+                        loadStatus().then(() => renderWizard());
+                    }, 1200);
+                } else {
+                    if (statusEl) {
+                        statusEl.textContent = `❌ ${data.error || 'Failed to save'}`;
+                        statusEl.style.color = 'var(--error)';
+                    }
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.textContent = `❌ ${e.message}`;
+                    statusEl.style.color = 'var(--error)';
+                }
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '💾 Save Token'; }
+            }
+        }
+
+        // Run Cloudflare Tunnel setup - opens terminal, polls for completion
+        async function setupTunnel(autoRun = false) {
+            let pollTimer = null;
+            let overlay = null;
+
+            function removeOverlay() {
+                if (pollTimer) clearInterval(pollTimer);
+                if (overlay) overlay.remove();
+                pollTimer = null;
+                overlay = null;
+            }
+
+            try {
+                const response = await fetch('/api/tunnel/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ autoRun }),
+                });
+                const data = await response.json();
+
+                if (data.fallback || data.command) {
+                    // No terminal emulator — show fallback modal
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                    modal.innerHTML = `
+                        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:700px;width:90%;max-height:80vh;overflow:auto;">
+                            <h2 style="margin-bottom:1rem;">🔒 Tunnel Setup</h2>
+                            <p style="color:var(--text-dim);margin-bottom:1rem;">${data.message}</p>
+                            <pre style="background:var(--bg-input);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;line-height:1.4;white-space:pre-wrap;">${data.command}</pre>
+                            <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                                <button class="btn primary" onclick="navigator.clipboard.writeText(this.dataset.cmd);this.textContent='✓ Copied!'" data-cmd="${data.command.replace(/"/g, '&quot;')}">📋 Copy</button>
+                                <button class="btn" onclick="this.closest('div').parentElement.remove()">Close</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                    return;
+                }
+
+                if (!data.success) {
+                    alert(`❌ ${data.message}`);
+                    return;
+                }
+
+                // Terminal spawned — show polling overlay
+                const startTime = Date.now();
+                overlay = document.createElement('div');
+                overlay.id = 'tunnel-setup-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
+                overlay.innerHTML = `
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:2.5rem;margin-bottom:1rem;" id="tunnel-spinner">🔒</div>
+                        <h2 style="margin-bottom:0.5rem;">Tunnel Setup Running</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1.5rem;font-size:0.85rem;">
+                            A terminal window has been opened. Complete the setup there.<br>
+                            This will auto-detect when the configuration is ready.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:10px;padding:1rem;margin-bottom:1.5rem;">
+                            <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;margin-bottom:0.75rem;">
+                                <div class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                                <span style="color:var(--text-dim);font-size:0.85rem;" id="tunnel-poll-status">Waiting for setup to complete…</span>
+                            </div>
+                            <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);" id="tunnel-elapsed">0s elapsed</div>
+                        </div>
+                        <div style="display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;">
+                            <button class="btn" id="tunnel-cancel-btn" style="padding:0.4rem 1.25rem;">
+                                ✕ Cancel Waiting
+                            </button>
+                        </div>
+                        <p style="color:var(--text-dim);font-size:0.75rem;margin-top:1.25rem;opacity:0.6;">
+                            💡 Having trouble? Try running <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh tunnel -y</code> directly in your terminal.
+                        </p>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                // Add spin keyframes if not already present
+                if (!document.getElementById('sentinel-spin-style')) {
+                    const style = document.createElement('style');
+                    style.id = 'sentinel-spin-style';
+                    style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+                    document.head.appendChild(style);
+                }
+
+                // Cancel button
+                document.getElementById('tunnel-cancel-btn').addEventListener('click', () => {
+                    removeOverlay();
+                });
+
+                // Poll for completion via signal file
+                const emojis = ['🔒', '☁️', '🌐', '🔄'];
+                let emojiIdx = 0;
+                const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+                pollTimer = setInterval(async () => {
+                    // Update elapsed time
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const mins = Math.floor(elapsed / 60);
+                    const secs = elapsed % 60;
+                    const elapsedEl = document.getElementById('tunnel-elapsed');
+                    if (elapsedEl) elapsedEl.textContent = mins > 0 ? `${mins}m ${secs}s elapsed` : `${secs}s elapsed`;
+
+                    // Animate spinner
+                    const spinnerEl = document.getElementById('tunnel-spinner');
+                    if (spinnerEl) { emojiIdx = (emojiIdx + 1) % emojis.length; spinnerEl.textContent = emojis[emojiIdx]; }
+
+                    // Timeout check
+                    if (Date.now() - startTime > POLL_TIMEOUT_MS) {
+                        removeOverlay();
+                        _showTunnelResult('timeout');
+                        return;
+                    }
+
+                    try {
+                        const statusRes = await fetch('/api/tunnel/setup-status');
+                        const statusData = await statusRes.json();
+
+                        if (statusData.status === 'failed') {
+                            removeOverlay();
+                            _showTunnelResult('failed');
+                            return;
+                        }
+
+                        if (statusData.status === 'no_tunnels') {
+                            // No tunnels exist — show creation link
+                            removeOverlay();
+                            _showTunnelResult('no_tunnels', '', '', statusData.create_url || '');
+                            return;
+                        }
+
+                        if (statusData.status === 'needs_token') {
+                            // Script is waiting for token — show paste input in the overlay
+                            const pasteAlready = document.getElementById('tunnel-paste-input');
+                            if (!pasteAlready) {
+                                const card = overlay.querySelector('div > div');
+                                if (card) {
+                                    card.innerHTML = `
+                                        <div style="font-size:2.5rem;margin-bottom:1rem;">☁️</div>
+                                        <h2 style="margin-bottom:0.5rem;">Paste Tunnel Token</h2>
+                                        <p style="color:var(--text-dim);margin-bottom:0.75rem;font-size:0.85rem;">
+                                            The tunnel dashboard has been opened.
+                                            Copy the <strong>install command</strong> and paste it below.
+                                        </p>
+                                        ${statusData.dashboard_url ? `<a href="${statusData.dashboard_url}" target="_blank" style="display:inline-block;margin-bottom:1rem;color:var(--info);font-size:0.82rem;">Open tunnel dashboard ↗</a>` : ''}
+                                        <div style="text-align:left;margin-bottom:1rem;">
+                                            <label style="display:block;color:var(--text-dim);font-size:0.78rem;margin-bottom:0.4rem;">
+                                                Paste the full install command or just the token:
+                                            </label>
+                                            <textarea id="tunnel-paste-input"
+                                                placeholder="cloudflared.exe service install eyJhIjoi..."
+                                                style="width:100%;min-height:80px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:0.75rem;font-family:monospace;font-size:0.82rem;color:var(--text);resize:vertical;"
+                                            ></textarea>
+                                        </div>
+                                        <div style="display:flex;gap:0.75rem;justify-content:center;">
+                                            <button class="btn primary" id="tunnel-submit-token" style="padding:0.5rem 1.5rem;">
+                                                💾 Save Token
+                                            </button>
+                                            <button class="btn" id="tunnel-cancel-paste" style="padding:0.5rem 1.25rem;">
+                                                ✕ Cancel
+                                            </button>
+                                        </div>
+                                        <div id="tunnel-paste-error" style="color:var(--error);font-size:0.82rem;margin-top:0.75rem;display:none;"></div>
+                                    `;
+
+                                    document.getElementById('tunnel-cancel-paste').addEventListener('click', () => {
+                                        removeOverlay();
+                                    });
+
+                                    document.getElementById('tunnel-submit-token').addEventListener('click', async () => {
+                                        const rawToken = document.getElementById('tunnel-paste-input').value.trim();
+                                        if (!rawToken) {
+                                            const errEl = document.getElementById('tunnel-paste-error');
+                                            errEl.textContent = 'Please paste the install command or token.';
+                                            errEl.style.display = 'block';
+                                            return;
+                                        }
+
+                                        const btn = document.getElementById('tunnel-submit-token');
+                                        btn.disabled = true;
+                                        btn.textContent = '⏳ Saving…';
+
+                                        try {
+                                            const saveRes = await fetch('/api/tunnel/save-token', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ token: rawToken }),
+                                            });
+                                            const saveData = await saveRes.json();
+
+                                            if (saveData.success) {
+                                                // Grab updated env
+                                                const envRes = await fetch('/api/env/read');
+                                                const freshEnv = await envRes.json();
+                                                const token = freshEnv?.values?.CLOUDFLARE_TUNNEL_TOKEN || '';
+
+                                                removeOverlay();
+
+                                                const tokenInput = document.getElementById('wiz-tunnel-token');
+                                                if (tokenInput && token) tokenInput.value = token;
+                                                wizardData.CLOUDFLARE_TUNNEL_TOKEN = token;
+
+                                                _showTunnelResult('success', '', token);
+                                            } else {
+                                                const errEl = document.getElementById('tunnel-paste-error');
+                                                errEl.textContent = saveData.error || 'Failed to save token.';
+                                                errEl.style.display = 'block';
+                                                btn.disabled = false;
+                                                btn.textContent = '💾 Save Token';
+                                            }
+                                        } catch (e) {
+                                            const errEl = document.getElementById('tunnel-paste-error');
+                                            errEl.textContent = `Error: ${e.message}`;
+                                            errEl.style.display = 'block';
+                                            btn.disabled = false;
+                                            btn.textContent = '💾 Save Token';
+                                        }
+                                    });
+                                }
+                            }
+                            return; // Don't process further while waiting for paste
+                        }
+
+                        if (statusData.status === 'success') {
+                            // Grab updated env
+                            const envRes = await fetch('/api/env/read');
+                            const freshEnv = await envRes.json();
+                            const token = freshEnv?.values?.CLOUDFLARE_TUNNEL_TOKEN || '';
+                            const hostname = statusData.hostname || '';
+
+                            removeOverlay();
+
+                            // Auto-populate wizard field
+                            const tokenInput = document.getElementById('wiz-tunnel-token');
+                            if (tokenInput && token) tokenInput.value = token;
+                            wizardData.CLOUDFLARE_TUNNEL_TOKEN = token;
+
+                            _showTunnelResult('success', hostname, token);
+                            return;
+                        }
+
+                        // Still running
+                        const statusEl = document.getElementById('tunnel-poll-status');
+                        if (statusEl) statusEl.textContent = 'Waiting for setup to complete…';
+
+                    } catch (e) {
+                        // Ignore poll errors
+                    }
+                }, 3000);
+
+            } catch (error) {
+                removeOverlay();
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Show result overlay for tunnel setup
+        function _showTunnelResult(status, hostname = '', token = '', createUrl = '') {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;';
+
+            function dismissAndRefresh() {
+                overlay.remove();
+                secretsLoaded = false;
+                loadStatus().then(() => renderWizard());
+            }
+
+            let content = '';
+            if (status === 'success') {
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid rgba(74,222,128,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">✅</div>
+                        <h2 style="color:var(--accent);margin-bottom:0.5rem;">Tunnel Ready!</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The tunnel token has been saved to <code>.env</code>.<br>
+                            The tunnel will start automatically with your Docker deployment.
+                        </p>
+                        ${hostname ? `<div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.8rem;">
+                            <div style="margin-bottom:0.4rem;"><strong>Hostname:</strong> <code>https://${hostname}</code></div>
+                            ${token ? `<div><strong>Token:</strong> <code>${token.substring(0, 12)}…</code></div>` : ''}
+                        </div>` : (token ? `<div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.8rem;">
+                            <div><strong>Token:</strong> <code>${token.substring(0, 12)}…</code></div>
+                        </div>` : '')}
+                        <button class="btn primary" id="tunnel-result-close" style="padding:0.5rem 2rem;">
+                            Continue →
+                        </button>
+                    </div>`;
+            } else if (status === 'no_tunnels') {
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid rgba(251,191,36,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">☁️</div>
+                        <h2 style="color:var(--warning);margin-bottom:0.5rem;">No Tunnels Found</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            You need to create a Cloudflare Tunnel first.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:8px;padding:1rem;margin-bottom:1.5rem;text-align:left;font-size:0.82rem;color:var(--text-dim);">
+                            <strong>Steps:</strong><br>
+                            1. Go to Cloudflare Zero Trust dashboard<br>
+                            2. Navigate to <strong>Networks → Tunnels</strong><br>
+                            3. Click <strong>Create a tunnel</strong><br>
+                            4. Name it (e.g. <code>continuity-orchestrator</code>)<br>
+                            5. Come back here and click <strong>⚡ Auto-Run</strong> again
+                        </div>
+                        ${createUrl ? `<a href="${createUrl}" target="_blank" class="btn primary" style="display:inline-block;padding:0.5rem 1.5rem;margin-bottom:1rem;text-decoration:none;">
+                            ☁️ Create Tunnel →
+                        </a><br>` : ''}
+                        <button class="btn" id="tunnel-result-close" style="padding:0.5rem 2rem;">
+                            Close
+                        </button>
+                    </div>`;
+            } else if (status === 'failed') {
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid rgba(239,68,68,0.3);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">❌</div>
+                        <h2 style="color:var(--error);margin-bottom:0.5rem;">Setup Failed</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The setup encountered an error. Check the terminal window for details.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.82rem;color:var(--text-dim);">
+                            💡 For better troubleshooting, try running directly in your terminal:<br>
+                            <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh tunnel -y</code>
+                        </div>
+                        <button class="btn" id="tunnel-result-close" style="padding:0.5rem 2rem;">
+                            Close
+                        </button>
+                    </div>`;
+            } else {
+                // timeout
+                content = `
+                    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2.5rem;max-width:500px;width:90%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:1rem;">⏱️</div>
+                        <h2 style="color:var(--warning);margin-bottom:0.5rem;">Setup Timed Out</h2>
+                        <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.85rem;">
+                            The setup is taking longer than expected. It may still be running in the terminal window.
+                        </p>
+                        <div style="background:var(--bg-input);border-radius:8px;padding:0.75rem;margin-bottom:1.5rem;text-align:left;font-size:0.82rem;color:var(--text-dim);">
+                            💡 For better troubleshooting, try running directly in your terminal:<br>
+                            <code style="background:var(--surface);padding:0.15rem 0.4rem;border-radius:4px;">./manage.sh tunnel -y</code>
+                        </div>
+                        <button class="btn" id="tunnel-result-close" style="padding:0.5rem 2rem;">
+                            Close
+                        </button>
+                    </div>`;
+            }
+
+            overlay.innerHTML = content;
+            document.body.appendChild(overlay);
+
+            document.getElementById('tunnel-result-close')?.addEventListener('click', dismissAndRefresh);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) dismissAndRefresh(); });
+        }
+
         // ========================================
         // DEADLINE MANAGEMENT
         // ========================================
@@ -1846,6 +2301,18 @@
         }
 
         function renderWizard() {
+            // Seed wizardData from envData for keys that the wizard templates read
+            const seedKeys = [
+                'CLOUDFLARE_TUNNEL_TOKEN', 'DEPLOY_MODE', 'PROJECT_NAME',
+                'DOCKER_GIT_SYNC_ALPHA', 'DOCKER_GIT_SYNC_TICK_INTERVAL',
+                'DOCKER_GIT_SYNC_SYNC_INTERVAL', 'MODE', 'DEADLINE_HOURS',
+            ];
+            for (const key of seedKeys) {
+                if (!wizardData[key] && envData[key]) {
+                    wizardData[key] = envData[key];
+                }
+            }
+
             const requiredSatisfied = areRequiredStepsSatisfied();
             const skipAllowed = canSkipAhead();
             const visibleSteps = getVisibleSteps();

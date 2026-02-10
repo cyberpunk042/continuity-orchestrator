@@ -57,6 +57,7 @@ show_menu() {
     echo ""
     echo -e "  ${CYAN}h)${NC}  help           Show all CLI commands"
     echo -e "  ${CYAN}n)${NC}  sentinel       Deploy/update Sentinel Worker"
+    echo -e "  ${CYAN}t)${NC}  tunnel         Setup Cloudflare Tunnel"
     echo -e "  ${CYAN}q)${NC}  quit           Exit"
     echo ""
 }
@@ -153,6 +154,7 @@ show_help() {
     echo -e "  ${CYAN}web${NC}                Open web admin panel (--debug for verbose)"
     echo -e "  ${CYAN}config-status${NC}      Show comprehensive status"
     echo -e "  ${CYAN}sentinel [-y]${NC}      Deploy/update Sentinel Worker"
+    echo -e "  ${CYAN}tunnel [-y]${NC}        Setup Cloudflare Tunnel"
     echo -e "    ${DIM}-y, --yes        Auto-confirm all prompts${NC}"
     echo -e "  ${RED}trigger-release${NC}    Emergency disclosure trigger"
     echo ""
@@ -430,6 +432,7 @@ main() {
             setup|wizard) run_setup ;;
             secrets|push-secrets) run_push_secrets ;;
             sentinel) shift; ./scripts/setup-sentinel.sh "$@" ;;
+            tunnel) shift; ./scripts/setup-tunnel.sh "$@" ;;
             web|admin) shift; run_admin "$@" ;;
             config-status|cs) run_config_status ;;
             help) show_help ;;
@@ -463,6 +466,7 @@ main() {
             '!'|trigger) run_trigger_release ;;
             h|help) show_help ;;
             n|sentinel) ./scripts/setup-sentinel.sh ;;
+            t|tunnel) ./scripts/setup-tunnel.sh ;;
             q|quit|exit) 
                 echo "Goodbye!"
                 exit 0
