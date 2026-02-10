@@ -245,6 +245,10 @@ class XAdapter(Adapter):
     
     def _parse_template(self, content: str) -> str:
         """Parse template content for tweet."""
+        # Strip media markdown to text labels (X can't render images)
+        from ..templates.media import strip_media_to_labels
+        content = strip_media_to_labels(content)
+
         lines = content.strip().split("\n")
         
         # Skip markdown headers

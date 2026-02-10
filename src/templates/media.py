@@ -67,9 +67,17 @@ def _detect_cloudflare_tunnel_url() -> Optional[str]:
     Decodes CLOUDFLARE_TUNNEL_TOKEN (base64 JSON: {a: account_id, t: tunnel_id,
     s: secret}) and queries the Cloudflare API for the tunnel's configured
     hostname in its ingress rules.
+
+    Uses CLOUDFLARE_API_TOKEN for API authentication (NOT the tunnel secret).
+    Auto-refreshes the OAuth token on 401.
     """
     tunnel_token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
     if not tunnel_token:
+        return None
+
+    cf_api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    if not cf_api_token:
+        logger.debug("CLOUDFLARE_API_TOKEN not set — cannot query tunnel hostname")
         return None
 
     try:
@@ -79,25 +87,47 @@ def _detect_cloudflare_tunnel_url() -> Optional[str]:
 
         account_id = token_data.get("a")
         tunnel_id = token_data.get("t")
-        tunnel_secret = token_data.get("s")
 
         if not account_id or not tunnel_id:
             logger.warning("Cloudflare tunnel token missing account_id or tunnel_id")
             return None
 
-        return _query_cloudflare_tunnel_hostname(
-            account_id, tunnel_id, tunnel_secret
+        hostname = _query_cloudflare_tunnel_hostname(
+            account_id, tunnel_id, cf_api_token
         )
+
+        # If 401, try refreshing the OAuth token and retry
+        if hostname is None and _last_api_status == 401:
+            try:
+                from ..admin.routes_docker import _refresh_cf_api_token
+                from pathlib import Path
+                # Find project root from env or cwd
+                project_root = Path(os.environ.get("PROJECT_ROOT", os.getcwd()))
+                env_file = project_root / ".env"
+                new_token = _refresh_cf_api_token(env_file=env_file)
+                if new_token:
+                    os.environ["CLOUDFLARE_API_TOKEN"] = new_token
+                    hostname = _query_cloudflare_tunnel_hostname(
+                        account_id, tunnel_id, new_token
+                    )
+            except ImportError:
+                logger.debug("Cannot import refresh logic — skipping token refresh")
+
+        return hostname
 
     except Exception as e:
         logger.warning(f"Failed to decode Cloudflare tunnel token: {e}")
         return None
 
 
+# Track last API status for refresh logic
+_last_api_status: int = 0
+
+
 def _query_cloudflare_tunnel_hostname(
     account_id: str,
     tunnel_id: str,
-    tunnel_secret: str,
+    api_token: str,
 ) -> Optional[str]:
     """
     Query Cloudflare API for a tunnel's configured public hostname.
@@ -105,6 +135,7 @@ def _query_cloudflare_tunnel_hostname(
     GET /accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations
     → extract first hostname from ingress rules.
     """
+    global _last_api_status
     import urllib.error
     import urllib.request
 
@@ -114,11 +145,12 @@ def _query_cloudflare_tunnel_hostname(
     )
 
     req = urllib.request.Request(url)
-    req.add_header("Authorization", f"Bearer {tunnel_secret}")
+    req.add_header("Authorization", f"Bearer {api_token}")
     req.add_header("Content-Type", "application/json")
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
+            _last_api_status = resp.status
             data = json.loads(resp.read())
 
         if not data.get("success"):
@@ -127,8 +159,8 @@ def _query_cloudflare_tunnel_hostname(
             return None
 
         # Extract hostname from ingress rules
-        config = data.get("result", {}).get("config", {})
-        ingress = config.get("ingress", [])
+        config = (data.get("result") or {}).get("config") or {}
+        ingress = config.get("ingress") or []
 
         for rule in ingress:
             hostname = rule.get("hostname", "").strip()
@@ -138,6 +170,10 @@ def _query_cloudflare_tunnel_hostname(
         logger.debug("Cloudflare tunnel has no hostname in ingress rules")
         return None
 
+    except urllib.error.HTTPError as e:
+        _last_api_status = e.code
+        logger.debug(f"Cloudflare tunnel API HTTP {e.code}")
+        return None
     except urllib.error.URLError as e:
         logger.debug(f"Cloudflare tunnel API unreachable: {e}")
         return None

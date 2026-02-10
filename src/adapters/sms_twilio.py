@@ -225,7 +225,11 @@ class TwilioSMSAdapter(Adapter):
         return body
     
     def _strip_headers(self, content: str) -> str:
-        """Remove markdown headers from content for SMS."""
+        """Remove markdown headers and media from content for SMS."""
+        # Strip media markdown to text labels (SMS can't render images)
+        from ..templates.media import strip_media_to_labels
+        content = strip_media_to_labels(content)
+
         lines = content.strip().split("\n")
         
         # Skip leading headers
