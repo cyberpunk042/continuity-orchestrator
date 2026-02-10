@@ -307,6 +307,12 @@ def run_tick(
                 if template_content:
                     logger.debug(f"Resolved template '{action.template}'")
 
+                    # Resolve media:// URIs to public URLs
+                    from ..templates.media import resolve_media_uris
+                    template_content = resolve_media_uris(
+                        template_content, stage=current_stage
+                    )
+
             # Build context
             context = ExecutionContext(
                 state=state,

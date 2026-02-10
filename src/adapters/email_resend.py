@@ -372,7 +372,13 @@ class ResendEmailAdapter(Adapter):
         """
         Convert markdown to email-safe HTML.
         """
+        from ..templates.media import media_md_to_html
+
         html = markdown
+
+        # ── Media (images, video, audio, files) ──
+        # MUST come before links, since ![text](url) contains [text](url)
+        html = media_md_to_html(html)
 
         # Headers
         html = re.sub(r'^### (.+)$', r'<h3 style="font-size:14px;font-weight:700;color:#1e293b;margin:16px 0 8px;">\1</h3>', html, flags=re.MULTILINE)
@@ -383,7 +389,7 @@ class ResendEmailAdapter(Adapter):
         html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
         html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
 
-        # Links
+        # Links (won't match ![...] since those were already consumed above)
         html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#6366f1;">\1</a>', html)
 
         # Horizontal rules

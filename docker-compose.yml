@@ -103,6 +103,8 @@ services:
       - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
       # Content encryption
       - CONTENT_ENCRYPTION_KEY=${CONTENT_ENCRYPTION_KEY:-}
+      # Media URL resolution (for email image embedding)
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
     volumes:
       # Use local state/audit from repo for testing with real data
       - ./state:/data/state
@@ -254,6 +256,8 @@ services:
       - RENEWAL_TRIGGER_TOKEN=${RENEWAL_TRIGGER_TOKEN:-}
       # Content encryption
       - CONTENT_ENCRYPTION_KEY=${CONTENT_ENCRYPTION_KEY:-}
+      # Media URL resolution (for email image embedding)
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
       # Git sync settings
       # DOCKER_GIT_SYNC_ALPHA: false = remote is the source of truth (default)
       #                        true  = this Docker instance is dominant, force-pushes on divergence

@@ -374,96 +374,9 @@ def _resolve_media_in_markdown(text: str, mode: str = "preview") -> str:
     return _MEDIA_MD_RE.sub(_resolve, text)
 
 
-def _strip_media_for_plaintext(text: str) -> str:
-    """
-    Replace markdown media references with plain-text labels.
-
-    Used by SMS, X, and other adapters that cannot render media.
-    ![caption](url)           → [📸 caption]
-    ![video: cap](url)        → [🎬 cap]
-    ![audio: cap](url)        → [🎵 cap]
-    ![file: filename](url)    → [📎 filename]
-    """
-    def _label(match: re.Match) -> str:
-        alt = match.group(1).strip()
-
-        if alt.lower().startswith("video:"):
-            name = alt[6:].strip() or "video"
-            return f"[🎬 {name}]"
-        elif alt.lower().startswith("audio:"):
-            name = alt[6:].strip() or "audio"
-            return f"[🎵 {name}]"
-        elif alt.lower().startswith("file:"):
-            name = alt[5:].strip() or "file"
-            return f"[📎 {name}]"
-        else:
-            name = alt or "image"
-            return f"[📸 {name}]"
-
-    return _MEDIA_MD_RE.sub(_label, text)
-
-
-def _media_md_to_html(text: str) -> str:
-    """
-    Convert markdown media syntax to email-safe HTML.
-
-    Handles four media types based on alt-text prefix:
-      ![caption](url)            → <img> tag
-      ![video: caption](url)     → styled video link
-      ![audio: caption](url)     → styled audio link
-      ![file: filename](url)     → styled download link
-
-    MUST be called BEFORE the general link regex to avoid ![text](url)
-    being consumed by [text](url).
-    """
-    def _render(match: re.Match) -> str:
-        alt = match.group(1).strip()
-        url = match.group(2)
-
-        if alt.lower().startswith("video:"):
-            caption = alt[6:].strip() or "Video"
-            return (
-                f'<div style="margin:12px 0;padding:12px 16px;'
-                f'background:#f1f5f9;border-radius:8px;border-left:4px solid #6366f1;">'
-                f'<a href="{url}" style="color:#6366f1;text-decoration:none;font-weight:600;">'
-                f'🎬 {caption}</a>'
-                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
-                f'Video — click to view</div></div>'
-            )
-        elif alt.lower().startswith("audio:"):
-            caption = alt[6:].strip() or "Audio"
-            return (
-                f'<div style="margin:12px 0;padding:12px 16px;'
-                f'background:#f1f5f9;border-radius:8px;border-left:4px solid #8b5cf6;">'
-                f'<a href="{url}" style="color:#8b5cf6;text-decoration:none;font-weight:600;">'
-                f'🎵 {caption}</a>'
-                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
-                f'Audio — click to listen</div></div>'
-            )
-        elif alt.lower().startswith("file:"):
-            filename = alt[5:].strip() or "Attachment"
-            return (
-                f'<div style="margin:12px 0;padding:12px 16px;'
-                f'background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
-                f'<a href="{url}" style="color:#6366f1;text-decoration:none;font-weight:600;">'
-                f'📎 {filename}</a>'
-                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
-                f'File attachment — click to download</div></div>'
-            )
-        else:
-            # Image (default)
-            alt_text = alt or "Image"
-            return (
-                f'<div style="margin:12px 0;text-align:center;">'
-                f'<img src="{url}" alt="{alt_text}" '
-                f'style="max-width:100%;height:auto;border-radius:8px;'
-                f'border:1px solid #e2e8f0;">'
-                + (f'<div style="font-size:12px;color:#64748b;margin-top:6px;'
-                   f'font-style:italic;">{alt_text}</div>' if alt else '')
-                + '</div>'
-            )
-
-    return _MEDIA_MD_RE.sub(_render, text)
+# Import shared media functions (canonical source: src/templates/media.py)
+from ..templates.media import media_md_to_html as _media_md_to_html
+from ..templates.media import strip_media_to_labels as _strip_media_for_plaintext
 
 
 def _markdown_to_html(text: str) -> str:
