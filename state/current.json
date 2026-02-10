@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T20:02:39.683460Z",
+        "updated_at_iso": "2026-02-10T21:12:00.884715Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,9 +14,9 @@
     "timer": {
         "deadline_iso": "2026-02-10T20:57:34.859473+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T20:02:38.988039Z",
-        "time_to_deadline_minutes": 54,
-        "overdue_minutes": 0
+        "now_iso": "2026-02-10T21:12:00.329173Z",
+        "time_to_deadline_minutes": 0,
+        "overdue_minutes": 14
     },
     "renewal": {
         "last_renewal_iso": "2026-02-10T17:57:34.859473+00:00",
@@ -31,9 +31,9 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "REMIND_2",
-        "state_entered_at_iso": "2026-02-10T19:59:43.760122Z",
-        "last_transition_rule_id": "R11_ESCALATE_TO_REMIND_2",
+        "state": "PRE_RELEASE",
+        "state_entered_at_iso": "2026-02-10T21:12:00.329173Z",
+        "last_transition_rule_id": "R12_ESCALATE_TO_PRE_RELEASE",
         "monotonic_enforced": true
     },
     "actions": {
@@ -62,9 +62,22 @@
                 "status": "ok",
                 "last_delivery_id": "SM36bca5d00b981ea9563eca096b11c827",
                 "last_executed_iso": "2026-02-10T19:59:45.663254+00:00"
+            },
+            "notify_custodians_email": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-10T21:12:00.884224+00:00"
+            },
+            "notify_watchers_webhook": {
+                "status": "skipped",
+                "last_delivery_id": null,
+                "last_executed_iso": "2026-02-10T21:12:00.884539+00:00"
             }
         },
-        "last_tick_actions": []
+        "last_tick_actions": [
+            "notify_custodians_email",
+            "notify_watchers_webhook"
+        ]
     },
     "release": {
         "triggered": false,
