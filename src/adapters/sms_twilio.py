@@ -141,10 +141,11 @@ class TwilioSMSAdapter(Adapter):
         if media_urls:
             import urllib.request
             # Twilio MMS accepted image types
+            # NOTE: image/webp is NOT included — Twilio docs claim support
+            # but Canadian carriers reject it with error 12300.
             TWILIO_IMAGE_TYPES = {
                 "image/jpeg", "image/png", "image/gif",
-                "image/bmp", "image/tiff", "image/webp",
-                "image/svg+xml",
+                "image/bmp", "image/tiff",
             }
             for url in media_urls:
                 try:

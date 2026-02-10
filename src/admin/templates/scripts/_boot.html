@@ -1,16 +1,40 @@
         // ── Resettable polling timers ─────────────────────────────
         // When an action triggers a manual refresh, the timer resets
         // so we don't get a redundant refresh 2s later.
+        // User activity defers auto-refresh to avoid interrupting clicks.
         let _statusTimer = null;
         let _fetchTimer = null;
+        let _lastActivity = 0;
+        const ACTIVITY_DEFER_MS = 5000;  // Defer refresh 5s after last interaction
+
+        // Track user activity
+        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt => {
+            document.addEventListener(evt, () => { _lastActivity = Date.now(); }, { passive: true });
+        });
+
+        function _activityAwareCallback(callback, reschedule) {
+            const sinceLast = Date.now() - _lastActivity;
+            if (sinceLast < ACTIVITY_DEFER_MS) {
+                // User was recently active — defer by remaining time
+                const defer = ACTIVITY_DEFER_MS - sinceLast + 200;
+                reschedule(defer);
+                return;
+            }
+            callback();
+            reschedule();
+        }
 
         function scheduleStatus(delayMs = 30000) {
             clearTimeout(_statusTimer);
-            _statusTimer = setTimeout(() => { loadStatus(); scheduleStatus(); }, delayMs);
+            _statusTimer = setTimeout(() => {
+                _activityAwareCallback(loadStatus, scheduleStatus);
+            }, delayMs);
         }
         function scheduleFetch(delayMs = 60000) {
             clearTimeout(_fetchTimer);
-            _fetchTimer = setTimeout(() => { autoFetch(); scheduleFetch(); }, delayMs);
+            _fetchTimer = setTimeout(() => {
+                _activityAwareCallback(autoFetch, scheduleFetch);
+            }, delayMs);
         }
 
         // Wrap loadStatus to reset its timer
