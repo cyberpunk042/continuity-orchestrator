@@ -254,17 +254,27 @@ def _get_tunnel_url(env: dict) -> dict:
         return {"url": None, "error": "CLOUDFLARE_API_TOKEN missing from .env — add it in Secrets tab"}
 
     try:
-        # The tunnel token is a JWT: header.payload.signature
+        logger.debug("Tunnel token (first 20 chars): %s…, length=%d, dots=%d",
+                     tunnel_token[:20], len(tunnel_token), tunnel_token.count("."))
+        # The tunnel token can be:
+        #   1) A JWT: header.payload.signature (3 dot-separated parts)
+        #   2) A raw base64 payload (no dots) — just the JSON blob
         # Payload contains {"a": "<account_id>", "t": "<tunnel_id>", "s": "<secret>"}
         parts = tunnel_token.split(".")
-        if len(parts) < 2:
-            return {"url": None, "error": "Invalid tunnel token format"}
+        if len(parts) >= 2:
+            # JWT format — use the second part (payload)
+            payload_b64 = parts[1]
+        else:
+            # Raw base64 payload — use the whole string
+            payload_b64 = tunnel_token
 
         # Decode payload (base64url)
-        payload_b64 = parts[1]
         # Add padding if needed
         payload_b64 += "=" * (4 - len(payload_b64) % 4)
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+
+        if not isinstance(payload, dict):
+            return {"url": None, "error": f"Tunnel token payload is not a JSON object (got {type(payload).__name__})"}
 
         account_id = payload.get("a")
         tunnel_id = payload.get("t")
@@ -286,12 +296,19 @@ def _get_tunnel_url(env: dict) -> dict:
             return {"url": None, "error": f"Cloudflare API returned {resp.status_code}"}
 
         data = resp.json()
+        logger.debug("Tunnel config API response: success=%s, result_type=%s",
+                     data.get("success"), type(data.get("result")).__name__)
         if not data.get("success"):
-            return {"url": None, "error": "Cloudflare API error"}
+            errors = data.get("errors", [])
+            error_msg = errors[0].get("message", "Unknown") if errors else "Unknown"
+            return {"url": None, "error": f"Cloudflare API: {error_msg}"}
 
         # Extract first public hostname from ingress rules
-        config = data.get("result", {}).get("config", {})
-        ingress = config.get("ingress", [])
+        # Use `or {}` instead of default arg — .get() default only applies
+        # when the key is missing, not when the value is None/null.
+        result = data.get("result") or {}
+        config = result.get("config") or {}
+        ingress = config.get("ingress") or []
         for rule in ingress:
             hostname = rule.get("hostname")
             if hostname:
@@ -300,7 +317,15 @@ def _get_tunnel_url(env: dict) -> dict:
                 _tunnel_url_cache["ts"] = now
                 return {"url": url, "error": None}
 
-        return {"url": None, "error": "No public hostname configured on this tunnel"}
+        dashboard = (f"https://one.dash.cloudflare.com/{account_id}"
+                     f"/networks/connectors/cloudflare-tunnels/{tunnel_id}"
+                     f"/public-hostname/add")
+        return {
+            "url": None,
+            "error": "No public hostname configured on this tunnel",
+            "dashboard_url": dashboard,
+            "service_hint": "http://continuity-nginx:80",
+        }
 
     except Exception as e:
         logger.warning("Failed to retrieve tunnel URL: %s", e)
@@ -359,10 +384,14 @@ def docker_status():
             "git_sync_config": git_sync_config,
         }
         if tunnel_info:
-            if tunnel_info["url"]:
+            if tunnel_info.get("url"):
                 resp["tunnel_url"] = tunnel_info["url"]
-            if tunnel_info["error"]:
+            if tunnel_info.get("error"):
                 resp["tunnel_error"] = tunnel_info["error"]
+            if tunnel_info.get("dashboard_url"):
+                resp["tunnel_dashboard_url"] = tunnel_info["dashboard_url"]
+            if tunnel_info.get("service_hint"):
+                resp["tunnel_service_hint"] = tunnel_info["service_hint"]
 
         return jsonify(resp)
 

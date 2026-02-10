@@ -294,9 +294,13 @@
                 if (tunnelToken) {
                     const tUrl = dockerData.tunnel_url;
                     const tErr = dockerData.tunnel_error;
+                    const tDash = dockerData.tunnel_dashboard_url;
                     let tunnelStatus;
                     if (tunnelRunning && tUrl) {
                         tunnelStatus = `<a href="${tUrl}" target="_blank" style="color: var(--accent);">${tUrl} 🔗</a>`;
+                    } else if (tunnelRunning && tErr && tDash) {
+                        const svcHint = dockerData.tunnel_service_hint || 'http://localhost:8080';
+                        tunnelStatus = `<span style="color: var(--warning);">⚠ <a href="${tDash}" target="_blank" style="color: var(--warning);">Add public hostname →</a> <span style="font-size: 0.75rem; color: var(--text-dim);">(service: ${svcHint})</span></span>`;
                     } else if (tunnelRunning && tErr) {
                         tunnelStatus = `<span style="color: var(--warning);" title="${tErr}">⚠ ${tErr}</span>`;
                     } else if (tunnelRunning) {

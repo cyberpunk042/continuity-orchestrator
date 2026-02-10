@@ -135,11 +135,45 @@ if [[ $WHOAMI_EXIT -ne 0 ]] || echo "$WHOAMI_OUTPUT" | grep -qi "not authenticat
     echo -e "  ${YELLOW}⚠ Not logged in to Cloudflare.${NC}"
 
     if [[ -t 0 ]]; then
-        # Interactive terminal — can run wrangler login
-        echo -e "  ${DIM}Running wrangler login — a browser window will open.${NC}"
+        # Interactive terminal
+        # If a bad API token is in the env, unset it first — wrangler login
+        # refuses to run OAuth when CLOUDFLARE_API_TOKEN is set.
+        if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo -e "  ${DIM}Current CLOUDFLARE_API_TOKEN is invalid — clearing it.${NC}"
+            unset CLOUDFLARE_API_TOKEN
+            # Also remove the bad token from .env
+            if [[ -f "$ENV_FILE" ]]; then
+                sed -i '/^CLOUDFLARE_API_TOKEN=/d' "$ENV_FILE"
+            fi
+        fi
         echo ""
-        wrangler login
+        echo -e "  ${BOLD}How would you like to authenticate?${NC}"
+        echo -e "  ${DIM}1) Paste a Cloudflare API Token${NC}"
+        echo -e "  ${DIM}2) Open browser for OAuth login (wrangler login)${NC}"
         echo ""
+        read -rp "  Choice [1/2]: " AUTH_CHOICE
+        echo ""
+        if [[ "$AUTH_CHOICE" == "1" ]]; then
+            read -sp "  Paste Cloudflare API Token: " CF_TOKEN_INPUT
+            echo ""
+            if [[ -n "$CF_TOKEN_INPUT" ]]; then
+                export CLOUDFLARE_API_TOKEN="$CF_TOKEN_INPUT"
+                # Save to .env
+                if [[ -f "$ENV_FILE" ]]; then
+                    sed -i '/^CLOUDFLARE_API_TOKEN=/d' "$ENV_FILE"
+                fi
+                echo "CLOUDFLARE_API_TOKEN=${CF_TOKEN_INPUT}" >> "$ENV_FILE"
+                echo -e "  ${GREEN}✓ Token saved to .env${NC}"
+            else
+                echo -e "${RED}Aborted.${NC}"
+                exit 1
+            fi
+        else
+            echo -e "  ${DIM}Running wrangler login — a browser window will open.${NC}"
+            echo ""
+            wrangler login
+            echo ""
+        fi
     else
         # Non-interactive (spawned from web UI) — need API token
         echo -e "  ${DIM}This terminal was spawned from the web UI — wrangler login requires a browser.${NC}"
@@ -202,6 +236,16 @@ if [[ -z "$CF_TOKEN" ]]; then
     echo -e "  ${RED}✗ Could not extract API/OAuth token for Cloudflare API calls${NC}"
     echo -e "  ${DIM}Set CLOUDFLARE_API_TOKEN in .env or run wrangler login in a terminal${NC}"
     exit 1
+fi
+
+# Persist the token to .env so the admin panel can resolve tunnel URLs
+if [[ -n "$CF_TOKEN" ]] && [[ -f "$ENV_FILE" ]]; then
+    EXISTING_TOKEN=$(grep '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    if [[ "$EXISTING_TOKEN" != "$CF_TOKEN" ]]; then
+        sed -i '/^CLOUDFLARE_API_TOKEN=/d' "$ENV_FILE"
+        echo "CLOUDFLARE_API_TOKEN=${CF_TOKEN}" >> "$ENV_FILE"
+        echo -e "  ${GREEN}✓ CLOUDFLARE_API_TOKEN saved to .env${NC}"
+    fi
 fi
 
 # ── Helper: CF API call ─────────────────────────────────────────────
