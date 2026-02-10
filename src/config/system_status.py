@@ -109,6 +109,23 @@ class AdapterStatus:
 
 
 @dataclass
+class ActionResult:
+    """Result of an executed action from last tick."""
+    action_id: str
+    status: str  # "ok", "failed", "skipped"
+    last_executed_iso: Optional[str] = None
+    delivery_id: Optional[str] = None
+
+    def to_dict(self) -> Dict:
+        return {
+            "action_id": self.action_id,
+            "status": self.status,
+            "last_executed_iso": self.last_executed_iso,
+            "delivery_id": self.delivery_id,
+        }
+
+
+@dataclass
 class SystemStatus:
     """Complete system status."""
     timestamp: str
@@ -138,11 +155,18 @@ class SystemStatus:
     secrets: List[SecretStatus] = field(default_factory=list)
     tools: List[ToolStatus] = field(default_factory=list)
     
+    # Action execution results
+    action_results: List[ActionResult] = field(default_factory=list)
+    last_tick_actions: List[str] = field(default_factory=list)
+    
     # Health
     state_file_exists: bool = False
     policy_valid: bool = False
     
     def to_dict(self) -> Dict:
+        # Count failures for quick access
+        failed_actions = [a for a in self.action_results if a.status == "failed"]
+        
         return {
             "timestamp": self.timestamp,
             "state": {
@@ -166,6 +190,12 @@ class SystemStatus:
             "adapters": [a.to_dict() for a in self.adapters],
             "secrets": [s.to_dict() for s in self.secrets],
             "tools": [t.to_dict() for t in self.tools],
+            "actions": {
+                "last_tick": self.last_tick_actions,
+                "results": [a.to_dict() for a in self.action_results],
+                "failed_count": len(failed_actions),
+                "failed": [a.to_dict() for a in failed_actions],
+            },
             "health": {
                 "state_file_exists": self.state_file_exists,
                 "policy_valid": self.policy_valid,
@@ -354,6 +384,19 @@ def get_system_status(
             status.release_target_stage = release.get("target_stage")
             status.release_delay_minutes = release.get("delay_minutes", 0)
             status.release_execute_after = release.get("execute_after_iso")
+            
+            # Action execution results
+            actions_data = state_data.get("actions", {})
+            executed = actions_data.get("executed", {})
+            status.last_tick_actions = actions_data.get("last_tick_actions", [])
+            
+            for action_id, receipt in executed.items():
+                status.action_results.append(ActionResult(
+                    action_id=action_id,
+                    status=receipt.get("status", "unknown"),
+                    last_executed_iso=receipt.get("last_executed_iso"),
+                    delivery_id=receipt.get("last_delivery_id"),
+                ))
             
             # Calculate TTD
             if status.deadline:

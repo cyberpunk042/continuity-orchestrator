@@ -220,6 +220,38 @@
                     `).join('')}
                 </div>
                 
+                ${data.actions && data.actions.failed_count > 0 ? `
+                <div class="card" style="border: 1px solid var(--danger); background: rgba(239, 68, 68, 0.06);">
+                    <h2 style="color: var(--danger);"><span class="icon">⚠️</span> Action Failures (${data.actions.failed_count})</h2>
+                    <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem;">
+                        These actions failed on the last tick. Check adapter configuration and rate limits.
+                    </p>
+                    ${data.actions.failed.map(a => `
+                        <div class="status-row" style="border-left: 3px solid var(--danger); padding-left: 0.5rem; margin-bottom: 0.5rem;">
+                            <span class="status-label" style="color: var(--danger);">❌ ${a.action_id}</span>
+                            <span class="status-value" style="font-size: 0.75rem; color: var(--text-dim);">
+                                ${a.last_executed_iso ? new Date(a.last_executed_iso).toLocaleString() : '—'}
+                            </span>
+                        </div>
+                    `).join('')}
+                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.5rem;">
+                        Last tick actions: ${data.actions.last_tick.join(', ') || 'none'}
+                    </div>
+                </div>
+                ` : data.actions && data.actions.results && data.actions.results.length > 0 ? `
+                <div class="card">
+                    <h2><span class="icon">📋</span> Last Actions</h2>
+                    ${data.actions.results.map(a => `
+                        <div class="status-row">
+                            <span class="status-label">${a.status === 'ok' ? '✅' : a.status === 'skipped' ? '⏭️' : '❌'} ${a.action_id}</span>
+                            <span class="status-value" style="font-size: 0.75rem; color: var(--text-dim);">
+                                ${a.status}${a.last_executed_iso ? ' • ' + new Date(a.last_executed_iso).toLocaleString() : ''}
+                            </span>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
                 <div class="card">
                     <h2><span class="icon">🛠️</span> Tools</h2>
                     ${toolsHtml}
