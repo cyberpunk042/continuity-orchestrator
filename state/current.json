@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T19:55:00.193773Z",
+        "updated_at_iso": "2026-02-10T19:59:45.663551Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-10T20:57:34.859473+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T19:54:59.561401Z",
-        "time_to_deadline_minutes": 62,
+        "now_iso": "2026-02-10T19:59:43.760122Z",
+        "time_to_deadline_minutes": 57,
         "overdue_minutes": 0
     },
     "renewal": {
@@ -31,9 +31,9 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "REMIND_1",
-        "state_entered_at_iso": "2026-02-10T19:03:06.821271Z",
-        "last_transition_rule_id": "R10_ESCALATE_TO_REMIND_1",
+        "state": "REMIND_2",
+        "state_entered_at_iso": "2026-02-10T19:59:43.760122Z",
+        "last_transition_rule_id": "R11_ESCALATE_TO_REMIND_2",
         "monotonic_enforced": true
     },
     "actions": {
@@ -52,11 +52,21 @@
                 "status": "skipped",
                 "last_delivery_id": null,
                 "last_executed_iso": "2026-02-10T19:54:59.561401Z"
+            },
+            "remind_email_secondary": {
+                "status": "ok",
+                "last_delivery_id": "acb7a858-7c72-45cb-8f7e-56e0175da766",
+                "last_executed_iso": "2026-02-10T19:59:44.989278+00:00"
+            },
+            "remind_sms": {
+                "status": "ok",
+                "last_delivery_id": "SM36bca5d00b981ea9563eca096b11c827",
+                "last_executed_iso": "2026-02-10T19:59:45.663254+00:00"
             }
         },
         "last_tick_actions": [
-            "x_operator_reminder_basic",
-            "sms_operator_test_sms"
+            "remind_email_secondary",
+            "remind_sms"
         ]
     },
     "release": {
