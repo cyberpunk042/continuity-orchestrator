@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T15:16:12.249024+00:00",
+        "updated_at_iso": "2026-02-10T15:16:55.148286+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,16 +12,16 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-12T05:39:58.884023+00:00",
+        "deadline_iso": "2026-02-10T18:16:55.148286+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T15:15:58.535124Z",
-        "time_to_deadline_minutes": 2304,
+        "now_iso": "2026-02-10T15:16:55.148286+00:00",
+        "time_to_deadline_minutes": 180,
         "overdue_minutes": 0
     },
     "renewal": {
-        "last_renewal_iso": "2026-02-10T02:43:14.580419+00:00",
-        "renewed_this_tick": false,
-        "renewal_count": 4
+        "last_renewal_iso": "2026-02-10T15:16:55.148286+00:00",
+        "renewed_this_tick": true,
+        "renewal_count": 5
     },
     "security": {
         "failed_attempts": 0,
@@ -32,8 +32,8 @@
     },
     "escalation": {
         "state": "OK",
-        "state_entered_at_iso": "2026-02-10T15:16:12.249024+00:00",
-        "last_transition_rule_id": "MANUAL_RESET",
+        "state_entered_at_iso": "2026-02-10T15:16:55.148286+00:00",
+        "last_transition_rule_id": "MANUAL_RENEWAL",
         "monotonic_enforced": true
     },
     "actions": {
