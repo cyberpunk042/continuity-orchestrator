@@ -105,8 +105,8 @@ def _query_cloudflare_tunnel_hostname(
     GET /accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations
     → extract first hostname from ingress rules.
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     url = (
         f"https://api.cloudflare.com/client/v4/accounts/{account_id}"

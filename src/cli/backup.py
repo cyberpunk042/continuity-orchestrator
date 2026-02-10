@@ -242,7 +242,6 @@ def create_backup_archive(
         if include_templates:
             if decrypt_content and passphrase:
                 from ..content.crypto import decrypt_file as _decrypt_tpl
-                from ..content.crypto import is_encrypted_file as _is_enc_file
                 for f in template_files:
                     arcname = f"templates/{f.relative_to(templates_dir)}"
                     if f.suffix == ".enc":
