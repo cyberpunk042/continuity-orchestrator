@@ -436,6 +436,46 @@ def api_sentinel_setup_status():
         return jsonify({"status": "unknown"})
 
 
+@secrets_bp.route("/sentinel/reset", methods=["POST"])
+def api_sentinel_reset():
+    """Reset Sentinel dispatch failures and backoff lock.
+
+    Calls POST /reset on the Sentinel Worker to clear the failure counter
+    and dispatch lock, allowing immediate retry. Used when re-enabling
+    workflows after switching back from Docker mode.
+    """
+    import httpx
+
+    env = _env()
+    sentinel_url = env.get("SENTINEL_URL", "")
+    sentinel_token = env.get("SENTINEL_TOKEN", "")
+
+    if not sentinel_url or not sentinel_token:
+        return jsonify({
+            "success": False,
+            "error": "SENTINEL_URL or SENTINEL_TOKEN not configured",
+        }), 400
+
+    try:
+        resp = httpx.post(
+            f"{sentinel_url}/reset",
+            headers={
+                "Authorization": f"Bearer {sentinel_token}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return jsonify({"success": True, "message": "Sentinel failures reset"})
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Sentinel returned {resp.status_code}: {resp.text[:200]}",
+            })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @secrets_bp.route("/sentinel/delete", methods=["POST"])
 def api_sentinel_delete():
     """Delete the Sentinel Cloudflare Worker.

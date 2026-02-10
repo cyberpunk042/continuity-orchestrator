@@ -157,17 +157,35 @@
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
 
-                // Status badge
-                if (data.configured) {
+                // Status badge — show failures prominently
+                if (data.configured && data.dispatchHealthy) {
                     statusEl.innerHTML = `<span style="color: var(--accent);">🟢 Live</span>
                         <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">every 60s via Cloudflare</span>`;
+                } else if (data.configured && !data.dispatchHealthy) {
+                    statusEl.innerHTML = `<span style="color: var(--danger);">⚠ ${data.dispatchFailures} failures</span>
+                        <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">dispatching paused (backoff)</span>`;
                 } else {
                     statusEl.innerHTML = `<span style="color: var(--warning);">🟡 Deployed but not configured</span>`;
                 }
 
-                // Details: last decision, next due, links
+                // Details: last decision, next due, failure alert, links
                 if (detailsEl && data.configured) {
                     let rows = '';
+
+                    // Failure alert with reset button
+                    if (data.dispatchFailures > 0) {
+                        rows += `
+                            <div class="alert warning" style="margin: 0.4rem 0; padding: 0.5rem 0.75rem; font-size: 0.82rem;">
+                                <strong>🚨 Dispatch failing</strong> — ${data.dispatchFailures} consecutive dispatch failures
+                                — GitHub Actions may be disabled or the token may have expired.
+                                <div style="margin-top: 0.4rem;">
+                                    <button class="btn primary" onclick="_resetSentinel()" id="btn-sentinel-reset"
+                                        style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
+                                        🔄 Reset Failures
+                                    </button>
+                                </div>
+                            </div>`;
+                    }
 
                     if (data.lastDecision) {
                         const action = data.lastDecision.dispatch ? '🟢 dispatched' : '⏭️ skipped';
@@ -215,6 +233,30 @@
             } catch (e) {
                 statusEl.innerHTML = `<span style="color: var(--danger);">🔴 Offline</span>
                     <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">${e.message}</span>`;
+            }
+        }
+
+        async function _resetSentinel() {
+            const btn = document.getElementById('btn-sentinel-reset');
+            if (btn) btn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/sentinel/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    // Refresh the deploy status card
+                    setTimeout(loadDeployStatus, 1500);
+                } else {
+                    const statusDiv = document.getElementById('deploy-action-status');
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Reset failed: ${data.error}</span>`;
+                }
+            } catch (e) {
+                const statusDiv = document.getElementById('deploy-action-status');
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
             }
         }
 

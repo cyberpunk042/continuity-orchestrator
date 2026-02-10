@@ -67,6 +67,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         return handlePostConfig(request, env);
     }
 
+    if (method === "POST" && path === "/reset") {
+        return handlePostReset(env);
+    }
+
     // ── 404 ───────────────────────────────────────────────────────
     console.warn(`[http] 404 Not found: ${method} ${path}`);
     return json({ error: "Not found" }, 404);
@@ -137,6 +141,18 @@ async function handlePostConfig(request: Request, env: Env): Promise<Response> {
         console.error("[config] ❌ Invalid JSON body:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
+}
+
+
+// ── POST /reset — Clear dispatch failures and backoff lock ──────
+async function handlePostReset(env: Env): Promise<Response> {
+    await Promise.all([
+        env.SENTINEL_KV.delete("dispatch_failures"),
+        env.SENTINEL_KV.delete("dispatch_lock"),
+    ]);
+
+    console.log("[reset] ✅ Dispatch failures and lock cleared");
+    return json({ ok: true, message: "Dispatch failures and backoff cleared" });
 }
 
 

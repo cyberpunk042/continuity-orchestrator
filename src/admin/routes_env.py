@@ -11,6 +11,7 @@ Routes:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 
 from flask import Blueprint, current_app, jsonify, request
@@ -18,6 +19,7 @@ from flask import Blueprint, current_app, jsonify, request
 from .helpers import gh_repo_flag, trigger_mirror_sync_bg
 
 env_bp = Blueprint("env", __name__)
+logger = logging.getLogger(__name__)
 
 
 def _project_root():
@@ -352,11 +354,39 @@ def api_push_secrets():
                         "error": str(e),
                     }
 
+            # Auto-reset Sentinel failures when re-enabling workflows.
+            # Without this, the Sentinel stays in exponential backoff after
+            # a docker→github-pages switch, even though workflows are enabled.
+            sentinel_reset_result = None
+            sentinel_url = all_values.get("SENTINEL_URL", "") or _os.environ.get("SENTINEL_URL", "")
+            sentinel_token = all_values.get("SENTINEL_TOKEN", "") or _os.environ.get("SENTINEL_TOKEN", "")
+            if sentinel_url and sentinel_token:
+                try:
+                    import httpx
+                    resp = httpx.post(
+                        f"{sentinel_url.strip().rstrip('/')}/reset",
+                        headers={
+                            "Authorization": f"Bearer {sentinel_token.strip()}",
+                            "Content-Type": "application/json",
+                        },
+                        timeout=10,
+                    )
+                    sentinel_reset_result = {
+                        "success": resp.status_code == 200,
+                        "status_code": resp.status_code,
+                    }
+                    if resp.status_code == 200:
+                        logger.info("Sentinel failures reset after workflow re-enable")
+                except Exception as e:
+                    sentinel_reset_result = {"success": False, "error": str(e)}
+                    logger.warning(f"Failed to reset Sentinel: {e}")
+
     return jsonify({
         "env_saved": save_to_env,
         "deletions_applied": deletions_applied,
         "results": results,
         "workflow_results": workflow_results,
         "pages_result": pages_result,
+        "sentinel_reset": sentinel_reset_result,
         "all_success": all_ok,
     })
