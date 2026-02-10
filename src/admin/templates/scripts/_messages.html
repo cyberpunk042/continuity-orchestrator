@@ -709,12 +709,41 @@ async function messagesRefreshPreview() {
         } else if (adapter === 'sms') {
             const bubble = document.getElementById('messages-preview-sms-bubble');
             const smsMeta = document.getElementById('messages-preview-sms-meta');
-            if (bubble) bubble.textContent = data.plain_text || data.rendered || '';
+            if (bubble) {
+                // Build bubble content: media images + text
+                let html = '';
+
+                // MMS media attachments
+                const attachments = data.media_attachments || [];
+                if (attachments.length > 0) {
+                    html += '<div style="margin: -0.75rem -1rem 0.6rem -1rem; border-radius: 16px 16px 0 0; overflow: hidden;">';
+                    for (const att of attachments) {
+                        html += `<img src="${att.url}" alt="${att.caption}"
+                            style="width: 100%; display: block; max-height: 200px; object-fit: cover;"
+                            onerror="this.outerHTML='<div style=\\'padding: 0.75rem; text-align: center; color: #94a3b8; font-size: 0.78rem;\\'>🔒 Image unavailable</div>'">`;
+                        // Show the public URL Twilio will fetch
+                        if (att.public_url) {
+                            html += `<div style="padding: 0.25rem 0.6rem; font-size: 0.65rem; color: #93c5fd; background: rgba(0,0,0,0.3); word-break: break-all; font-family: monospace;"
+                                title="URL sent to Twilio">🔗 ${att.public_url}</div>`;
+                        } else {
+                            html += `<div style="padding: 0.25rem 0.6rem; font-size: 0.65rem; color: #f59e0b; background: rgba(0,0,0,0.3);">⚠️ Public URL could not be resolved</div>`;
+                        }
+                    }
+                    html += '</div>';
+                }
+
+                // Text body
+                const plainText = data.plain_text || data.rendered || '';
+                html += `<span>${plainText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</span>`;
+                bubble.innerHTML = html;
+            }
             if (smsMeta) {
                 const chars = data.char_count || 0;
                 const segs = data.segments || 1;
+                const media = (data.media_attachments || []).length;
                 const over = data.over_limit ? ' \u26a0\ufe0f OVER' : '';
-                smsMeta.textContent = chars + ' chars \u2022 ' + segs + ' segment' + (segs !== 1 ? 's' : '') + over;
+                const mmsTag = media > 0 ? `📷 MMS (${media} image${media !== 1 ? 's' : ''}) \u2022 ` : '';
+                smsMeta.textContent = mmsTag + chars + ' chars \u2022 ' + segs + ' segment' + (segs !== 1 ? 's' : '') + over;
             }
             if (metaEl) metaEl.textContent = (data.char_count || 0) + ' chars';
 

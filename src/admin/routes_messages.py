@@ -551,15 +551,91 @@ def _build_email_preview_html(content: str, stage: str, context: dict) -> str:
 
 
 def _build_sms_preview(content: str) -> dict:
-    """Build an SMS preview with segment counting."""
-    # Strip media references → text labels
+    """Build an SMS preview that mirrors the real SMS adapter behavior.
+
+    The real adapter (sms_twilio.py) processes media like this:
+      - Plain images ![cap](url) → MMS attachment (media_url param)
+      - Prefixed    ![file: x](url) → URL appended to body text
+                    ![video: x](url)
+                    ![audio: x](url)
+
+    This preview replicates that logic so the user sees exactly
+    what the recipient will receive.
+    """
+    import re
+    from ..templates.media import get_site_base_url, MEDIA_URI_PREFIX
+
+    media_re = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+    NON_EMBED_PREFIXES = ("video:", "audio:", "file:")
+
+    # Resolve public base URL (same as what Twilio would receive)
+    base_url = get_site_base_url()
+
+    # Load manifest for resolving media IDs to filenames
+    manifest = None
+    try:
+        from ..content.media import MediaManifest
+        from flask import current_app
+        manifest_path = current_app.config["PROJECT_ROOT"] / "content" / "media" / "manifest.json"
+        manifest = MediaManifest.load(manifest_path)
+    except Exception:
+        pass
+
+    def _resolve_url(url: str) -> str | None:
+        """Resolve a media:// URI to its public URL."""
+        if url.startswith(MEDIA_URI_PREFIX):
+            media_id = url[len(MEDIA_URI_PREFIX):]
+            if manifest and base_url:
+                entry = manifest.get(media_id)
+                if entry:
+                    return f"{base_url}/media/{entry.original_name}"
+            return None  # Can't resolve
+        elif url.startswith(("http://", "https://")):
+            return url
+        return None
+
+    # ── Pass 1: Extract MMS attachments and body-link URLs ──
+    media_attachments = []  # Plain images → MMS
+    link_urls = []          # Prefixed media → URLs appended to body
+
+    for match in media_re.finditer(content):
+        alt = match.group(1).strip()
+        url = match.group(2)
+        alt_lower = alt.lower()
+
+        public_url = _resolve_url(url)
+
+        if any(alt_lower.startswith(p) for p in NON_EMBED_PREFIXES):
+            # Non-embeddable → URL goes into body text
+            if public_url:
+                link_urls.append(public_url)
+        else:
+            # Plain image → MMS attachment
+            preview_url = (
+                f"/api/content/media/{url[len(MEDIA_URI_PREFIX):]}/preview"
+                if url.startswith(MEDIA_URI_PREFIX) else url
+            )
+            media_attachments.append({
+                "caption": alt or "image",
+                "url": preview_url,
+                "public_url": public_url,
+                "media_id": url[len(MEDIA_URI_PREFIX):] if url.startswith(MEDIA_URI_PREFIX) else None,
+            })
+
+    # ── Pass 2: Build body text ──
+    # Strip ALL media markdown from content (both types)
     content = _strip_media_for_plaintext(content)
 
-    # Strip markdown headers for SMS
+    # Strip markdown headers
     lines = content.strip().split("\n")
     while lines and lines[0].startswith("#"):
         lines = lines[1:]
     plain = "\n".join(lines).strip()
+
+    # Append non-embeddable media URLs to body (like the real adapter does)
+    if link_urls:
+        for url in link_urls:
+            plain += f"\n{url}"
 
     char_count = len(plain)
     if char_count <= 160:
@@ -572,6 +648,7 @@ def _build_sms_preview(content: str) -> dict:
         "char_count": char_count,
         "segments": segments,
         "over_limit": char_count > 480,  # 3 segments max for Twilio
+        "media_attachments": media_attachments,
     }
 
 
