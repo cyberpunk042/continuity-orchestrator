@@ -227,7 +227,7 @@ SECRET_DEFINITIONS = {
 
     # Docker Git Sync
     "DOCKER_GIT_SYNC_ALPHA": {"required_for": [], "guidance": "Docker sync dominance: 'true' = this Docker is the authority (overrides remote on conflict), 'false' = remote is the authority (default)"},
-    "DOCKER_GIT_SYNC_TICK_INTERVAL": {"required_for": [], "guidance": "Seconds between tick runs in Docker git-sync mode (default: 900 = 15min)"},
+    "DOCKER_GIT_SYNC_TICK_INTERVAL": {"required_for": [], "guidance": "Seconds between tick runs in Docker git-sync mode (default: 60 = 1min)"},
     "DOCKER_GIT_SYNC_SYNC_INTERVAL": {"required_for": [], "guidance": "Seconds between remote sync checks in Docker git-sync mode (default: 30)"},
 
     # Cloudflare Tunnel

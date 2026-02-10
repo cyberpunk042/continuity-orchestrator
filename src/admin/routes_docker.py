@@ -222,6 +222,109 @@ def _get_container_status() -> list:
     return list(found.values())
 
 
+# ── Cloudflare OAuth token refresh ───────────────────────────────────
+
+# Wrangler's well-known public OAuth client ID
+_WRANGLER_CLIENT_ID = "54d11594-84e4-41aa-b438-e81b8fa78ee7"
+_CF_OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token"
+
+# Standard wrangler config paths (in priority order)
+_WRANGLER_CONFIG_PATHS = [
+    Path.home() / ".config" / ".wrangler" / "config" / "default.toml",
+    Path.home() / ".config" / "wrangler" / "config" / "default.toml",
+    Path.home() / ".wrangler" / "config" / "default.toml",
+]
+
+
+def _refresh_cf_api_token(env_file: Path | None = None) -> str | None:
+    """Refresh the Cloudflare OAuth token using wrangler's stored refresh token.
+
+    Reads the refresh_token from wrangler's config, exchanges it for a new
+    access token, then updates both the wrangler config and the .env file.
+
+    Returns the new access token, or None if refresh failed.
+    """
+    # Find wrangler config
+    config_path = None
+    for p in _WRANGLER_CONFIG_PATHS:
+        if p.is_file():
+            config_path = p
+            break
+
+    if not config_path:
+        logger.warning("No wrangler config found — cannot refresh OAuth token")
+        return None
+
+    # Read refresh token from config
+    config_text = config_path.read_text()
+    import re
+    match = re.search(r'refresh_token\s*=\s*"([^"]+)"', config_text)
+    if not match:
+        logger.warning("No refresh_token in wrangler config — cannot refresh")
+        return None
+
+    refresh_token = match.group(1)
+
+    # Exchange refresh token for a new access token
+    try:
+        resp = requests.post(
+            _CF_OAUTH_TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": _WRANGLER_CLIENT_ID,
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.warning("OAuth refresh failed: HTTP %d", resp.status_code)
+            return None
+
+        data = resp.json()
+        new_token = data.get("access_token")
+        new_refresh = data.get("refresh_token")
+        expires_in = data.get("expires_in", 0)
+
+        if not new_token:
+            logger.warning("OAuth refresh response missing access_token: %s",
+                           data.get("error", "unknown"))
+            return None
+
+        logger.info("Cloudflare OAuth token refreshed successfully (expires in %ds)", expires_in)
+
+        # Update wrangler config
+        from datetime import datetime, timezone, timedelta
+        new_expiry = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).strftime(
+            "%Y-%m-%dT%H:%M:%S.000Z"
+        )
+        updated = re.sub(r'oauth_token\s*=\s*"[^"]*"', f'oauth_token = "{new_token}"', config_text)
+        updated = re.sub(r'expiration_time\s*=\s*"[^"]*"', f'expiration_time = "{new_expiry}"', updated)
+        if new_refresh:
+            updated = re.sub(r'refresh_token\s*=\s*"[^"]*"', f'refresh_token = "{new_refresh}"', updated)
+        config_path.write_text(updated)
+
+        # Update .env
+        if env_file and env_file.is_file():
+            env_text = env_file.read_text()
+            if "CLOUDFLARE_API_TOKEN=" in env_text:
+                env_text = re.sub(
+                    r'^CLOUDFLARE_API_TOKEN=.*$',
+                    f'CLOUDFLARE_API_TOKEN={new_token}',
+                    env_text,
+                    flags=re.MULTILINE,
+                )
+            else:
+                env_text += f"\nCLOUDFLARE_API_TOKEN={new_token}\n"
+            env_file.write_text(env_text)
+            logger.info("Updated CLOUDFLARE_API_TOKEN in .env")
+
+        return new_token
+
+    except Exception as e:
+        logger.warning("OAuth token refresh failed: %s", e)
+        return None
+
+
 # ── Tunnel URL retrieval ─────────────────────────────────────────────
 
 # Cache to avoid hitting the API every status poll
@@ -282,15 +385,28 @@ def _get_tunnel_url(env: dict) -> dict:
             return {"url": None, "error": "Could not extract account/tunnel ID from token"}
 
         # Query Cloudflare API for tunnel configuration
-        resp = requests.get(
-            f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
-            f"/cfd_tunnel/{tunnel_id}/configurations",
-            headers={
-                "Authorization": f"Bearer {cf_api_token}",
-                "Content-Type": "application/json",
-            },
-            timeout=5,
-        )
+        def _call_tunnel_api(token):
+            return requests.get(
+                f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
+                f"/cfd_tunnel/{tunnel_id}/configurations",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=5,
+            )
+
+        resp = _call_tunnel_api(cf_api_token)
+
+        # If 401, try refreshing the OAuth token and retry once
+        if resp.status_code == 401:
+            logger.info("Cloudflare API returned 401 — attempting OAuth token refresh")
+            env_file = _project_root() / ".env"
+            new_token = _refresh_cf_api_token(env_file=env_file)
+            if new_token:
+                cf_api_token = new_token
+                resp = _call_tunnel_api(cf_api_token)
+
         if resp.status_code != 200:
             logger.warning("Tunnel config API returned %d", resp.status_code)
             return {"url": None, "error": f"Cloudflare API returned {resp.status_code}"}
@@ -367,7 +483,7 @@ def docker_status():
         env = fresh_env(_project_root())
         git_sync_config = {
             "alpha": env.get("DOCKER_GIT_SYNC_ALPHA", "false").lower() == "true",
-            "tick_interval": int(env.get("DOCKER_GIT_SYNC_TICK_INTERVAL", "900")),
+            "tick_interval": int(env.get("DOCKER_GIT_SYNC_TICK_INTERVAL", "60")),
             "sync_interval": int(env.get("DOCKER_GIT_SYNC_SYNC_INTERVAL", "30")),
         }
 

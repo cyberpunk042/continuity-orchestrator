@@ -61,6 +61,7 @@ services:
     environment:
       - STATE_FILE=/data/state/current.json
       - AUDIT_DIR=/data/audit
+      - DOCKER_TICK_INTERVAL=${DOCKER_TICK_INTERVAL:-60}
       - POLICY_DIR=/app/policy
       # Project settings
       - PROJECT_NAME=${PROJECT_NAME:-}
@@ -119,39 +120,11 @@ services:
     command:
       - |
         echo ""
-        echo "┌─────────────────────────────────────────────────────────────────┐"
-        echo "│                                                                 │"
-        echo "│   ⚠️  CONTINUITY ORCHESTRATOR — TEST MODE ⚠️                    │"
-        echo "│                                                                 │"
-        echo "│   State is stored in Docker volumes ONLY.                       │"
-        echo "│   Changes will NOT sync to your Git repository.                 │"
-        echo "│                                                                 │"
-        echo "│   This mode is for:                                             │"
-        echo "│   • Local testing and development                               │"
-        echo "│   • Trying out the system before production                     │"
-        echo "│   • Environments without Git access                             │"
-        echo "│                                                                 │"
-        echo "├─────────────────────────────────────────────────────────────────┤"
-        echo "│                                                                 │"
-        echo "│   FOR PRODUCTION USE:                                           │"
-        echo "│                                                                 │"
-        echo "│   Option 1: GitHub Actions (Recommended)                        │"
-        echo "│     → Push to GitHub, enable Actions workflow                   │"
-        echo "│     → State auto-commits to your repo                           │"
-        echo "│                                                                 │"
-        echo "│   Option 2: Docker with Git Sync                                │"
-        echo "│     → docker compose --profile git-sync up -d                   │"
-        echo "│     → Requires GITHUB_TOKEN in .env                             │"
-        echo "│                                                                 │"
-        echo "├─────────────────────────────────────────────────────────────────┤"
-        echo "│                                                                 │"
-        echo "│   TO DISCARD TEST DATA:                                         │"
-        echo "│     docker compose down -v                                      │"
-        echo "│                                                                 │"
-        echo "│   TO EXPORT STATE BEFORE DISCARDING:                            │"
-        echo "│     docker cp continuity-orchestrator:/data/state ./state-backup│"
-        echo "│                                                                 │"
-        echo "└─────────────────────────────────────────────────────────────────┘"
+        echo "╔══════════════════════════════════════════════════╗"
+        echo "║  Continuity Orchestrator — STANDALONE MODE      ║"
+        echo "║  Tick interval: $${DOCKER_TICK_INTERVAL:-60}s                          ║"
+        echo "║  State: Docker volumes (no Git sync)            ║"
+        echo "╚══════════════════════════════════════════════════╝"
         echo ""
         
         # Create symlinks so build-site finds state/audit at expected paths
@@ -163,35 +136,30 @@ services:
         
         # Initialize state if not exists
         if [ ! -f /data/state/current.json ]; then
-          echo "📦 Initializing test state..."
+          echo "📦 Initializing state..."
           mkdir -p /data/state /data/audit /data/public
           python3 /app/scripts/docker_init.py /data/state/current.json
           echo '{}' > /data/audit/ledger.ndjson
         fi
         
-        echo ""
-        echo "🧪 Starting test tick loop (every 15 minutes)..."
+        INTERVAL=$${DOCKER_TICK_INTERVAL:-60}
+        echo "🔄 Starting tick loop (every $${INTERVAL}s)..."
         echo ""
         
-        # Run tick every 15 minutes
         while true; do
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "🔄 TEST TICK at $$(date -Iseconds)"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "══════════════════════════════════════════════════"
+          echo "🔄 Tick at $$(date -Iseconds)"
+          echo "══════════════════════════════════════════════════"
           python -m src.main tick \
             --state-file /data/state/current.json \
             --policy-dir /app/policy \
             --audit-file /data/audit/ledger.ndjson \
             || echo "Tick failed, will retry..."
           
-          # Build site after tick (--no-clean avoids permission issues)
+          # Build site after tick
           python -m src.main build-site --output /data/public --no-clean || true
           
-          echo ""
-          echo "💤 Sleeping 15 minutes... (Ctrl+C to stop)"
-          echo "   ⚠️  Remember: Changes are NOT persisted to Git!"
-          echo ""
-          sleep 900
+          sleep $$INTERVAL
         done
 
   # ==========================================================================
@@ -262,7 +230,7 @@ services:
       # DOCKER_GIT_SYNC_ALPHA: false = remote is the source of truth (default)
       #                        true  = this Docker instance is dominant, force-pushes on divergence
       - DOCKER_GIT_SYNC_ALPHA=${DOCKER_GIT_SYNC_ALPHA:-false}
-      - DOCKER_GIT_SYNC_TICK_INTERVAL=${DOCKER_GIT_SYNC_TICK_INTERVAL:-900}
+      - DOCKER_GIT_SYNC_TICK_INTERVAL=${DOCKER_GIT_SYNC_TICK_INTERVAL:-60}
       - DOCKER_GIT_SYNC_SYNC_INTERVAL=${DOCKER_GIT_SYNC_SYNC_INTERVAL:-30}
     volumes:
       # NO HOST MOUNT - repo is cloned inside container
@@ -304,7 +272,7 @@ services:
           --repo /repo \
           --branch main \
           --public-dir /public \
-          --tick-interval $${DOCKER_GIT_SYNC_TICK_INTERVAL:-900} \
+          --tick-interval $${DOCKER_GIT_SYNC_TICK_INTERVAL:-60} \
           --sync-interval $${DOCKER_GIT_SYNC_SYNC_INTERVAL:-30}
 
   # ==========================================================================
