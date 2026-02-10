@@ -2623,6 +2623,55 @@
                 }
             }
 
+            // Tear down Sentinel Worker when switching to Docker mode
+            // (it dispatches GitHub Actions which are unnecessary in container mode)
+            if (deployMode === 'docker' && (envData.SENTINEL_URL || envData.SENTINEL_TOKEN)) {
+                statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.5rem 0;">🛰️ Removing Sentinel Worker (not needed in Docker mode)…</div>';
+                try {
+                    const sentRes = await fetch('/api/sentinel/delete', { method: 'POST' });
+                    const sentData = await sentRes.json();
+                    if (sentData.success) {
+                        statusDiv.innerHTML += '<div style="color: var(--accent); margin: 0.25rem 0;">🛰️ Sentinel Worker deleted & env cleaned</div>';
+                    } else {
+                        statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Sentinel cleanup: ${sentData.error || 'wrangler not available'}</div>`;
+                    }
+                } catch (e) {
+                    console.warn('Sentinel teardown failed:', e);
+                    statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Could not remove sentinel — ${e.message}</div>`;
+                }
+            }
+
+            // If Docker mode with a tunnel token, and Docker is already running,
+            // restart with the tunnel profile so the cloudflared container starts
+            if (deployMode === 'docker' && wizardData.CLOUDFLARE_TUNNEL_TOKEN) {
+                try {
+                    const dockerRes = await fetch('/api/docker/status');
+                    const dockerData = await dockerRes.json();
+                    if (dockerData.available && dockerData.containers) {
+                        const anyRunning = dockerData.containers.some(c => c.status === 'running');
+                        const tunnelRunning = dockerData.active_profiles?.includes('tunnel');
+                        if (anyRunning && !tunnelRunning) {
+                            statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.5rem 0;">🔒 Starting tunnel container…</div>';
+                            const profiles = [...(dockerData.active_profiles || [])];
+                            if (!profiles.includes('tunnel')) profiles.push('tunnel');
+                            const startRes = await fetch('/api/docker/start', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ profiles }),
+                            });
+                            const startData = await startRes.json();
+                            if (startData.success) {
+                                statusDiv.innerHTML += '<div style="color: var(--accent); margin: 0.25rem 0;">🔒 Tunnel container started</div>';
+                            } else {
+                                statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Tunnel start: ${startData.error || 'failed'}</div>`;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Docker tunnel start check failed:', e);
+                }
+            }
+
             // Refresh status
             loadStatus();
 

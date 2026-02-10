@@ -18,6 +18,7 @@ import type { Decision, SentinelConfig, SentinelState, Signal } from "./types";
  * @param config - Sentinel configuration (thresholds, cadence, etc.)
  * @param now    - Current time
  * @param lastDispatchAt - ISO timestamp of last dispatch (for debounce)
+ * @param prevReason - Reason from the last saved decision (for bootstrap loop prevention)
  */
 export function shouldDispatch(
     state: SentinelState | null,
@@ -25,6 +26,7 @@ export function shouldDispatch(
     config: SentinelConfig,
     now: Date,
     lastDispatchAt: string | null,
+    prevReason: string | null = null,
 ): Decision {
 
     // ── 0. Terminal state: FULL = nothing further to do ────────────
@@ -40,8 +42,14 @@ export function shouldDispatch(
         }
     }
 
-    // ── 2. Bootstrap: no state received yet → dispatch immediately ─
+    // ── 2. Bootstrap: no state received yet ─────────────────────────
+    //    Dispatch ONCE to kick-start the engine.  If we already dispatched
+    //    for "bootstrap" (even if the lock expired), don't keep spamming —
+    //    the engine needs to push state after a successful tick.
     if (!state) {
+        if (lastDispatchAt || prevReason === "bootstrap") {
+            return { dispatch: false, reason: "bootstrap:waiting" };
+        }
         return { dispatch: true, reason: "bootstrap" };
     }
 

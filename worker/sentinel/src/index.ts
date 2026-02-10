@@ -227,9 +227,15 @@ async function handleScheduled(env: Env): Promise<void> {
 
     console.log(`[cron] Config: repo=${config.repo} cadence=${config.defaultCadenceMinutes}m urgency=${config.urgencyWindowMinutes}m backoff=${config.maxBackoffMinutes}m thresholds=${config.thresholds.length}`);
 
-    const decision = shouldDispatch(state, signal, config, now, dispatchLock);
+    // Read previous decision BEFORE computing new one — needed for:
+    //   1. Bootstrap loop prevention (don't re-dispatch if already bootstrapped)
+    //   2. KV write optimization (skip PUT if reason unchanged)
+    const prevDecisionRaw = await env.SENTINEL_KV.get("last_decision");
+    const prevReason = prevDecisionRaw ? (JSON.parse(prevDecisionRaw) as DecisionLog).reason : null;
 
-    // Log the decision for observability
+    const decision = shouldDispatch(state, signal, config, now, dispatchLock, prevReason);
+
+    // Build decision log for observability
     const decisionLog: DecisionLog = {
         at: now.toISOString(),
         dispatch: decision.dispatch,
@@ -238,7 +244,9 @@ async function handleScheduled(env: Env): Promise<void> {
         signal,
         nextDueAt: computeNextDueAt(state, config),
     };
-    await env.SENTINEL_KV.put("last_decision", JSON.stringify(decisionLog));
+    if (decision.dispatch || decision.reason !== prevReason) {
+        await env.SENTINEL_KV.put("last_decision", JSON.stringify(decisionLog));
+    }
 
     if (decision.dispatch) {
         console.log(`[cron] ✅ DISPATCH — reason: ${decision.reason}`);
@@ -266,15 +274,24 @@ async function handleScheduled(env: Env): Promise<void> {
 
     if (success) {
         console.log(`[cron] ✅ Dispatch succeeded — workflow triggered on ${config.repo}`);
+        // Clear failure counter on success
+        await env.SENTINEL_KV.delete("dispatch_failures");
         // Clear the consumed signal
         if (signal) {
             await env.SENTINEL_KV.delete("signal");
             console.log(`[cron] Signal consumed and cleared: type=${signal.type}`);
         }
     } else {
-        // Release lock on failure so we retry next minute
-        await env.SENTINEL_KV.delete("dispatch_lock");
-        console.error("[cron] ❌ Dispatch FAILED — lock released, will retry next tick");
+        // On failure: keep the lock (don't delete!) so backoff applies.
+        // Also track consecutive failures for exponential backoff.
+        const failCountRaw = await env.SENTINEL_KV.get("dispatch_failures");
+        const failCount = failCountRaw ? parseInt(failCountRaw, 10) + 1 : 1;
+        // Exponential backoff: 5m, 10m, 20m, 40m, capped at 60m
+        const extendedBackoffMin = Math.min(config.maxBackoffMinutes * Math.pow(2, failCount - 1), 60);
+        const extendedTtl = Math.max(extendedBackoffMin * 60, lockTtlSeconds);
+        await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: extendedTtl });
+        await env.SENTINEL_KV.put("dispatch_failures", String(failCount));
+        console.error(`[cron] ❌ Dispatch FAILED (attempt #${failCount}) — backoff extended to ${extendedBackoffMin}m`);
     }
 }
 

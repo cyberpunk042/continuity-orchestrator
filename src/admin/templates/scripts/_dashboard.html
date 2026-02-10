@@ -264,12 +264,14 @@
                     </div>
                 </div>
                 
+                ${(envData.DEPLOY_MODE || 'github-pages') !== 'docker' ? `
                 <div class="card" id="sentinel-card">
                     <h2><span class="icon">🛰️</span> Sentinel
                         <span id="sentinel-badge" style="font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: 0.5rem; background: var(--bg-input); color: var(--text-dim);">loading…</span>
                     </h2>
                     <div id="sentinel-body" style="color: var(--text-dim); font-size: 0.85rem;">Loading…</div>
                 </div>
+                ` : ''}
 
                 <div class="card">
                     <h2><span class="icon">⚡</span> Quick Actions</h2>
@@ -287,8 +289,10 @@
 
             // Load git status into the Tools card
             loadGitStatus();
-            // Load sentinel status into the Sentinel card
-            loadSentinelStatus();
+            // Load sentinel status into the Sentinel card (skip in Docker mode)
+            if ((envData.DEPLOY_MODE || 'github-pages') !== 'docker') {
+                loadSentinelStatus();
+            }
         }
 
         async function loadSentinelStatus() {

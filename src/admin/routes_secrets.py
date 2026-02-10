@@ -436,6 +436,63 @@ def api_sentinel_setup_status():
         return jsonify({"status": "unknown"})
 
 
+@secrets_bp.route("/sentinel/delete", methods=["POST"])
+def api_sentinel_delete():
+    """Delete the Sentinel Cloudflare Worker.
+
+    Used when switching to Docker mode — the sentinel dispatches GitHub
+    Actions workflows which are unnecessary in container mode.
+    """
+    project_root = _project_root()
+
+    # Check if wrangler is available
+    import shutil
+    wrangler_path = shutil.which("wrangler")
+    if not wrangler_path:
+        # Try via npx
+        try:
+            result = subprocess.run(
+                ["npx", "wrangler", "--version"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                return jsonify({
+                    "success": False,
+                    "error": "wrangler not available (install via npm i -g wrangler)",
+                })
+            wrangler_cmd = ["npx", "wrangler"]
+        except Exception:
+            return jsonify({
+                "success": False,
+                "error": "wrangler not available",
+            })
+    else:
+        wrangler_cmd = ["wrangler"]
+
+    # Delete the worker
+    try:
+        result = subprocess.run(
+            wrangler_cmd + ["delete", "--name", "continuity-sentinel", "--force"],
+            cwd=str(project_root / "worker" / "sentinel"),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        deleted = result.returncode == 0
+        output = result.stdout + result.stderr
+
+        return jsonify({
+            "success": deleted,
+            "output": output.strip(),
+            "error": output.strip() if not deleted else None,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": "wrangler delete timed out"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @secrets_bp.route("/tunnel/setup", methods=["POST"])
 def api_tunnel_setup():
     """Spawn terminal to run the Cloudflare Tunnel setup script."""
