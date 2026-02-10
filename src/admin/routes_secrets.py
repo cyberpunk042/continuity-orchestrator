@@ -476,6 +476,95 @@ def api_sentinel_reset():
         return jsonify({"success": False, "error": str(e)})
 
 
+@secrets_bp.route("/sentinel/push-state", methods=["POST"])
+def api_sentinel_push_state():
+    """Push the current local state to the Sentinel Worker.
+
+    Reads state/current.json and POSTs it to the Worker's /state endpoint,
+    updating the Worker's KV to match the actual repo state.  This fixes
+    the "stale Worker" problem when notify_sentinel() calls fail (e.g.
+    network issues, library bugs, CI failures).
+
+    This is the manual recovery mechanism — call it whenever the Sentinel
+    dashboard shows a stage that doesn't match reality.
+    """
+    import json as _json
+    import time as _time
+
+    import httpx
+
+    project_root = _project_root()
+    env = _env()
+    sentinel_url = env.get("SENTINEL_URL", "")
+    sentinel_token = env.get("SENTINEL_TOKEN", "")
+
+    if not sentinel_url or not sentinel_token:
+        return jsonify({
+            "success": False,
+            "error": "SENTINEL_URL or SENTINEL_TOKEN not configured",
+        }), 400
+
+    # Read local state
+    state_file = project_root / "state" / "current.json"
+    if not state_file.exists():
+        return jsonify({
+            "success": False,
+            "error": "state/current.json not found",
+        }), 404
+
+    try:
+        state_data = _json.loads(state_file.read_text())
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to read state: {e}",
+        }), 500
+
+    # Build the Worker's expected SentinelState payload
+    escalation = state_data.get("escalation", {})
+    timer = state_data.get("timer", {})
+    meta = state_data.get("meta", {})
+    renewal = state_data.get("renewal", {})
+
+    payload = {
+        "lastTickAt": meta.get("updated_at_iso", ""),
+        "deadline": timer.get("deadline_iso", ""),
+        "stage": escalation.get("state", "OK"),
+        "stageEnteredAt": escalation.get("state_entered_at_iso", ""),
+        "renewedThisTick": renewal.get("renewed_this_tick", False),
+        "lastRenewalAt": renewal.get("last_renewal_iso", ""),
+        "stateChanged": False,
+        "version": int(_time.time()),
+    }
+
+    try:
+        resp = httpx.post(
+            f"{sentinel_url}/state",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {sentinel_token}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return jsonify({
+                "success": True,
+                "pushed": {
+                    "stage": payload["stage"],
+                    "deadline": payload["deadline"],
+                    "lastTickAt": payload["lastTickAt"],
+                },
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Sentinel returned {resp.status_code}: {resp.text[:200]}",
+            })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @secrets_bp.route("/sentinel/delete", methods=["POST"])
 def api_sentinel_delete():
     """Delete the Sentinel Cloudflare Worker.

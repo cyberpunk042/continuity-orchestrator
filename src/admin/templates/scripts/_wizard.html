@@ -2169,6 +2169,22 @@
 
                 if (statusDiv) statusDiv.innerHTML = '<span style="color: var(--accent);">✅ State reset to OK</span>';
 
+                // Push state to Sentinel Worker immediately (don't wait for tick)
+                try {
+                    const pushResp = await fetch('/api/sentinel/push-state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                    const pushData = await pushResp.json();
+                    if (pushData.success) {
+                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--accent);">✅ Sentinel updated → ${pushData.pushed.stage}</span>`;
+                    } else {
+                        if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--warning);">⚠️ Sentinel push failed: ${pushData.error}</span>`;
+                    }
+                } catch (e) {
+                    if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--text-dim);">⚠️ Sentinel push skipped: ${e.message}</span>`;
+                }
+
                 // Git sync + build + deploy
                 if (statusDiv) statusDiv.innerHTML += `<br><span style="color: var(--info);">📤 Syncing to git...</span>`;
                 const syncResp = await fetch('/api/git/sync', {
@@ -2210,6 +2226,11 @@
                 const data = await response.json();
 
                 if (data.success) {
+                    // Push updated state to Sentinel Worker (fire-and-forget)
+                    fetch('/api/sentinel/push-state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                    }).catch(() => {});
                     alert('✅ Timer reset! New 48h deadline active.');
                     loadStatus();
                 } else {

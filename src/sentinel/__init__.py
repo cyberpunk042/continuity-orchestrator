@@ -68,12 +68,15 @@ def notify_sentinel(state: "State", tick_result: Optional["TickResult"] = None) 
     }
 
     try:
-        import requests as _requests
+        import httpx
 
-        resp = _requests.post(
+        resp = httpx.post(
             f"{url}/state",
             json=payload,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
             timeout=_TIMEOUT,
         )
         if resp.status_code == 200:
@@ -113,12 +116,15 @@ def signal_sentinel(signal_type: str = "renewal") -> bool:
     }
 
     try:
-        import requests as _requests
+        import httpx
 
-        resp = _requests.post(
+        resp = httpx.post(
             f"{url}/signal",
             json=payload,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
             timeout=_TIMEOUT,
         )
         if resp.status_code == 200:

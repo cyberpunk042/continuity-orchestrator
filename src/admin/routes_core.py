@@ -677,9 +677,9 @@ def api_sentinel_status():
         return jsonify({"configured": False})
 
     try:
-        import requests as _requests
+        import httpx
 
-        resp = _requests.get(f"{url}/status", timeout=3)
+        resp = httpx.get(f"{url}/status", timeout=3)
         data = resp.json()
         data["configured"] = True
         data["reachable"] = True

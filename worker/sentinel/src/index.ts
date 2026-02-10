@@ -4,6 +4,16 @@
  * Two handlers:
  *   fetch()     — HTTP API for receiving state/signals + serving status
  *   scheduled() — Cron trigger (every minute) that decides whether to dispatch
+ *
+ * KV Budget:
+ *   Free tier = 1,000 writes/day, 100,000 reads/day.
+ *   Cron runs 1,440 times/day (every minute).
+ *   READS are cheap (~5/tick = 7,200/day — well within 100k).
+ *   WRITES must be minimised:
+ *     - last_decision: only on category change (not dynamic backoff values)
+ *     - dispatch_lock: only on actual dispatch (~5-10/day)
+ *     - state/signal/config: only on HTTP push (rare)
+ *   Target: <50 writes/day in steady state.
  */
 
 import { unauthorized, validateBearer } from "./auth";
@@ -23,6 +33,33 @@ function json(data: unknown, status = 200): Response {
         status,
         headers: { "Content-Type": "application/json", ...CORS_HEADERS },
     });
+}
+
+/** Extract the category prefix from a reason string (e.g. "backoff" from "backoff:2m/5m"). */
+function reasonCategory(reason: string): string {
+    return reason.split(":")[0];
+}
+
+/** Safe KV put — catches quota errors and returns success/failure. */
+async function kvPut(kv: KVNamespace, key: string, value: string, options?: KVNamespacePutOptions): Promise<boolean> {
+    try {
+        await kv.put(key, value, options);
+        return true;
+    } catch (err) {
+        console.error(`[kv] ❌ PUT "${key}" failed:`, err);
+        return false;
+    }
+}
+
+/** Safe KV delete — catches quota errors. */
+async function kvDelete(kv: KVNamespace, key: string): Promise<boolean> {
+    try {
+        await kv.delete(key);
+        return true;
+    } catch (err) {
+        console.error(`[kv] ❌ DELETE "${key}" failed:`, err);
+        return false;
+    }
 }
 
 // ─── HTTP Handler ───────────────────────────────────────────────
@@ -68,7 +105,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
 
     if (method === "POST" && path === "/reset") {
-        return handlePostReset(env);
+        return handlePostReset(request, env);
     }
 
     // ── 404 ───────────────────────────────────────────────────────
@@ -79,80 +116,122 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
 // ── POST /state — Engine pushes latest state ────────────────────
 async function handlePostState(request: Request, env: Env): Promise<Response> {
+    let state: SentinelState;
+
+    // 1. Parse JSON body
     try {
-        const state = await request.json() as SentinelState;
-
-        // Basic validation
-        if (!state.lastTickAt || !state.deadline || !state.stage) {
-            console.warn("[state] Rejected: missing required fields");
-            return json({ error: "Missing required fields: lastTickAt, deadline, stage" }, 400);
-        }
-
-        await env.SENTINEL_KV.put("state", JSON.stringify(state));
-
-        console.log(`[state] ✅ Received — stage=${state.stage} deadline=${state.deadline} lastTick=${state.lastTickAt} stateChanged=${state.stateChanged} renewed=${state.renewedThisTick}`);
-        return json({ ok: true, received: state.stage });
-
+        state = await request.json() as SentinelState;
     } catch (err) {
-        console.error("[state] ❌ Invalid JSON body:", err);
+        console.error("[state] ❌ JSON parse failed:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
+
+    // 2. Validate required fields
+    if (!state.lastTickAt || !state.deadline || !state.stage) {
+        console.warn("[state] Rejected: missing required fields", {
+            lastTickAt: !!state.lastTickAt,
+            deadline: !!state.deadline,
+            stage: !!state.stage,
+        });
+        return json({ error: "Missing required fields: lastTickAt, deadline, stage" }, 400);
+    }
+
+    // 3. Write to KV
+    const ok = await kvPut(env.SENTINEL_KV, "state", JSON.stringify(state));
+    if (!ok) {
+        return json({ error: "KV write failed — daily quota may be exceeded" }, 500);
+    }
+
+    console.log(`[state] ✅ Received — stage=${state.stage} deadline=${state.deadline} lastTick=${state.lastTickAt} stateChanged=${state.stateChanged} renewed=${state.renewedThisTick}`);
+    return json({ ok: true, received: state.stage });
 }
 
 
 // ── POST /signal — Renew/release/urgent signal ──────────────────
 async function handlePostSignal(request: Request, env: Env): Promise<Response> {
+    let signal: Signal;
+
     try {
-        const signal = await request.json() as Signal;
-
-        if (!signal.type || !signal.at) {
-            console.warn("[signal] Rejected: missing required fields");
-            return json({ error: "Missing required fields: type, at" }, 400);
-        }
-
-        await env.SENTINEL_KV.put("signal", JSON.stringify(signal));
-
-        console.log(`[signal] ✅ Received — type=${signal.type} at=${signal.at} nonce=${signal.nonce || "none"}`);
-        return json({ ok: true, received: signal.type });
-
+        signal = await request.json() as Signal;
     } catch (err) {
-        console.error("[signal] ❌ Invalid JSON body:", err);
+        console.error("[signal] ❌ JSON parse failed:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
+
+    if (!signal.type || !signal.at) {
+        console.warn("[signal] Rejected: missing required fields");
+        return json({ error: "Missing required fields: type, at" }, 400);
+    }
+
+    const ok = await kvPut(env.SENTINEL_KV, "signal", JSON.stringify(signal));
+    if (!ok) {
+        return json({ error: "KV write failed — daily quota may be exceeded" }, 500);
+    }
+
+    console.log(`[signal] ✅ Received — type=${signal.type} at=${signal.at} nonce=${signal.nonce || "none"}`);
+    return json({ ok: true, received: signal.type });
 }
 
 
 // ── POST /config — CLI wizard writes config ─────────────────────
 async function handlePostConfig(request: Request, env: Env): Promise<Response> {
+    let config: SentinelConfig;
+
     try {
-        const config = await request.json() as SentinelConfig;
-
-        if (!config.repo || !config.workflowFile) {
-            console.warn("[config] Rejected: missing required fields");
-            return json({ error: "Missing required fields: repo, workflowFile" }, 400);
-        }
-
-        await env.SENTINEL_KV.put("config", JSON.stringify(config));
-
-        console.log(`[config] ✅ Updated — repo=${config.repo} workflow=${config.workflowFile} cadence=${config.defaultCadenceMinutes}m thresholds=${config.thresholds.length} urgencyWindow=${config.urgencyWindowMinutes}m maxBackoff=${config.maxBackoffMinutes}m`);
-        return json({ ok: true, repo: config.repo });
-
+        config = await request.json() as SentinelConfig;
     } catch (err) {
-        console.error("[config] ❌ Invalid JSON body:", err);
+        console.error("[config] ❌ JSON parse failed:", err);
         return json({ error: "Invalid JSON body" }, 400);
     }
+
+    if (!config.repo || !config.workflowFile) {
+        console.warn("[config] Rejected: missing required fields");
+        return json({ error: "Missing required fields: repo, workflowFile" }, 400);
+    }
+
+    const ok = await kvPut(env.SENTINEL_KV, "config", JSON.stringify(config));
+    if (!ok) {
+        return json({ error: "KV write failed — daily quota may be exceeded" }, 500);
+    }
+
+    console.log(`[config] ✅ Updated — repo=${config.repo} workflow=${config.workflowFile} cadence=${config.defaultCadenceMinutes}m thresholds=${config.thresholds.length} urgencyWindow=${config.urgencyWindowMinutes}m maxBackoff=${config.maxBackoffMinutes}m`);
+    return json({ ok: true, repo: config.repo });
 }
 
 
-// ── POST /reset — Clear dispatch failures and backoff lock ──────
-async function handlePostReset(env: Env): Promise<Response> {
-    await Promise.all([
-        env.SENTINEL_KV.delete("dispatch_failures"),
-        env.SENTINEL_KV.delete("dispatch_lock"),
+// ── POST /reset — Clear failures + optionally push state ────────
+//    Body is optional.  If provided, treated as a state push too
+//    (combined reset + sync in one call = 1 fewer round-trip).
+async function handlePostReset(request: Request, env: Env): Promise<Response> {
+    // Clear failures and lock
+    const [f, l] = await Promise.all([
+        kvDelete(env.SENTINEL_KV, "dispatch_failures"),
+        kvDelete(env.SENTINEL_KV, "dispatch_lock"),
     ]);
 
-    console.log("[reset] ✅ Dispatch failures and lock cleared");
-    return json({ ok: true, message: "Dispatch failures and backoff cleared" });
+    let stateResult: string | null = null;
+
+    // Optionally accept a state payload in the same call
+    try {
+        const body = await request.text();
+        if (body && body.trim().length > 0) {
+            const state = JSON.parse(body) as SentinelState;
+            if (state.lastTickAt && state.deadline && state.stage) {
+                const ok = await kvPut(env.SENTINEL_KV, "state", JSON.stringify(state));
+                stateResult = ok ? state.stage : "kv_failed";
+                console.log(`[reset] State also updated → stage=${state.stage}`);
+            }
+        }
+    } catch {
+        // Body was empty or not valid JSON — that's fine, reset-only mode
+    }
+
+    console.log(`[reset] ✅ Dispatch failures and lock cleared (failures=${f}, lock=${l})`);
+    return json({
+        ok: true,
+        message: "Dispatch failures and backoff cleared",
+        stateUpdated: stateResult,
+    });
 }
 
 
@@ -173,16 +252,31 @@ async function handleStatus(env: Env): Promise<Response> {
     const lastDecision: DecisionLog | null = decisionRaw ? JSON.parse(decisionRaw) : null;
     const dispatchFailures = failCountRaw ? parseInt(failCountRaw, 10) : 0;
 
-    console.log(`[status] configured=${!!config} hasState=${!!state} hasSignal=${!!signal} hasDecision=${!!lastDecision} hasLock=${!!dispatchLock} failures=${dispatchFailures}`);
+    // Stale state detection: if lastTickAt is >2× cadence old, the engine is unhealthy
+    const now = new Date();
+    let staleMinutes: number | null = null;
+    let engineHealthy = true;
+    if (state && config) {
+        staleMinutes = Math.round((now.getTime() - new Date(state.lastTickAt).getTime()) / 60_000);
+        // If no tick in 2× cadence period, flag as stale
+        if (staleMinutes > config.defaultCadenceMinutes * 2) {
+            engineHealthy = false;
+        }
+    }
+
+    console.log(`[status] configured=${!!config} hasState=${!!state} hasSignal=${!!signal} hasDecision=${!!lastDecision} hasLock=${!!dispatchLock} failures=${dispatchFailures} stale=${staleMinutes}m engineHealthy=${engineHealthy}`);
 
     return json({
-        healthy: dispatchFailures === 0,
+        healthy: dispatchFailures === 0 && engineHealthy,
         configured: !!config,
         // State summary
         lastTickAt: state?.lastTickAt ?? null,
         stage: state?.stage ?? null,
         deadline: state?.deadline ?? null,
         stateChanged: state?.stateChanged ?? null,
+        // Engine health
+        engineHealthy,
+        staleMinutes,
         // Decision info
         lastDecision: lastDecision ? {
             at: lastDecision.at,
@@ -250,9 +344,10 @@ async function handleScheduled(env: Env): Promise<void> {
 
     // Read previous decision BEFORE computing new one — needed for:
     //   1. Bootstrap loop prevention (don't re-dispatch if already bootstrapped)
-    //   2. KV write optimization (skip PUT if reason unchanged)
+    //   2. KV write optimization (skip PUT if reason category unchanged)
     const prevDecisionRaw = await env.SENTINEL_KV.get("last_decision");
-    const prevReason = prevDecisionRaw ? (JSON.parse(prevDecisionRaw) as DecisionLog).reason : null;
+    const prevDecision = prevDecisionRaw ? JSON.parse(prevDecisionRaw) as DecisionLog : null;
+    const prevReason = prevDecision?.reason ?? null;
 
     const decision = shouldDispatch(state, signal, config, now, dispatchLock, prevReason);
 
@@ -265,8 +360,18 @@ async function handleScheduled(env: Env): Promise<void> {
         signal,
         nextDueAt: computeNextDueAt(state, config),
     };
-    if (decision.dispatch || decision.reason !== prevReason) {
-        await env.SENTINEL_KV.put("last_decision", JSON.stringify(decisionLog));
+
+    // Only write to KV when the reason *category* changes (not dynamic values).
+    // e.g. "backoff:2m/5m" and "backoff:3m/5m" are the same category "backoff".
+    // This prevents 1,440 writes/day from backoff reason changes alone,
+    // which exceeds the Cloudflare free-tier limit of 1,000 writes/day.
+    const prevCategory = prevReason ? reasonCategory(prevReason) : null;
+    const newCategory = reasonCategory(decision.reason);
+    const categoryChanged = newCategory !== prevCategory;
+    const dispatchChanged = decision.dispatch !== (prevDecision?.dispatch ?? false);
+
+    if (decision.dispatch || categoryChanged || dispatchChanged) {
+        await kvPut(env.SENTINEL_KV, "last_decision", JSON.stringify(decisionLog));
     }
 
     if (decision.dispatch) {
@@ -288,18 +393,34 @@ async function handleScheduled(env: Env): Promise<void> {
 
     // Acquire lock (TTL = backoff window so the key survives until next dispatch is allowed)
     const lockTtlSeconds = Math.max(config.maxBackoffMinutes * 60, 120);
-    await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: lockTtlSeconds });
+    await kvPut(env.SENTINEL_KV, "dispatch_lock", now.toISOString(), { expirationTtl: lockTtlSeconds });
     console.log(`[cron] Lock acquired (TTL=${lockTtlSeconds}s), dispatching to ${config.repo}/${config.workflowFile}...`);
 
-    const success = await dispatchWorkflow(config, env.GITHUB_TOKEN, decision.reason);
+    let success = await dispatchWorkflow(config, env.GITHUB_TOKEN, decision.reason);
+
+    // ── Mirror failover: if primary dispatch fails and mirrorRepo is configured,
+    //    try dispatching to the mirror repo with its own token.
+    if (!success && config.mirrorRepo) {
+        const mirrorToken = env.GITHUB_MIRROR_TOKEN;
+        if (!mirrorToken) {
+            console.warn(`[cron] Mirror configured (${config.mirrorRepo}) but GITHUB_MIRROR_TOKEN not set — skipping failover`);
+        } else {
+            console.warn(`[cron] Primary dispatch failed — trying mirror: ${config.mirrorRepo}`);
+            const mirrorConfig = { ...config, repo: config.mirrorRepo };
+            success = await dispatchWorkflow(mirrorConfig, mirrorToken, `mirror:${decision.reason}`);
+            if (success) {
+                console.log(`[cron] ✅ Mirror dispatch succeeded — workflow triggered on ${config.mirrorRepo}`);
+            }
+        }
+    }
 
     if (success) {
         console.log(`[cron] ✅ Dispatch succeeded — workflow triggered on ${config.repo}`);
-        // Clear failure counter on success
-        await env.SENTINEL_KV.delete("dispatch_failures");
+        // Clear failure counter on success (use kvDelete for safety)
+        await kvDelete(env.SENTINEL_KV, "dispatch_failures");
         // Clear the consumed signal
         if (signal) {
-            await env.SENTINEL_KV.delete("signal");
+            await kvDelete(env.SENTINEL_KV, "signal");
             console.log(`[cron] Signal consumed and cleared: type=${signal.type}`);
         }
     } else {
@@ -310,8 +431,8 @@ async function handleScheduled(env: Env): Promise<void> {
         // Exponential backoff: 5m, 10m, 20m, 40m, capped at 60m
         const extendedBackoffMin = Math.min(config.maxBackoffMinutes * Math.pow(2, failCount - 1), 60);
         const extendedTtl = Math.max(extendedBackoffMin * 60, lockTtlSeconds);
-        await env.SENTINEL_KV.put("dispatch_lock", now.toISOString(), { expirationTtl: extendedTtl });
-        await env.SENTINEL_KV.put("dispatch_failures", String(failCount));
+        await kvPut(env.SENTINEL_KV, "dispatch_lock", now.toISOString(), { expirationTtl: extendedTtl });
+        await kvPut(env.SENTINEL_KV, "dispatch_failures", String(failCount));
         console.error(`[cron] ❌ Dispatch FAILED (attempt #${failCount}) — backoff extended to ${extendedBackoffMin}m`);
     }
 }

@@ -19,6 +19,7 @@ id = "c74bb851edb84a84a587008d8ac6ce60"
 GITHUB_REPO = "cyberpunk042/continuity-orchestrator"
 ENVIRONMENT = "production"
 
-# ─── Secrets (set via wrangler secret put) ────────────────────────
-# SENTINEL_TOKEN   — Bearer token for authenticating engine POST calls
-# GITHUB_TOKEN     — Fine-grained PAT with actions:write scope
+# ─── Secrets (set via wrangler secret put) ────────────────────
+# SENTINEL_TOKEN       — Bearer token for authenticating engine POST calls
+# GITHUB_TOKEN         — Fine-grained PAT with actions:write scope (primary repo)
+# GITHUB_MIRROR_TOKEN  — Fine-grained PAT with actions:write scope (mirror repo)

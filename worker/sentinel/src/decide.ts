@@ -5,7 +5,14 @@
  * signals, the config, and the current time, and returns a boolean + reason.
  *
  * Design: every rule is checked top-to-bottom.  First match wins.
- * The order encodes priority: signals > urgency > overdue > cadence > idle.
+ * The order encodes priority:
+ *   signals > debounce > terminal > bootstrap > overdue > threshold > cadence > idle
+ *
+ * Key design decisions:
+ *   - Signals BYPASS backoff — a user renewal must be processed immediately
+ *   - Terminal FULL blocks cadence dispatch but NOT signal processing
+ *   - Stale engine (no tick in 2× cadence) triggers aggressive dispatch
+ *   - Overdue dispatch respects backoff to avoid spamming Actions minutes
  */
 
 import type { Decision, SentinelConfig, SentinelState, Signal } from "./types";
@@ -29,12 +36,19 @@ export function shouldDispatch(
     prevReason: string | null = null,
 ): Decision {
 
-    // ── 0. Terminal state: FULL = nothing further to do ────────────
-    if (state?.stage === "FULL") {
-        return { dispatch: false, reason: "terminal:FULL" };
+    // ── 0. Fresh signal ALWAYS dispatches (bypasses backoff) ──────
+    //    A user renewal/release/urgent signal is time-critical.
+    //    The user is actively waiting — don't make them wait for backoff.
+    if (signal && state && signal.at > state.lastTickAt) {
+        return { dispatch: true, reason: `signal:${signal.type}` };
+    }
+    // Signal without state: also dispatch to process it
+    if (signal && !state) {
+        return { dispatch: true, reason: `signal:${signal.type}` };
     }
 
     // ── 1. Debounce: don't dispatch if we just did ────────────────
+    //    (This is checked AFTER signals — signals bypass backoff)
     if (lastDispatchAt) {
         const sinceLast = (now.getTime() - new Date(lastDispatchAt).getTime()) / 60_000;
         if (sinceLast < config.maxBackoffMinutes) {
@@ -42,7 +56,13 @@ export function shouldDispatch(
         }
     }
 
-    // ── 2. Bootstrap: no state received yet ─────────────────────────
+    // ── 2. Terminal state: FULL = nothing further to do ────────────
+    //    Checked AFTER signals so a renewal at FULL can still be processed.
+    if (state?.stage === "FULL") {
+        return { dispatch: false, reason: "terminal:FULL" };
+    }
+
+    // ── 3. Bootstrap: no state received yet ─────────────────────────
     //    Dispatch ONCE to kick-start the engine.  If we already dispatched
     //    for "bootstrap" (even if the lock expired), don't keep spamming —
     //    the engine needs to push state after a successful tick.
@@ -53,12 +73,17 @@ export function shouldDispatch(
         return { dispatch: true, reason: "bootstrap" };
     }
 
-    // ── 3. Fresh signal (renewal, release, urgent) ────────────────
-    if (signal && signal.at > state.lastTickAt) {
-        return { dispatch: true, reason: `signal:${signal.type}` };
+    // ── 4. Stale engine: no tick in 2× cadence period ────────────
+    //    If the engine hasn't reported in a long time, something is wrong.
+    //    Dispatch to try to revive it. This acts as a "heartbeat" check.
+    const lastTick = new Date(state.lastTickAt);
+    const minutesSinceLastTick = (now.getTime() - lastTick.getTime()) / 60_000;
+    const staleCutoff = config.defaultCadenceMinutes * 2;
+    if (minutesSinceLastTick >= staleCutoff) {
+        return { dispatch: true, reason: `stale:${Math.round(minutesSinceLastTick)}m` };
     }
 
-    // ── 4. Overdue: deadline has passed, engine hasn't caught up ──
+    // ── 5. Overdue: deadline has passed, engine hasn't caught up ──
     const deadline = new Date(state.deadline);
     const minutesToDeadline = (deadline.getTime() - now.getTime()) / 60_000;
 
@@ -66,7 +91,7 @@ export function shouldDispatch(
         return { dispatch: true, reason: "overdue" };
     }
 
-    // ── 5. Stage threshold approaching ────────────────────────────
+    // ── 6. Stage threshold approaching ────────────────────────────
     //    Check if we're within urgencyWindow of a threshold that
     //    hasn't been reached yet.  Thresholds should be sorted
     //    descending by minutesBefore (earliest stage first).
@@ -77,14 +102,12 @@ export function shouldDispatch(
         }
     }
 
-    // ── 6. Normal cadence ─────────────────────────────────────────
-    const lastTick = new Date(state.lastTickAt);
-    const minutesSinceLastTick = (now.getTime() - lastTick.getTime()) / 60_000;
+    // ── 7. Normal cadence ─────────────────────────────────────────
     if (minutesSinceLastTick >= config.defaultCadenceMinutes) {
         return { dispatch: true, reason: "cadence" };
     }
 
-    // ── 7. Idle ───────────────────────────────────────────────────
+    // ── 8. Idle ───────────────────────────────────────────────────
     return { dispatch: false, reason: "idle" };
 }
 

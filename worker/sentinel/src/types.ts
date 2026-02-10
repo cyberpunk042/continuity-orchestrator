@@ -77,5 +77,7 @@ export interface Env {
     SENTINEL_KV: KVNamespace;
     SENTINEL_TOKEN: string;
     GITHUB_TOKEN: string;
+    /** PAT for the mirror repo — separate repo, separate token */
+    GITHUB_MIRROR_TOKEN: string;
     ENVIRONMENT: string;
 }

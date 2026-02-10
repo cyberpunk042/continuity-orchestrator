@@ -365,6 +365,68 @@ echo "$DISPATCH_TOKEN" | wrangler secret put GITHUB_TOKEN --name continuity-sent
     echo -e "  ${GREEN}✓ GITHUB_TOKEN set${NC}" || \
     echo -e "  ${YELLOW}⚠ GITHUB_TOKEN may already be set (non-fatal)${NC}"
 
+# ── Mirror repo ─────────────────────────────────────────────────
+# Detect mirror remotes (e.g. "mirror-1") — if present, offer failover setup
+MIRROR_REPO=""
+MIRROR_TOKEN=""
+MIRROR_REMOTE_URL=""
+
+if command -v git &>/dev/null && git -C "$PROJECT_ROOT" rev-parse --git-dir &>/dev/null; then
+    # Look for remotes named mirror-*, failover-*, backup-*
+    for remote in $(git -C "$PROJECT_ROOT" remote 2>/dev/null | grep -E '^(mirror|failover|backup)' || true); do
+        MIRROR_REMOTE_URL=$(git -C "$PROJECT_ROOT" remote get-url "$remote" 2>/dev/null || true)
+        if [[ -n "$MIRROR_REMOTE_URL" ]]; then
+            MIRROR_REPO=$(echo "$MIRROR_REMOTE_URL" | sed -E 's#.*github\.com[:/]##' | sed 's/\.git$//')
+            break
+        fi
+    done
+fi
+
+if [[ -n "$MIRROR_REPO" ]]; then
+    echo ""
+    echo -e "  ${GREEN}✓ Mirror repo detected: ${MIRROR_REPO}${NC}"
+    echo -e "  ${DIM}If primary dispatch fails, the sentinel can fallback to this mirror.${NC}"
+    echo -e "  ${DIM}The mirror repo needs its own GitHub PAT with Actions (write) scope.${NC}"
+
+    # Try to find MIRROR_TRIGGER_TOKEN in .env
+    if [[ -f "$ENV_FILE" ]]; then
+        EXISTING_MIRROR_TOKEN=$(grep '^MIRROR_TRIGGER_TOKEN=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+        if [[ -n "$EXISTING_MIRROR_TOKEN" ]]; then
+            MASKED="${EXISTING_MIRROR_TOKEN:0:7}…${EXISTING_MIRROR_TOKEN: -4}"
+            echo -e "  ${GREEN}✓ Found MIRROR_TRIGGER_TOKEN in .env: ${MASKED}${NC}"
+            if [[ "$SKIP_CONFIRM" == "true" ]]; then
+                MIRROR_TOKEN="$EXISTING_MIRROR_TOKEN"
+            else
+                read -p "  Use this for mirror dispatch? (Y/n): " USE_MIRROR
+                USE_MIRROR="${USE_MIRROR:-Y}"
+                if [[ "$USE_MIRROR" =~ ^[Yy] ]]; then
+                    MIRROR_TOKEN="$EXISTING_MIRROR_TOKEN"
+                fi
+            fi
+        fi
+    fi
+
+    if [[ -z "$MIRROR_TOKEN" ]]; then
+        echo ""
+        echo -e "  ${DIM}Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta${NC}"
+        echo -e "  ${DIM}Scope: repository → ${MIRROR_REPO} → Actions (Read and write)${NC}"
+        echo ""
+        read -sp "  Mirror GitHub PAT (or press Enter to skip mirror failover): " MIRROR_TOKEN
+        echo ""
+    fi
+
+    if [[ -n "$MIRROR_TOKEN" ]]; then
+        echo "$MIRROR_TOKEN" | wrangler secret put GITHUB_MIRROR_TOKEN --name continuity-sentinel 2>/dev/null && \
+            echo -e "  ${GREEN}✓ GITHUB_MIRROR_TOKEN set${NC}" || \
+            echo -e "  ${YELLOW}⚠ GITHUB_MIRROR_TOKEN may already be set (non-fatal)${NC}"
+    else
+        echo -e "  ${DIM}Skipping mirror failover — no token provided.${NC}"
+        MIRROR_REPO=""  # Clear so config payload doesn't include it
+    fi
+else
+    echo -e "  ${DIM}No mirror remote detected — single-repo mode.${NC}"
+fi
+
 # Set GITHUB_REPO as a var in wrangler.toml if not already
 if ! grep -q "GITHUB_REPO" "$WRANGLER_TOML"; then
     sed -i "/^\[vars\]/a GITHUB_REPO = \"${GITHUB_REPO}\"" "$WRANGLER_TOML"
@@ -379,6 +441,9 @@ echo ""
 echo -e "  Worker name:   ${CYAN}continuity-sentinel${NC}"
 echo -e "  KV namespace:  ${CYAN}${KV_ID:0:16}…${NC}"
 echo -e "  Dispatches to: ${CYAN}${GITHUB_REPO}${NC}"
+if [[ -n "$MIRROR_REPO" ]]; then
+    echo -e "  Mirror repo:   ${CYAN}${MIRROR_REPO}${NC} (failover)"
+fi
 echo -e "  Cron schedule: ${CYAN}every 1 minute${NC}"
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -536,9 +601,15 @@ else
     echo -e "  ${YELLOW}⚠ Cannot read policy/rules.yaml — config will have no thresholds${NC}"
 fi
 
+# Build optional mirrorRepo field
+MIRROR_FIELD=""
+if [[ -n "$MIRROR_REPO" ]]; then
+    MIRROR_FIELD=",\"mirrorRepo\": \"${MIRROR_REPO}\""
+fi
+
 CONFIG_PAYLOAD=$(cat <<ENDJSON
 {
-  "repo": "${GITHUB_REPO}",
+  "repo": "${GITHUB_REPO}"${MIRROR_FIELD},
   "workflowFile": "cron.yml",
   "defaultCadenceMinutes": 15,
   "urgencyWindowMinutes": 10,

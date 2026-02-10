@@ -157,31 +157,59 @@
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
 
-                // Status badge — show failures prominently
-                if (data.configured && data.dispatchHealthy) {
+                // Status badge — show failures and stale state prominently
+                if (data.configured && data.dispatchHealthy && data.engineHealthy !== false) {
                     statusEl.innerHTML = `<span style="color: var(--accent);">🟢 Live</span>
                         <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">every 60s via Cloudflare</span>`;
                 } else if (data.configured && !data.dispatchHealthy) {
                     statusEl.innerHTML = `<span style="color: var(--danger);">⚠ ${data.dispatchFailures} failures</span>
                         <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">dispatching paused (backoff)</span>`;
+                } else if (data.configured && data.engineHealthy === false) {
+                    statusEl.innerHTML = `<span style="color: var(--warning);">🟡 Stale</span>
+                        <span style="font-size: 0.78rem; color: var(--text-dim); margin-left: 0.5rem;">engine hasn't reported in ${data.staleMinutes || '?'}m</span>`;
                 } else {
                     statusEl.innerHTML = `<span style="color: var(--warning);">🟡 Deployed but not configured</span>`;
                 }
 
-                // Details: last decision, next due, failure alert, links
+                // Details: stage, last decision, next due, failure alert, actions, links
                 if (detailsEl && data.configured) {
                     let rows = '';
 
-                    // Failure alert with reset button
+                    // Show the Worker's believed stage — critical for spotting mismatches
+                    if (data.stage) {
+                        const stageColors = { OK: 'var(--accent)', REMIND_1: 'var(--warning)', REMIND_2: 'var(--warning)',
+                            PRE_RELEASE: 'var(--danger)', PARTIAL: 'var(--danger)', FULL: 'var(--danger)' };
+                        const stageColor = stageColors[data.stage] || 'var(--text-dim)';
+                        rows += `
+                            <div class="status-row">
+                                <span class="status-label">Worker stage</span>
+                                <span class="status-value" style="color: ${stageColor}; font-weight: 600;">${data.stage}</span>
+                            </div>`;
+                    }
+
+                    // Stale state warning
+                    if (data.engineHealthy === false && data.staleMinutes != null) {
+                        rows += `
+                            <div class="alert warning" style="margin: 0.4rem 0; padding: 0.5rem 0.75rem; font-size: 0.82rem;">
+                                <strong>⏰ Engine stale</strong> — last tick was ${data.staleMinutes}m ago.
+                                The engine may have stopped running. Push current state to resync.
+                            </div>`;
+                    }
+
+                    // Failure alert with reset + push-state buttons
                     if (data.dispatchFailures > 0) {
                         rows += `
                             <div class="alert warning" style="margin: 0.4rem 0; padding: 0.5rem 0.75rem; font-size: 0.82rem;">
                                 <strong>🚨 Dispatch failing</strong> — ${data.dispatchFailures} consecutive dispatch failures
                                 — GitHub Actions may be disabled or the token may have expired.
-                                <div style="margin-top: 0.4rem;">
+                                <div style="margin-top: 0.4rem; display: flex; gap: 0.4rem; flex-wrap: wrap;">
                                     <button class="btn primary" onclick="_resetSentinel()" id="btn-sentinel-reset"
                                         style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
                                         🔄 Reset Failures
+                                    </button>
+                                    <button class="btn" onclick="_pushSentinelState()" id="btn-sentinel-push"
+                                        style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
+                                        📤 Push State
                                     </button>
                                 </div>
                             </div>`;
@@ -209,11 +237,18 @@
                             </div>`;
                     }
 
+                    // Action buttons row — always show Push State for manual sync
+                    rows += `
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                            <button class="btn" onclick="_pushSentinelState()" id="btn-sentinel-push-main"
+                                style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
+                                📤 Push State to Worker
+                            </button>`;
+
                     // Cloudflare dashboard links
                     const workerName = 'continuity-sentinel';
                     const cfBase = `https://dash.cloudflare.com`;
                     rows += `
-                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
                             <a href="${cfBase}/?to=/:account/workers/services/view/${workerName}/production/observability/events"
                                 target="_blank" class="btn" style="font-size: 0.78rem; padding: 0.25rem 0.6rem; text-decoration: none;">
                                 📊 Events
@@ -227,6 +262,9 @@
                                 🔍 Status API
                             </a>
                         </div>`;
+
+                    // Status feedback area
+                    rows += `<div id="sentinel-action-status" style="margin-top: 0.3rem; font-size: 0.82rem;"></div>`;
 
                     detailsEl.innerHTML = rows;
                 }
@@ -248,15 +286,45 @@
                 const data = await resp.json();
 
                 if (data.success) {
+                    // Also push current state so the Worker isn't stuck with stale stage
+                    await _pushSentinelState(true);
                     // Refresh the deploy status card
                     setTimeout(loadDeployStatus, 1500);
                 } else {
-                    const statusDiv = document.getElementById('deploy-action-status');
+                    const statusDiv = document.getElementById('sentinel-action-status') || document.getElementById('deploy-action-status');
                     if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Reset failed: ${data.error}</span>`;
                 }
             } catch (e) {
-                const statusDiv = document.getElementById('deploy-action-status');
+                const statusDiv = document.getElementById('sentinel-action-status') || document.getElementById('deploy-action-status');
                 if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            }
+        }
+
+        async function _pushSentinelState(silent = false) {
+            const btn = document.getElementById('btn-sentinel-push') || document.getElementById('btn-sentinel-push-main');
+            const statusDiv = document.getElementById('sentinel-action-status');
+            if (btn) btn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/sentinel/push-state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    if (!silent && statusDiv) {
+                        statusDiv.innerHTML = `<span style="color: var(--accent);">✅ State pushed — Worker now at stage: ${data.pushed.stage}</span>`;
+                    }
+                    // Refresh after a beat
+                    setTimeout(loadDeployStatus, 1500);
+                } else {
+                    if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ Push failed: ${data.error}</span>`;
+                }
+            } catch (e) {
+                if (statusDiv) statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${e.message}</span>`;
+            } finally {
+                if (btn) btn.disabled = false;
             }
         }
 
