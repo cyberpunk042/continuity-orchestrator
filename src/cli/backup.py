@@ -48,6 +48,7 @@ def create_backup_archive(
     include_articles: bool = False,
     include_media: bool = False,
     include_policy: bool = False,
+    include_templates: bool = False,
     decrypt_content: bool = False,
     trigger: str = "manual_export",
 ) -> Tuple[Path, dict]:
@@ -76,11 +77,23 @@ def create_backup_archive(
     # Gather stats
     articles_dir = root / "content" / "articles"
     media_dir = root / "content" / "media"
+    templates_dir = root / "templates"
 
     articles_enc, articles_plain = _count_article_encryption(articles_dir)
     article_files = list(articles_dir.glob("*.json")) if articles_dir.exists() else []
     media_files = list(media_dir.glob("*.enc")) if media_dir.exists() else []
     media_bytes = sum(f.stat().st_size for f in media_files)
+
+    # Gather template files (exclude html/css build dirs)
+    template_files: list = []
+    _excluded_tpl_dirs = {"html", "css"}
+    if include_templates and templates_dir.exists():
+        for f in sorted(templates_dir.rglob("*")):
+            if f.is_file() and f.suffix in {".md", ".txt", ".enc"} and not any(
+                p.name in _excluded_tpl_dirs
+                for p in f.relative_to(templates_dir).parents
+            ):
+                template_files.append(f)
 
     project_name = os.environ.get("PROJECT_NAME", "unknown")
 
@@ -116,6 +129,7 @@ def create_backup_archive(
             "audit": include_audit,
             "content_articles": include_articles,
             "content_media": include_media,
+            "content_templates": include_templates,
             "policy": include_policy,
         },
         "stats": {
@@ -124,6 +138,7 @@ def create_backup_archive(
             "articles_plaintext": final_plain_count if include_articles else 0,
             "media_count": len(media_files) if include_media else 0,
             "media_bytes": media_bytes if include_media else 0,
+            "template_count": len(template_files) if include_templates else 0,
         },
         "encryption_notice": (
             "This archive contains decrypted (plaintext) content. "
@@ -223,6 +238,12 @@ def create_backup_archive(
                         arcname = f"policy/{f.relative_to(policy_dir)}"
                         tar.add(str(f), arcname=arcname)
 
+        # Templates
+        if include_templates:
+            for f in template_files:
+                arcname = f"templates/{f.relative_to(templates_dir)}"
+                tar.add(str(f), arcname=arcname)
+
     return archive_path, manifest
 
 
@@ -266,7 +287,7 @@ def restore_from_archive(
     Restore (OVERRIDE) files from an archive.
 
     State and audit are replaced entirely.
-    Content articles and media are replaced entirely.
+    Content articles, media, and templates are replaced entirely.
 
     Returns {"restored": [...], "skipped": [...]}.
     """
@@ -291,6 +312,8 @@ def restore_from_archive(
             elif member.name.startswith("audit/") and restore_audit:
                 should_restore = True
             elif member.name.startswith("content/") and restore_content:
+                should_restore = True
+            elif member.name.startswith("templates/") and restore_content:
                 should_restore = True
             elif member.name.startswith("policy/") and restore_policy:
                 should_restore = True
@@ -321,13 +344,14 @@ def import_from_archive(
     """
     Import (ADDITIVE) content from an archive.
 
-    Only content articles and media are imported.
+    Only content articles, media, and templates are imported.
     Existing articles (by slug) are skipped.
     Existing media (by id) are skipped.
+    Existing templates (by path) are skipped.
     State and audit are never imported (use restore for that).
 
     Handles both encrypted and decrypted archives:
-    - Encrypted archives: .enc media files imported as-is
+    - Encrypted archives: .enc media/template files imported as-is
     - Decrypted archives: plaintext media re-encrypted with local key,
       articles re-encrypted if local instance has encryption configured
 
@@ -363,6 +387,7 @@ def import_from_archive(
     with tarfile.open(archive_path, "r:gz") as tar:
         archive_articles = {}
         archive_media = {}
+        archive_templates = {}
         archive_content_manifest = None
         archive_media_manifest = None
 
@@ -379,6 +404,8 @@ def import_from_archive(
                 media_id = Path(member.name).stem
                 if member.isfile():
                     archive_media[media_id] = member
+            elif member.name.startswith("templates/") and member.isfile():
+                archive_templates[member.name] = member
             elif member.name == "content/manifest.yaml":
                 archive_content_manifest = member
             elif member.name == "content/media/manifest.json":
@@ -429,6 +456,19 @@ def import_from_archive(
                             # Store as-is — operator will need to handle manually
                     dest.write_bytes(content)
                     imported.append(f"media:{media_id}")
+
+        # Import templates that don't exist locally
+        for name, member in sorted(archive_templates.items()):
+            # name is e.g. "templates/operator/reminder_basic.md"
+            dest = root / name
+            if dest.exists():
+                skipped.append(f"template:{name} (already exists)")
+            else:
+                src = tar.extractfile(member)
+                if src:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read())
+                    imported.append(f"template:{name}")
 
         # Merge content manifest (add article entries that don't exist)
         if archive_content_manifest and imported:
@@ -515,6 +555,7 @@ def _merge_media_manifest(root, tar, manifest_member, imported_media):
 @click.option("--include-audit/--no-audit", default=True, help="Include audit log")
 @click.option("--include-articles", is_flag=True, help="Include content articles")
 @click.option("--include-media", is_flag=True, help="Include encrypted media files")
+@click.option("--include-templates", is_flag=True, help="Include message templates")
 @click.pass_context
 def backup_export(
     ctx: click.Context,
@@ -522,11 +563,12 @@ def backup_export(
     include_audit: bool,
     include_articles: bool,
     include_media: bool,
+    include_templates: bool,
 ) -> None:
     """Export a backup archive (.tar.gz) to backups/."""
     root = ctx.obj["root"]
 
-    if not any([include_state, include_audit, include_articles, include_media]):
+    if not any([include_state, include_audit, include_articles, include_media, include_templates]):
         raise click.ClickException("Nothing to export. Specify at least one --include flag.")
 
     if include_media and not include_articles:
@@ -539,6 +581,7 @@ def backup_export(
         include_audit=include_audit,
         include_articles=include_articles,
         include_media=include_media,
+        include_templates=include_templates,
         trigger="cli_export",
     )
 
@@ -561,8 +604,11 @@ def backup_export(
         s = manifest["stats"]
         click.echo(f"    • Media ({s['media_count']} files, "
                    f"{s['media_bytes'] / 1024:.0f} KB)")
+    if include_templates:
+        s = manifest["stats"]
+        click.echo(f"    • Templates ({s['template_count']} files)")
 
-    if include_articles or include_media:
+    if include_articles or include_media or include_templates:
         click.secho(
             "\n  ⚠️  Encrypted content requires your CONTENT_ENCRYPTION_KEY.",
             fg="yellow",
@@ -646,10 +692,12 @@ def backup_import(
         raise click.ClickException("Invalid archive: no backup_manifest.json found.")
 
     includes = manifest.get("includes", {})
-    if not includes.get("content_articles") and not includes.get("content_media"):
+    if (not includes.get("content_articles")
+            and not includes.get("content_media")
+            and not includes.get("content_templates")):
         raise click.ClickException(
             "This archive has no content to import. "
-            "Import only works with content (articles/media). "
+            "Import only works with content (articles/media/templates). "
             "Use 'backup-restore' for state/audit."
         )
 
@@ -663,6 +711,8 @@ def backup_import(
     if stats.get("media_count"):
         click.echo(f"   Media: {stats['media_count']} files "
                    f"({stats.get('media_bytes', 0) / 1024:.0f} KB)")
+    if stats.get("template_count"):
+        click.echo(f"   Templates: {stats['template_count']} files")
 
     if not yes:
         click.echo("\n  Import adds new items without removing existing ones.")

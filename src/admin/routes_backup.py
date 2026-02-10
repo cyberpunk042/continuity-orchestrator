@@ -58,6 +58,7 @@ def api_export():
         include_articles=data.get("include_articles", False),
         include_media=data.get("include_media", False),
         include_policy=data.get("include_policy", False),
+        include_templates=data.get("include_templates", False),
         decrypt_content=data.get("decrypt_content", False),
         trigger="admin_export",
     )
@@ -250,10 +251,12 @@ def api_import():
         return jsonify({"error": "Invalid archive"}), 400
 
     includes = manifest.get("includes", {})
-    if not includes.get("content_articles") and not includes.get("content_media"):
+    if (not includes.get("content_articles")
+            and not includes.get("content_media")
+            and not includes.get("content_templates")):
         return jsonify({
             "error": "This archive has no content to import. "
-                     "Import only works with content (articles/media). "
+                     "Import only works with content (articles/media/templates). "
                      "Use restore for state/audit."
         }), 400
 

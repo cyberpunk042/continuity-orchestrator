@@ -684,16 +684,29 @@ def api_keygen():
 
 @content_bp.route("/stats", methods=["GET"])
 def api_content_stats():
-    """Return article and media counts for the factory reset modal."""
+    """Return article, media, and template counts for the factory reset / backup modals."""
     import shutil
     import subprocess
 
+    project_root = _project_root()
     articles_dir = _articles_dir()
-    media_dir = _project_root() / "content" / "media"
+    media_dir = project_root / "content" / "media"
+    templates_dir = project_root / "templates"
 
     articles = list(articles_dir.glob("*.json")) if articles_dir.exists() else []
     media_files = list(media_dir.glob("*.enc")) if media_dir.exists() else []
     media_bytes = sum(f.stat().st_size for f in media_files)
+
+    # Template stats (exclude html/css build dirs)
+    template_files = []
+    _excluded_tpl_dirs = {"html", "css"}
+    if templates_dir.exists():
+        for f in templates_dir.rglob("*"):
+            if f.is_file() and f.suffix in {".md", ".txt", ".enc"} and not any(
+                p.name in _excluded_tpl_dirs
+                for p in f.relative_to(templates_dir).parents
+            ):
+                template_files.append(str(f.relative_to(templates_dir)))
 
     # Count distinct media files ever committed to git history
     # (files with extensions like .enc, .jpg, .png — not directories or commits)
@@ -705,7 +718,7 @@ def api_content_stats():
              "content/media/*.jpg", "content/media/*.png",
              "content/media/*.mp4", "content/media/*.webm",
              "content/media/*.mp3", "content/media/*.pdf"],
-            cwd=str(_project_root()),
+            cwd=str(project_root),
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
@@ -721,6 +734,8 @@ def api_content_stats():
         "article_slugs": [f.stem for f in sorted(articles)],
         "media_count": len(media_files),
         "media_bytes": media_bytes,
+        "template_count": len(template_files),
+        "template_files": sorted(template_files),
         "git_media_objects": git_media_objects,
         "filter_repo_available": shutil.which("git-filter-repo") is not None,
     })

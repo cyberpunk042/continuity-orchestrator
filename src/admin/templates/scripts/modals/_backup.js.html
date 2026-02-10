@@ -12,6 +12,7 @@
             document.getElementById('bk-export-articles').checked = false;
             document.getElementById('bk-export-media').checked = false;
             document.getElementById('bk-export-policy').checked = false;
+            document.getElementById('bk-export-templates').checked = false;
             document.getElementById('bk-import-file').value = '';
             document.getElementById('bk-import-filename').textContent = 'No file selected';
             document.getElementById('bk-import-preview').style.display = 'none';
@@ -34,9 +35,12 @@
                 const mediaKB = (s.media_bytes / 1024).toFixed(0);
                 document.getElementById('bk-export-media-info').innerHTML =
                     `${s.media_count} file(s) (${mediaKB} KB) — all encrypted`;
+                document.getElementById('bk-export-templates-info').innerHTML =
+                    `${s.template_count} file(s) — ${s.template_files.join(', ') || 'none'}`;
             } catch (e) {
                 document.getElementById('bk-export-articles-info').innerHTML = '?';
                 document.getElementById('bk-export-media-info').innerHTML = '?';
+                document.getElementById('bk-export-templates-info').innerHTML = '?';
             }
 
             // Load backup list
@@ -89,8 +93,9 @@
             const includeArticles = document.getElementById('bk-export-articles').checked;
             const includeMedia = document.getElementById('bk-export-media').checked;
             const includePolicy = document.getElementById('bk-export-policy').checked;
+            const includeTemplates = document.getElementById('bk-export-templates').checked;
 
-            if (!includeState && !includeAudit && !includeArticles && !includeMedia && !includePolicy) {
+            if (!includeState && !includeAudit && !includeArticles && !includeMedia && !includePolicy && !includeTemplates) {
                 alert('Select at least one item to export.');
                 return;
             }
@@ -109,6 +114,7 @@
                         include_articles: includeArticles,
                         include_media: includeMedia,
                         include_policy: includePolicy,
+                        include_templates: includeTemplates,
                         decrypt_content: (includeArticles || includeMedia)
                             ? document.querySelector('input[name="bk-encrypt-mode"]:checked')?.value === 'decrypted'
                             : false,
@@ -181,16 +187,17 @@
                 if (inc.policy) parts.push('policy');
                 if (inc.content_articles) parts.push(`${stats.article_count} articles`);
                 if (inc.content_media) parts.push(`${stats.media_count} media`);
+                if (inc.content_templates) parts.push(`${stats.template_count} templates`);
                 html += parts.join(' + ') + '<br>';
 
-                if (inc.content_articles || inc.content_media) {
+                if (inc.content_articles || inc.content_media || inc.content_templates) {
                     html += `<span style="color: var(--warning);">⚠️ Encrypted content requires CONTENT_ENCRYPTION_KEY</span>`;
                 }
 
                 document.getElementById('bk-import-preview').innerHTML = html;
 
                 // Show import action if archive has content
-                if (inc.content_articles || inc.content_media) {
+                if (inc.content_articles || inc.content_media || inc.content_templates) {
                     document.getElementById('bk-import-actions').style.display = 'block';
                 } else {
                     document.getElementById('bk-import-preview').innerHTML += `<br><em>This archive has no content to import. Use Restore from Local Backups below.</em>`;
@@ -292,6 +299,7 @@
                     if (inc.policy) parts.push('policy');
                     if (inc.content_articles) parts.push(`${stats.article_count} articles`);
                     if (inc.content_media) parts.push(`${stats.media_count} media`);
+                    if (inc.content_templates) parts.push(`${stats.template_count} templates`);
                     const scope = parts.join(' + ') || '?';
                     const trigger = m.trigger || '?';
                     const created = m.created_at ? new Date(m.created_at).toLocaleString() : '?';

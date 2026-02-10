@@ -21,10 +21,10 @@ import click
 @click.option("--full", is_flag=True, help="Full factory reset (new state + clear audit)")
 @click.option("--backup/--no-backup", default=True, help="Backup existing state before reset")
 @click.option("--hours", default=48, type=int, help="Initial deadline hours for full reset")
-@click.option("--include-content", is_flag=True, help="Also wipe all articles and media (requires --full)")
+@click.option("--include-content", is_flag=True, help="Also wipe all articles, media, and templates (requires --full)")
 @click.option("--purge-history", is_flag=True, help="Purge media from git history (requires --include-content)")
 @click.option("--decrypt-content", is_flag=True, help="Decrypt content in backup (requires --backup + --include-content)")
-@click.option("--scaffold/--no-scaffold", default=True, help="Regenerate default articles after content wipe")
+@click.option("--scaffold/--no-scaffold", default=True, help="Regenerate default articles and templates after content wipe")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def reset(
@@ -43,7 +43,7 @@ def reset(
 
     Without --full: Just resets escalation state to OK.
     With --full: Creates fresh state and clears audit log.
-    With --full --include-content: Also wipes all articles and media.
+    With --full --include-content: Also wipes all articles, media, and templates.
     With --full --include-content --purge-history: Also purges media from git history.
     """
     import json
@@ -69,7 +69,7 @@ def reset(
         click.echo("  - Create fresh state with new deadline")
         click.echo("  - Clear the audit log")
         if include_content:
-            click.echo("  - Delete all articles and media")
+            click.echo("  - Delete all articles, media, and templates")
             click.echo("  - Reset content manifests")
         if purge_history:
             click.echo("  - Purge media from git history (rewrites commits)")
@@ -91,6 +91,7 @@ def reset(
             include_audit=full and audit_path.exists(),
             include_articles=include_content,
             include_media=include_content,
+            include_templates=include_content,
             include_policy=True,
             decrypt_content=decrypt_content and include_content,
             trigger="factory_reset",
@@ -226,6 +227,20 @@ def reset(
 
             click.secho("  ✅ Content wiped", fg="green")
 
+            # Wipe message templates
+            templates_dir = root / "templates"
+            deleted_templates = 0
+            _excluded_tpl_dirs = {"html", "css"}
+            if templates_dir.exists():
+                for f in templates_dir.rglob("*"):
+                    if f.is_file() and f.suffix in {".md", ".txt", ".enc"} and not any(
+                        p.name in _excluded_tpl_dirs
+                        for p in f.relative_to(templates_dir).parents
+                    ):
+                        f.unlink()
+                        deleted_templates += 1
+            click.echo(f"    Deleted {deleted_templates} template(s)")
+
             # Regenerate scaffold articles
             if scaffold:
                 from ..content.scaffold import generate_scaffold
@@ -235,6 +250,15 @@ def reset(
                     click.echo(f"    📄 Scaffold: regenerated {', '.join(created)}")
                 else:
                     click.echo("    📄 Scaffold: no articles to create")
+
+                # Regenerate scaffold templates
+                from ..content.template_scaffold import generate_template_scaffold
+                tpl_result = generate_template_scaffold(root)
+                tpl_created = tpl_result["created"]
+                if tpl_created:
+                    click.echo(f"    ✉️ Templates: regenerated {len(tpl_created)} default(s)")
+                else:
+                    click.echo("    ✉️ Templates: no templates to create")
 
         # ── Git history purge ─────────────────────────────────────
         if purge_history:

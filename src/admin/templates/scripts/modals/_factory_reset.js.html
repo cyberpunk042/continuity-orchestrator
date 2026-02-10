@@ -23,6 +23,7 @@
                 document.getElementById('fr-content-stats').innerHTML = `
                     • ${s.article_count} article(s): <em>${s.article_slugs.join(', ') || 'none'}</em><br>
                     • ${s.media_count} media file(s) (${mediaKB} KB)<br>
+                    • ${s.template_count} message template(s)<br>
                     • Manifests will be reset (stage config preserved)
                 `;
                 // Purge info
@@ -73,7 +74,7 @@
 
             // Final confirmation
             const parts = ['• Fresh state with ' + hours + 'h deadline', '• Clear audit log'];
-            if (includeContent) parts.push('• Delete ALL articles and media');
+            if (includeContent) parts.push('• Delete ALL articles, media, and templates');
             if (purgeHistory) parts.push('• Rewrite git history (irreversible!)');
             if (resetPolicy) parts.push('• Reset escalation policy to defaults');
 
