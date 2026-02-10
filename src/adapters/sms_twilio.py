@@ -190,14 +190,14 @@ class TwilioSMSAdapter(Adapter):
         channel = context.action.channel
         
         if channel == "operator":
-            return context.routing.operator_sms
+            return context.routing.operator_sms or os.environ.get("OPERATOR_SMS")
         
         # Could support custodian, etc. in future
         # if channel == "custodian":
         #     return context.routing.custodian_sms
         
         # Default to operator
-        return context.routing.operator_sms
+        return context.routing.operator_sms or os.environ.get("OPERATOR_SMS")
     
     def _build_message(self, context: ExecutionContext) -> str:
         """Build the SMS message body."""

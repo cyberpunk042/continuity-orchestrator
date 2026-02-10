@@ -149,6 +149,18 @@ def run_tick(
         )
         state.meta.project = env_project
 
+    # Sync routing fields from environment — env vars are the source of truth
+    _routing = state.integrations.routing
+    _env_sync = {
+        "operator_sms": ("OPERATOR_SMS", _routing.operator_sms),
+        "operator_email": ("OPERATOR_EMAIL", _routing.operator_email),
+    }
+    for field_name, (env_key, current_val) in _env_sync.items():
+        env_val = os.environ.get(env_key)
+        if env_val and env_val != current_val:
+            logger.info(f"Routing sync: {field_name} updated from {env_key}")
+            setattr(_routing, field_name, env_val)
+
     state_id = state.meta.state_id
 
     # Emit tick_start audit

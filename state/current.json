@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T16:53:39.651296Z",
+        "updated_at_iso": "2026-02-10T16:55:01.822785+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,8 +14,8 @@
     "timer": {
         "deadline_iso": "2026-02-10T18:45:37.648617+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T16:53:39.404004Z",
-        "time_to_deadline_minutes": 111,
+        "now_iso": "2026-02-10T16:49:30.930035Z",
+        "time_to_deadline_minutes": 116,
         "overdue_minutes": 0
     },
     "renewal": {
@@ -31,33 +31,14 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "REMIND_1",
-        "state_entered_at_iso": "2026-02-10T16:46:24.501571Z",
-        "last_transition_rule_id": "R10_ESCALATE_TO_REMIND_1",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-10T16:55:01.822785+00:00",
+        "last_transition_rule_id": "MANUAL_RESET",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "remind_email_primary": {
-                "status": "ok",
-                "last_delivery_id": "75a839ef-cdd1-4eb5-be4e-462c888c4ece",
-                "last_executed_iso": "2026-02-10T16:46:25.034391+00:00"
-            },
-            "x_operator_reminder_basic": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-10T16:53:39.404004Z"
-            },
-            "sms_operator_test_sms": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-10T16:53:39.651060+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "x_operator_reminder_basic",
-            "sms_operator_test_sms"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
         "triggered": false,

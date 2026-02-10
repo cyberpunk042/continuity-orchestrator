@@ -81,6 +81,33 @@ def api_env_write():
         if value:
             _os.environ[name] = value.strip("'\"")
 
+    # Sync routing-related env vars into state immediately
+    _ROUTING_ENV_MAP = {
+        "OPERATOR_SMS": "operator_sms",
+        "OPERATOR_EMAIL": "operator_email",
+    }
+    routing_updates = {
+        _ROUTING_ENV_MAP[k]: v.strip("'\"")
+        for k, v in secrets.items()
+        if k in _ROUTING_ENV_MAP and v
+    }
+    if routing_updates:
+        import json
+        state_file = project_root / "state" / "current.json"
+        if state_file.exists():
+            try:
+                state_data = json.loads(state_file.read_text(encoding="utf-8"))
+                routing = state_data.setdefault("integrations", {}).setdefault("routing", {})
+                for field_name, val in routing_updates.items():
+                    routing[field_name] = val
+                state_file.write_text(
+                    json.dumps(state_data, indent=4, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                logger.info(f"Synced routing to state: {list(routing_updates.keys())}")
+            except Exception as e:
+                logger.warning(f"Failed to sync routing to state: {e}")
+
     return jsonify({
         "success": True,
         "updated": list(secrets.keys()),
