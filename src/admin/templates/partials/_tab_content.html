@@ -444,12 +444,19 @@
                             <label class="form-label" style="font-size: 0.78rem; margin: 0;">Content</label>
                             <div id="messages-adapter-hints" style="font-size: 0.72rem; color: var(--text-dim);"></div>
                         </div>
-                        <textarea class="form-input" id="messages-edit-content"
-                            style="flex: 1; min-height: 200px; padding: 0.75rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82rem; resize: none; line-height: 1.5; border-radius: 8px;"
-                            placeholder="Write your message content here…" oninput="messagesContentChanged()"></textarea>
+                        <div style="position: relative; flex: 1; display: flex;">
+                            <textarea class="form-input" id="messages-edit-content"
+                                style="flex: 1; min-height: 200px; padding: 0.75rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82rem; resize: none; line-height: 1.5; border-radius: 8px; padding-top: 0.75rem;"
+                                placeholder="Write your message content here…" oninput="messagesContentChanged()"></textarea>
+                            <button class="btn" onclick="messagesOpenVaultPicker()" title="Insert media from vault (image, video, audio, file)"
+                                style="position: absolute; top: 6px; right: 6px; padding: 0.2rem 0.5rem; font-size: 0.7rem; opacity: 0.35; transition: opacity 0.2s; z-index: 1; border-radius: 5px;"
+                                onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.35'">
+                                📎 Media
+                            </button>
+                        </div>
 
                         <!-- Variable insertion buttons -->
-                        <div id="messages-var-buttons" style="margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                        <div id="messages-var-buttons" style="margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center;">
                             <span style="font-size: 0.68rem; color: var(--text-dim); align-self: center; margin-right: 0.2rem;">Insert:</span>
                         </div>
                     </div>

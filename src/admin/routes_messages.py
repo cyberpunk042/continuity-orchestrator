@@ -331,12 +331,154 @@ def _render_variables(content: str, context: dict) -> str:
     return rendered
 
 
+# ── Media resolution for markdown templates ──────────────────────
+
+# Regex to match ![alt](url) — non-greedy, handles all media types.
+# The alt text prefix determines the media type:
+#   (no prefix)     → image
+#   "video: ..."    → video
+#   "audio: ..."    → audio
+#   "file: ..."     → file/attachment
+_MEDIA_MD_RE = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+
+# Prefix for media:// URI references
+_MEDIA_URI_PREFIX = "media://"
+_MEDIA_PREVIEW_PREFIX = "/api/content/media/"
+
+
+def _resolve_media_in_markdown(text: str, mode: str = "preview") -> str:
+    """
+    Resolve media:// URIs inside markdown image syntax.
+
+    Modes:
+      - "preview" → media://id  →  /api/content/media/{id}/preview
+      - "strip"   → replace entire ![...](media://...) with text label
+
+    Non-media:// URLs (data:, https://) pass through unchanged.
+    """
+    if mode == "strip":
+        return _strip_media_for_plaintext(text)
+
+    def _resolve(match: re.Match) -> str:
+        alt = match.group(1)
+        url = match.group(2)
+
+        if url.startswith(_MEDIA_URI_PREFIX):
+            media_id = url[len(_MEDIA_URI_PREFIX):]
+            resolved = f"{_MEDIA_PREVIEW_PREFIX}{media_id}/preview"
+            return f"![{alt}]({resolved})"
+
+        # data: and https:// pass through
+        return match.group(0)
+
+    return _MEDIA_MD_RE.sub(_resolve, text)
+
+
+def _strip_media_for_plaintext(text: str) -> str:
+    """
+    Replace markdown media references with plain-text labels.
+
+    Used by SMS, X, and other adapters that cannot render media.
+    ![caption](url)           → [📸 caption]
+    ![video: cap](url)        → [🎬 cap]
+    ![audio: cap](url)        → [🎵 cap]
+    ![file: filename](url)    → [📎 filename]
+    """
+    def _label(match: re.Match) -> str:
+        alt = match.group(1).strip()
+
+        if alt.lower().startswith("video:"):
+            name = alt[6:].strip() or "video"
+            return f"[🎬 {name}]"
+        elif alt.lower().startswith("audio:"):
+            name = alt[6:].strip() or "audio"
+            return f"[🎵 {name}]"
+        elif alt.lower().startswith("file:"):
+            name = alt[5:].strip() or "file"
+            return f"[📎 {name}]"
+        else:
+            name = alt or "image"
+            return f"[📸 {name}]"
+
+    return _MEDIA_MD_RE.sub(_label, text)
+
+
+def _media_md_to_html(text: str) -> str:
+    """
+    Convert markdown media syntax to email-safe HTML.
+
+    Handles four media types based on alt-text prefix:
+      ![caption](url)            → <img> tag
+      ![video: caption](url)     → styled video link
+      ![audio: caption](url)     → styled audio link
+      ![file: filename](url)     → styled download link
+
+    MUST be called BEFORE the general link regex to avoid ![text](url)
+    being consumed by [text](url).
+    """
+    def _render(match: re.Match) -> str:
+        alt = match.group(1).strip()
+        url = match.group(2)
+
+        if alt.lower().startswith("video:"):
+            caption = alt[6:].strip() or "Video"
+            return (
+                f'<div style="margin:12px 0;padding:12px 16px;'
+                f'background:#f1f5f9;border-radius:8px;border-left:4px solid #6366f1;">'
+                f'<a href="{url}" style="color:#6366f1;text-decoration:none;font-weight:600;">'
+                f'🎬 {caption}</a>'
+                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
+                f'Video — click to view</div></div>'
+            )
+        elif alt.lower().startswith("audio:"):
+            caption = alt[6:].strip() or "Audio"
+            return (
+                f'<div style="margin:12px 0;padding:12px 16px;'
+                f'background:#f1f5f9;border-radius:8px;border-left:4px solid #8b5cf6;">'
+                f'<a href="{url}" style="color:#8b5cf6;text-decoration:none;font-weight:600;">'
+                f'🎵 {caption}</a>'
+                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
+                f'Audio — click to listen</div></div>'
+            )
+        elif alt.lower().startswith("file:"):
+            filename = alt[5:].strip() or "Attachment"
+            return (
+                f'<div style="margin:12px 0;padding:12px 16px;'
+                f'background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
+                f'<a href="{url}" style="color:#6366f1;text-decoration:none;font-weight:600;">'
+                f'📎 {filename}</a>'
+                f'<div style="font-size:12px;color:#64748b;margin-top:4px;">'
+                f'File attachment — click to download</div></div>'
+            )
+        else:
+            # Image (default)
+            alt_text = alt or "Image"
+            return (
+                f'<div style="margin:12px 0;text-align:center;">'
+                f'<img src="{url}" alt="{alt_text}" '
+                f'style="max-width:100%;height:auto;border-radius:8px;'
+                f'border:1px solid #e2e8f0;">'
+                + (f'<div style="font-size:12px;color:#64748b;margin-top:6px;'
+                   f'font-style:italic;">{alt_text}</div>' if alt else '')
+                + '</div>'
+            )
+
+    return _MEDIA_MD_RE.sub(_render, text)
+
+
 def _markdown_to_html(text: str) -> str:
     """
     Convert markdown to email-safe HTML.
     Mirrors ResendEmailAdapter._markdown_to_html().
+
+    Supports: headers, bold, italic, links, hr, paragraphs, line breaks,
+    and media (images, video, audio, file attachments).
     """
     html = text
+
+    # ── Media (images, video, audio, files) ──
+    # MUST come before links, since ![text](url) contains [text](url)
+    html = _media_md_to_html(html)
 
     # Headers
     html = re.sub(
@@ -359,7 +501,7 @@ def _markdown_to_html(text: str) -> str:
     html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
     html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
 
-    # Links
+    # Links (won't match ![...] since those were already consumed above)
     html = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#6366f1;">\1</a>', html)
 
     # Horizontal rules
@@ -496,6 +638,9 @@ def _build_email_preview_html(content: str, stage: str, context: dict) -> str:
 
 def _build_sms_preview(content: str) -> dict:
     """Build an SMS preview with segment counting."""
+    # Strip media references → text labels
+    content = _strip_media_for_plaintext(content)
+
     # Strip markdown headers for SMS
     lines = content.strip().split("\n")
     while lines and lines[0].startswith("#"):
@@ -518,6 +663,9 @@ def _build_sms_preview(content: str) -> dict:
 
 def _build_x_preview(content: str) -> dict:
     """Build an X/Twitter preview with char counting."""
+    # Strip media references → text labels
+    content = _strip_media_for_plaintext(content)
+
     # Strip headers, take first meaningful text
     lines = content.strip().split("\n")
     while lines and lines[0].startswith("#"):
@@ -883,6 +1031,14 @@ def api_preview_message():
     # Override stage in context to match what the user selected
     context["stage"] = stage
     rendered = _render_variables(content, context)
+
+    # Resolve media:// URIs for preview (email renders them, others strip)
+    if adapter in ("sms", "x"):
+        # SMS and X strip media to text labels (handled inside their builders)
+        pass
+    else:
+        # Email and Reddit: resolve media:// to preview URLs
+        rendered = _resolve_media_in_markdown(rendered, mode="preview")
 
     result = {
         "rendered": rendered,

@@ -429,10 +429,10 @@ function messagesUpdateAdapterHints(adapter) {
     if (!hints) return;
 
     const hintMap = {
-        'email': '\ud83d\udce7 # Header \u2192 subject. Body \u2192 styled HTML.',
-        'sms': '\ud83d\udcf1 Plain text. 160c = 1 segment.',
-        'x': '\ud83d\udc26 280 char limit. No markdown.',
-        'reddit': '\ud83e\udd16 # Header \u2192 post title.',
+        'email': '\ud83d\udce7 # Header \u2192 subject. Body \u2192 styled HTML. \ud83d\udcf8 Images supported.',
+        'sms': '\ud83d\udcf1 Plain text. 160c/segment. Media \u2192 text labels.',
+        'x': '\ud83d\udc26 280 chars. No markdown. Media stripped.',
+        'reddit': '\ud83e\udd16 # Header \u2192 post title. Images if hosted URL.',
     };
 
     hints.textContent = hintMap[adapter] || '';
@@ -454,6 +454,170 @@ function messagesInsertVar(varName) {
     textarea.focus();
     messagesContentChanged();
 }
+
+// ── Insert media (vault picker + paste) ───────────────
+
+/**
+ * Open vault picker in messages mode.
+ * Sets the target so the shared picker inserts markdown syntax instead of EditorJS blocks.
+ */
+function messagesOpenVaultPicker() {
+    vaultPickerTarget = 'messages';
+    openVaultPicker();
+}
+
+/**
+ * Insert a markdown media snippet at cursor position in the messages textarea.
+ * Called by the vault picker when target === 'messages'.
+ *
+ * @param {string} markdownSnippet  e.g. "![caption](media://img_001)"
+ */
+function messagesInsertMedia(markdownSnippet) {
+    const textarea = document.getElementById('messages-edit-content');
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+
+    // Ensure media goes on its own line for clean markdown
+    let before = text.substring(0, start);
+    let after = text.substring(end);
+    if (before.length > 0 && !before.endsWith('\n')) before += '\n';
+    if (after.length > 0 && !after.startsWith('\n')) after = '\n' + after;
+
+    const insert = markdownSnippet;
+    textarea.value = before + insert + after;
+    textarea.selectionStart = textarea.selectionEnd = before.length + insert.length;
+    textarea.focus();
+    messagesContentChanged();
+}
+
+/**
+ * Handle paste events on the messages textarea.
+ * If the clipboard contains an image, upload it via the editor-upload endpoint
+ * and insert markdown syntax at the cursor position.
+ */
+function messagesSetupPasteHandler() {
+    const textarea = document.getElementById('messages-edit-content');
+    if (!textarea) return;
+
+    textarea.addEventListener('paste', async (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        // Check for image in clipboard
+        let imageItem = null;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                imageItem = item;
+                break;
+            }
+        }
+        if (!imageItem) return;  // No image — let default paste proceed
+
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return;
+
+        // Create or reuse upload toast
+        let toast = document.getElementById('editor-upload-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'editor-upload-toast';
+            toast.style.cssText = `
+                position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+                background: var(--surface, #1a1a2e); border: 1px solid var(--border, #333);
+                border-radius: 8px; padding: 0.75rem 1rem; min-width: 280px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.4); cursor: pointer;
+                font-size: 0.82rem; color: var(--text, #e0e0e0);
+            `;
+            toast.title = 'Click to cancel';
+            document.body.appendChild(toast);
+        }
+        toast.style.display = 'block';
+        toast.innerHTML = `
+            <div style="margin-bottom: 0.4rem; font-weight: 500;">📤 Uploading pasted image...</div>
+            <div style="height: 4px; background: var(--surface-alt, #2a2a3a); border-radius: 2px; overflow: hidden;">
+                <div id="editor-upload-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #60a5fa); transition: width 0.2s;"></div>
+            </div>
+            <div id="editor-upload-detail" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.3rem;">0%</div>
+        `;
+
+        const formData = new FormData();
+        formData.append('image', file, file.name || 'pasted-image.png');
+
+        const xhr = new XMLHttpRequest();
+
+        toast.onclick = () => {
+            xhr.abort();
+            toast.style.display = 'none';
+            contentLog('⚠️ Paste upload cancelled');
+        };
+
+        xhr.upload.addEventListener('progress', (ev) => {
+            if (!ev.lengthComputable) return;
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            const bar = document.getElementById('editor-upload-bar');
+            if (bar) bar.style.width = pct + '%';
+            const detail = document.getElementById('editor-upload-detail');
+            if (detail) detail.textContent = `${pct}%`;
+        });
+
+        xhr.addEventListener('load', () => {
+            const bar = document.getElementById('editor-upload-bar');
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.success) {
+                        if (bar) bar.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+                        if (bar) bar.style.width = '100%';
+
+                        let mdSnippet;
+                        if (data.inline) {
+                            // Small file — inlined as data: URI
+                            mdSnippet = `![pasted image](${data.file.url})`;
+                            contentLog(`🖼️ Pasted image inlined (${typeof formatMediaSize === 'function' ? formatMediaSize(data.size_bytes) : data.size_bytes + ' B'})`);
+                        } else {
+                            // Vault file — use media:// URI
+                            mdSnippet = `![pasted image](${data.media_uri})`;
+                            contentLog(`🖼️ Pasted image → vault: ${data.media_id}`);
+                        }
+                        messagesInsertMedia(mdSnippet);
+                        setTimeout(() => { toast.style.display = 'none'; }, 1500);
+                    } else {
+                        contentLog(`❌ Paste upload failed: ${data.error}`, true);
+                        toast.style.display = 'none';
+                    }
+                } catch (parseErr) {
+                    contentLog('❌ Paste upload: invalid server response', true);
+                    toast.style.display = 'none';
+                }
+            } else {
+                let errMsg = `Server error (HTTP ${xhr.status})`;
+                try {
+                    const errData = JSON.parse(xhr.responseText);
+                    errMsg = errData.error || errMsg;
+                } catch (_) {}
+                if (bar) bar.style.background = 'var(--danger, #ef4444)';
+                contentLog(`❌ Paste upload: ${errMsg}`, true);
+                setTimeout(() => { toast.style.display = 'none'; }, 3000);
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            contentLog('❌ Paste upload network error', true);
+            toast.style.display = 'none';
+        });
+
+        xhr.open('POST', '/api/content/media/editor-upload');
+        xhr.timeout = 60000;
+        xhr.send(formData);
+    });
+}
+
+// Initialize paste handler when DOM is ready
+messagesSetupPasteHandler();
 
 // ── Live Preview (API call) ────────────────────────────
 

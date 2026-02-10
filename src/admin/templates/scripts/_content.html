@@ -964,6 +964,7 @@ function formatMediaSize(bytes) {
 let vaultPickerEntries = [];
 let vaultPickerSelected = null;  // MediaEntry object
 let vaultPickerCurrentFilter = 'all';
+let vaultPickerTarget = 'editor';  // 'editor' (EditorJS) or 'messages' (textarea)
 
 function _vaultPickerMimeCategory(mime) {
     if (!mime) return 'file';
@@ -1006,6 +1007,7 @@ function closeVaultPicker(event) {
     document.getElementById('vault-picker-overlay').style.display = 'none';
     document.getElementById('vault-picker-file-input').value = '';
     vaultPickerSelected = null;
+    vaultPickerTarget = 'editor';  // Reset to default mode
 }
 
 function vaultPickerFilter(filter, btn) {
@@ -1084,10 +1086,36 @@ function vaultPickerSelect(mediaId) {
 }
 
 function vaultPickerInsert(mode) {
-    if (!vaultPickerSelected || !contentEditor) return;
+    if (!vaultPickerSelected) return;
 
     const item = vaultPickerSelected;
     const cat = _vaultPickerMimeCategory(item.mime_type);
+    const mediaUri = `media://${item.id}`;
+
+    // ── Messages mode: insert markdown syntax into textarea ──
+    if (vaultPickerTarget === 'messages') {
+        let altPrefix = '';
+        let emoji = '📸';
+        if (cat === 'video')       { altPrefix = 'video: '; emoji = '🎬'; }
+        else if (cat === 'audio')  { altPrefix = 'audio: '; emoji = '🎵'; }
+        else if (cat === 'file' || mode === 'attach') { altPrefix = 'file: '; emoji = '📎'; }
+
+        const name = item.caption || item.original_name;
+        const markdownSnippet = `![${altPrefix}${name}](${mediaUri})`;
+
+        // Delegate insertion to messages script
+        if (typeof messagesInsertMedia === 'function') {
+            messagesInsertMedia(markdownSnippet);
+        }
+
+        contentLog(`✅ Inserted ${emoji} ${item.original_name} as markdown`);
+        closeVaultPicker();
+        return;
+    }
+
+    // ── Editor mode: insert EditorJS block ──
+    if (!contentEditor) return;
+
     const previewUrl = `/api/content/media/${item.id}/preview`;
 
     let blockType, blockData;
