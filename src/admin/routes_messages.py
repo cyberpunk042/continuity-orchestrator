@@ -653,8 +653,83 @@ def _build_sms_preview(content: str) -> dict:
 
 
 def _build_x_preview(content: str) -> dict:
-    """Build an X/Twitter preview with char counting."""
-    # Strip media references → text labels
+    """Build an X/Twitter preview that mirrors the real adapter behavior.
+
+    The real adapter (x_twitter.py) calls strip_media_to_labels() on ALL
+    media — X currently doesn't upload images, so they become text labels.
+
+    For the preview we still show the images visually (so the user knows
+    what would be embedded if X media upload were supported), and show
+    non-embeddable media as resolved URLs appended to the body.
+    """
+    import re
+    from ..templates.media import get_site_base_url, MEDIA_URI_PREFIX
+
+    media_re = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+    NON_EMBED_PREFIXES = ("video:", "audio:", "file:")
+
+    # Resolve public base URL
+    base_url = get_site_base_url()
+
+    # Load manifest for resolving media IDs to filenames
+    manifest = None
+    try:
+        from ..content.media import MediaManifest
+        from flask import current_app
+        manifest_path = (
+            current_app.config["PROJECT_ROOT"]
+            / "content" / "media" / "manifest.json"
+        )
+        manifest = MediaManifest.load(manifest_path)
+    except Exception:
+        pass
+
+    def _resolve_url(url: str):
+        """Resolve a media:// URI to its public URL."""
+        if url.startswith(MEDIA_URI_PREFIX):
+            media_id = url[len(MEDIA_URI_PREFIX):]
+            if manifest and base_url:
+                entry = manifest.get(media_id)
+                if entry:
+                    return f"{base_url}/media/{entry.original_name}"
+            return None
+        elif url.startswith(("http://", "https://")):
+            return url
+        return None
+
+    # ── Pass 1: Extract images and link URLs ──
+    media_attachments = []
+    link_urls = []
+
+    for match in media_re.finditer(content):
+        alt = match.group(1).strip()
+        url = match.group(2)
+        alt_lower = alt.lower()
+
+        public_url = _resolve_url(url)
+
+        if any(alt_lower.startswith(p) for p in NON_EMBED_PREFIXES):
+            # Non-embeddable → URL goes into body text
+            if public_url:
+                link_urls.append(public_url)
+        else:
+            # Plain image → visual attachment for preview
+            preview_url = (
+                f"/api/content/media/{url[len(MEDIA_URI_PREFIX):]}/preview"
+                if url.startswith(MEDIA_URI_PREFIX) else url
+            )
+            media_attachments.append({
+                "caption": alt or "image",
+                "url": preview_url,
+                "public_url": public_url,
+                "media_id": (
+                    url[len(MEDIA_URI_PREFIX):]
+                    if url.startswith(MEDIA_URI_PREFIX)
+                    else None
+                ),
+            })
+
+    # ── Pass 2: Build body text ──
     content = _strip_media_for_plaintext(content)
 
     # Strip headers, take first meaningful text
@@ -663,10 +738,16 @@ def _build_x_preview(content: str) -> dict:
         lines = lines[1:]
     text = "\n".join(lines).strip()
 
+    # Append non-embeddable media URLs
+    if link_urls:
+        for url in link_urls:
+            text += f"\n{url}"
+
     return {
         "text": text,
         "char_count": len(text),
         "over_limit": len(text) > 280,
+        "media_attachments": media_attachments,
     }
 
 

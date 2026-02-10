@@ -245,23 +245,28 @@ class XAdapter(Adapter):
     
     def _parse_template(self, content: str) -> str:
         """Parse template content for tweet."""
-        # Strip media markdown to text labels (X can't render images)
-        from ..templates.media import strip_media_to_labels
-        content = strip_media_to_labels(content)
+        import re
+
+        # Resolve media:// URIs to public URLs (instead of stripping to labels)
+        from ..templates.media import resolve_media_uris
+        content = resolve_media_uris(content)
+
+        # Convert remaining ![alt](url) → plain URL
+        # X auto-generates link cards/previews for URLs in tweets
+        content = re.sub(r'!\[[^\]]*\]\(([^)]+)\)', r'\1', content)
 
         lines = content.strip().split("\n")
-        
+
         # Skip markdown headers
         while lines and lines[0].startswith("#"):
             lines = lines[1:]
-        
+
         # Join remaining content
         text = "\n".join(lines).strip()
-        
+
         # Clean up multiple newlines
-        import re
         text = re.sub(r'\n{3,}', '\n\n', text)
-        
+
         return text
     
     def _format_time(self, minutes: int) -> str:

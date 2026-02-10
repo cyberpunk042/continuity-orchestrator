@@ -753,11 +753,39 @@ async function messagesRefreshPreview() {
         } else if (adapter === 'x') {
             const xText = document.getElementById('messages-preview-x-text');
             const xMeta = document.getElementById('messages-preview-x-meta');
-            if (xText) xText.textContent = data.text || data.rendered || '';
+            if (xText) {
+                let html = '';
+
+                // Media attachments (images)
+                const attachments = data.media_attachments || [];
+                if (attachments.length > 0) {
+                    html += '<div style="margin-bottom: 0.6rem; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);">';
+                    for (const att of attachments) {
+                        html += `<img src="${att.url}" alt="${att.caption}"
+                            style="width: 100%; display: block; max-height: 220px; object-fit: cover;"
+                            onerror="this.outerHTML='<div style=\\'padding: 0.75rem; text-align: center; color: var(--text-dim); font-size: 0.78rem;\\'>🔒 Image unavailable</div>'">`;
+                        if (att.public_url) {
+                            html += `<div style="padding: 0.25rem 0.6rem; font-size: 0.65rem; color: var(--info); background: var(--bg-card); word-break: break-all; font-family: monospace;"
+                                title="Resolved public URL">🔗 ${att.public_url}</div>`;
+                        } else {
+                            html += `<div style="padding: 0.25rem 0.6rem; font-size: 0.65rem; color: var(--warning); background: var(--bg-card);">⚠️ Public URL could not be resolved</div>`;
+                        }
+                    }
+                    html += '</div>';
+                }
+
+                // Tweet text
+                const text = data.text || data.rendered || '';
+                html += `<span style="white-space: pre-wrap;">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</span>`;
+                xText.innerHTML = html;
+            }
             if (xMeta) {
                 const cc = data.char_count || 0;
+                const media = (data.media_attachments || []).length;
                 const color = cc > 280 ? 'var(--danger)' : 'var(--text-dim)';
-                xMeta.innerHTML = '<span style="color:' + color + '">' + cc + '/280</span>' + (cc > 280 ? ' \u26a0\ufe0f Over limit!' : '');
+                let metaHtml = '<span style="color:' + color + '">' + cc + '/280</span>' + (cc > 280 ? ' \u26a0\ufe0f Over limit!' : '');
+                if (media > 0) metaHtml = '\ud83d\uddbc\ufe0f ' + media + ' image' + (media !== 1 ? 's' : '') + ' \u2022 ' + metaHtml;
+                xMeta.innerHTML = metaHtml;
             }
             if (metaEl) metaEl.textContent = (data.char_count || 0) + '/280';
 

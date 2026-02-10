@@ -15,6 +15,8 @@ import json
 import logging
 import os
 import re
+import time
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -48,14 +50,22 @@ def get_site_base_url() -> Optional[str]:
     """
     global _cached_tunnel_url
 
-    # 1. Return cached value if available
+    # 1. Return in-memory cached value if available
     if _cached_tunnel_url:
         return _cached_tunnel_url
 
-    # 2. Cloudflare tunnel detection
+    # 2. Try disk cache (survives process restarts, shared across processes)
+    disk_cached = _read_tunnel_cache()
+    if disk_cached:
+        _cached_tunnel_url = disk_cached
+        logger.debug(f"Resolved site base URL (disk cache): {_cached_tunnel_url}")
+        return _cached_tunnel_url
+
+    # 3. Cloudflare tunnel detection via API
     tunnel_url = _detect_cloudflare_tunnel_url()
     if tunnel_url:
         _cached_tunnel_url = tunnel_url.rstrip("/")
+        _write_tunnel_cache(_cached_tunnel_url)
         logger.info(f"Resolved site base URL (Cloudflare): {_cached_tunnel_url}")
         return _cached_tunnel_url
 
@@ -138,8 +148,43 @@ def _detect_cloudflare_tunnel_url() -> Optional[str]:
 # Track last API status for refresh logic
 _last_api_status: int = 0
 
-# Cache resolved tunnel hostname (persists for process lifetime)
+# Cache resolved tunnel hostname (in-memory + disk)
 _cached_tunnel_url: Optional[str] = None
+
+# Disk cache TTL: 1 hour — tunnel hostnames rarely change
+_TUNNEL_CACHE_TTL = 3600
+
+
+def _tunnel_cache_path() -> Path:
+    """Path to the tunnel URL disk cache file."""
+    root = Path(os.environ.get("PROJECT_ROOT", os.getcwd()))
+    return root / "state" / ".tunnel_cache.json"
+
+
+def _read_tunnel_cache() -> Optional[str]:
+    """Read tunnel URL from disk cache if still fresh."""
+    try:
+        p = _tunnel_cache_path()
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text())
+        url = data.get("url", "").strip()
+        ts = data.get("ts", 0)
+        if url and (time.time() - ts) < _TUNNEL_CACHE_TTL:
+            return url
+    except Exception:
+        pass
+    return None
+
+
+def _write_tunnel_cache(url: str) -> None:
+    """Persist tunnel URL to disk cache."""
+    try:
+        p = _tunnel_cache_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"url": url, "ts": time.time()}))
+    except Exception as e:
+        logger.debug(f"Failed to write tunnel cache: {e}")
 
 
 def _query_cloudflare_tunnel_hostname(
