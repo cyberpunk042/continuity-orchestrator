@@ -39,24 +39,39 @@ def get_site_base_url() -> Optional[str]:
     Determine the public base URL of the deployed site.
 
     Resolution priority:
-      1. Cloudflare tunnel detection (CLOUDFLARE_TUNNEL_TOKEN)
-      2. GITHUB_REPOSITORY → GitHub Pages URL
-      3. None — cannot resolve
+      1. Cached Cloudflare tunnel hostname (process-level cache)
+      2. Cloudflare tunnel detection (CLOUDFLARE_TUNNEL_TOKEN)
+      3. GITHUB_REPOSITORY → GitHub Pages URL
+      4. None — cannot resolve
 
     Returns the base URL without trailing slash, or None.
     """
-    # 1. Cloudflare tunnel detection
+    global _cached_tunnel_url
+
+    # 1. Return cached value if available
+    if _cached_tunnel_url:
+        return _cached_tunnel_url
+
+    # 2. Cloudflare tunnel detection
     tunnel_url = _detect_cloudflare_tunnel_url()
     if tunnel_url:
-        return tunnel_url.rstrip("/")
+        _cached_tunnel_url = tunnel_url.rstrip("/")
+        logger.info(f"Resolved site base URL (Cloudflare): {_cached_tunnel_url}")
+        return _cached_tunnel_url
 
-    # 2. GitHub Pages
+    # 3. GitHub Pages (fallback — media may NOT be served here)
     repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
     if repo and "/" in repo:
         owner, repo_name = repo.split("/", 1)
-        return f"https://{owner}.github.io/{repo_name}"
+        gh_url = f"https://{owner}.github.io/{repo_name}"
+        logger.warning(
+            f"Cloudflare tunnel detection failed, falling back to GitHub Pages: "
+            f"{gh_url} — media files may not be available at this URL"
+        )
+        return gh_url
 
-    # 3. Cannot resolve
+    # 4. Cannot resolve
+    logger.warning("Cannot determine site base URL — no tunnel, no GITHUB_REPOSITORY")
     return None
 
 
@@ -77,7 +92,7 @@ def _detect_cloudflare_tunnel_url() -> Optional[str]:
 
     cf_api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
     if not cf_api_token:
-        logger.debug("CLOUDFLARE_API_TOKEN not set — cannot query tunnel hostname")
+        logger.warning("CLOUDFLARE_API_TOKEN not set — cannot query tunnel hostname")
         return None
 
     try:
@@ -122,6 +137,9 @@ def _detect_cloudflare_tunnel_url() -> Optional[str]:
 
 # Track last API status for refresh logic
 _last_api_status: int = 0
+
+# Cache resolved tunnel hostname (persists for process lifetime)
+_cached_tunnel_url: Optional[str] = None
 
 
 def _query_cloudflare_tunnel_hostname(

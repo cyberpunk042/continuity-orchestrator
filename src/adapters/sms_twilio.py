@@ -140,17 +140,32 @@ class TwilioSMSAdapter(Adapter):
         validated_media = []
         if media_urls:
             import urllib.request
+            # Twilio MMS accepted image types
+            TWILIO_IMAGE_TYPES = {
+                "image/jpeg", "image/png", "image/gif",
+                "image/bmp", "image/tiff", "image/webp",
+                "image/svg+xml",
+            }
             for url in media_urls:
                 try:
                     req = urllib.request.Request(url, method="HEAD")
                     req.add_header("User-Agent", "continuity-orchestrator/1.0")
                     resp = urllib.request.urlopen(req, timeout=5)
-                    if resp.status < 400:
-                        validated_media.append(url)
-                        logger.debug(f"Media URL reachable: {url} ({resp.status})")
-                    else:
+                    if resp.status >= 400:
                         logger.warning(
                             f"Media URL returned {resp.status}, skipping: {url}"
+                        )
+                        continue
+                    # Validate Content-Type — Twilio rejects unsupported types
+                    # and silently drops the ENTIRE message
+                    ct = resp.headers.get("Content-Type", "").split(";")[0].strip()
+                    if ct in TWILIO_IMAGE_TYPES:
+                        validated_media.append(url)
+                        logger.info(f"  Media URL OK: {url} ({ct})")
+                    else:
+                        logger.warning(
+                            f"Media URL has unsupported Content-Type for MMS: "
+                            f"{ct} — skipping: {url}"
                         )
                 except Exception as e:
                     logger.warning(
@@ -183,7 +198,10 @@ class TwilioSMSAdapter(Adapter):
             message = self.client.messages.create(**create_kwargs)
             
             msg_type = "MMS" if validated_media else "SMS"
-            logger.info(f"{msg_type} sent to {to_number}: {message.sid}")
+            logger.info(
+                f"{msg_type} sent to {to_number}: {message.sid}\n"
+                f"  Body: {body!r}"
+            )
             
             return Receipt.ok(
                 adapter=self.name,
