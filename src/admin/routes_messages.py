@@ -11,6 +11,7 @@ Routes:
     POST /api/content/messages/save           # Create or update a message
     DELETE /api/content/messages/<name>       # Delete a message
     POST /api/content/messages/preview        # Render a real adapter preview
+    PATCH /api/content/messages/<action_id>/toggle  # Toggle enabled/disabled
     GET  /api/content/messages/recipients     # Get subscriber/custodian email lists
     POST /api/content/messages/recipients     # Update subscriber/custodian email lists
     GET  /api/content/messages/variables      # Get available template variables
@@ -667,6 +668,7 @@ def api_list_messages():
                 "file_path": rel_path,
                 "icon": ADAPTER_ICONS.get(adapter, "📄"),
                 "constraints": action.get("constraints", {}),
+                "enabled": action.get("enabled", True),
             })
 
     return jsonify({"messages": messages})
@@ -845,17 +847,26 @@ def api_save_message():
             existing = a
             break
 
+    # Preserve enabled state from request (default True for new actions)
+    enabled = body.get("enabled", True)
+
     if existing:
         existing["adapter"] = adapter
         existing["channel"] = channel
         existing["template"] = template_name
+        # Only update enabled if explicitly provided
+        if "enabled" in body:
+            existing["enabled"] = enabled
     else:
-        actions.append({
+        new_action = {
             "id": action_id,
             "adapter": adapter,
             "channel": channel,
             "template": template_name,
-        })
+        }
+        if not enabled:
+            new_action["enabled"] = False
+        actions.append(new_action)
 
     _save_plan(plan)
     logger.info(f"Updated plan: stage={stage}, action_id={action_id}")
@@ -867,6 +878,55 @@ def api_save_message():
         "stage": stage,
         "file_path": f"{subdir}/{template_name}{ext}",
         "encrypted": actual_path.suffix == ".enc",
+    })
+
+
+@messages_bp.route("/<action_id>/toggle", methods=["PATCH"])
+def api_toggle_message(action_id: str):
+    """
+    Toggle a message's enabled/disabled state in the plan.
+
+    Body (optional): { "enabled": true/false }
+    If no body, toggles the current state.
+    """
+    plan = _load_plan()
+    stages_data = plan.get("stages", {})
+
+    # Find the action across all stages
+    found_action = None
+    for stage_name, stage_data in stages_data.items():
+        for action in stage_data.get("actions", []):
+            if action.get("id") == action_id:
+                found_action = action
+                break
+        if found_action:
+            break
+
+    if not found_action:
+        return jsonify({"error": f"Action '{action_id}' not found in plan"}), 404
+
+    # Determine new state
+    body = request.get_json(silent=True) or {}
+    if "enabled" in body:
+        new_state = bool(body["enabled"])
+    else:
+        # Toggle
+        new_state = not found_action.get("enabled", True)
+
+    # Update
+    if new_state:
+        # Remove 'enabled' key entirely when True (clean YAML)
+        found_action.pop("enabled", None)
+    else:
+        found_action["enabled"] = False
+
+    _save_plan(plan)
+    logger.info(f"Toggled action {action_id}: enabled={new_state}")
+
+    return jsonify({
+        "success": True,
+        "action_id": action_id,
+        "enabled": new_state,
     })
 
 

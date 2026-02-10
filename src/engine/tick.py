@@ -290,6 +290,16 @@ def run_tick(
         template_resolver = TemplateResolver(project_root / "templates")
 
         for action in actions_for_stage:
+            # Check if action is disabled in the plan
+            if not action.enabled:
+                logger.info(f"Skipping {action.id}: disabled in plan")
+                state.actions.executed[action.id] = ActionReceipt(
+                    status="skipped",
+                    last_executed_iso=now_iso,
+                )
+                state.actions.last_tick_actions.append(action.id)
+                continue
+
             # Check idempotency
             if action.id in state.actions.executed:
                 prev = state.actions.executed[action.id]

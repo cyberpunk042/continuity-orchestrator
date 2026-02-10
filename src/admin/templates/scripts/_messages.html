@@ -87,15 +87,17 @@ function messagesRenderList() {
         for (const msg of msgs) {
             const isActive = messagesSelected === msg.action_id;
             const bgColor = isActive ? 'background: var(--accent-dim, rgba(99,102,241,0.15)); border-color: var(--accent);' : '';
-            const opacity = msg.content_exists ? '' : 'opacity: 0.45;';
+            const isEnabled = msg.enabled !== false;
+            const opacity = (!msg.content_exists || !isEnabled) ? 'opacity: 0.45;' : '';
+            const strikethrough = !isEnabled ? 'text-decoration: line-through;' : '';
 
             html += '<div class="messages-item" data-action-id="' + msg.action_id + '" ';
-            html += 'onclick="messagesSelect(\'' + msg.action_id.replace(/'/g, "\\'") + '\')" ';
             html += 'style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.5rem; ';
             html += 'border-radius: 6px; cursor: pointer; border: 1px solid transparent; ';
             html += 'font-size: 0.82rem; transition: all 0.15s ease; ' + bgColor + opacity + '">';
             html += '<span style="flex-shrink: 0;">' + msg.icon + '</span>';
-            html += '<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + msg.template + '">' + (msg.template || msg.action_id) + '</span>';
+            html += '<span onclick="messagesSelect(\'' + msg.action_id.replace(/'/g, "\\'") + '\')" ';
+            html += 'style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ' + strikethrough + '" title="' + msg.template + '">' + (msg.template || msg.action_id) + '</span>';
             html += '<span style="font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 3px; background: var(--bg-input); color: var(--text-dim);">' + msg.channel + '</span>';
             if (msg.encrypted) {
                 html += '<span title="Encrypted at rest" style="font-size: 0.62rem; opacity: 0.7;">\ud83d\udd12</span>';
@@ -103,6 +105,13 @@ function messagesRenderList() {
             if (!msg.content_exists) {
                 html += '<span title="Template file missing" style="font-size: 0.72rem;">⚠️</span>';
             }
+            // Toggle switch
+            html += '<label class="messages-toggle" title="' + (isEnabled ? 'Enabled — click to disable' : 'Disabled — click to enable') + '" ';
+            html += 'onclick="event.stopPropagation(); messagesToggle(\'' + msg.action_id.replace(/'/g, "\\'") + '\')" ';
+            html += 'style="position: relative; display: inline-block; width: 28px; height: 16px; flex-shrink: 0; cursor: pointer;">';
+            html += '<span style="position: absolute; inset: 0; background: ' + (isEnabled ? 'var(--accent, #6366f1)' : 'var(--border, #444)') + '; border-radius: 8px; transition: background 0.2s;"></span>';
+            html += '<span style="position: absolute; left: ' + (isEnabled ? '13px' : '2px') + '; top: 2px; width: 12px; height: 12px; background: white; border-radius: 50%; transition: left 0.2s;"></span>';
+            html += '</label>';
             html += '</div>';
         }
         html += '</div>';
@@ -123,6 +132,35 @@ function messagesRenderList() {
             }
         });
     });
+}
+
+// ── Toggle message enabled/disabled ────────────────────
+
+async function messagesToggle(actionId) {
+    try {
+        const resp = await fetch('/api/content/messages/' + encodeURIComponent(actionId) + '/toggle', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await resp.json();
+        if (data.success) {
+            // Update local data
+            const msg = messagesData.find(m => m.action_id === actionId);
+            if (msg) msg.enabled = data.enabled;
+            messagesRenderList();
+            // Refresh right panel if this is the selected message
+            if (messagesSelected === actionId) {
+                const wasDirty = messagesDirty;
+                messagesSelect(actionId);
+                messagesDirty = wasDirty;  // preserve dirty state
+            }
+            contentLog((data.enabled ? '\u2705 Enabled: ' : '\u23f8\ufe0f Disabled: ') + actionId);
+        } else {
+            contentLog('\u274c Toggle failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        contentLog('\u274c Toggle error: ' + err.message);
+    }
 }
 
 // ── Populate template picker dropdown ──────────────────
@@ -306,11 +344,19 @@ async function messagesSelect(actionId) {
 
     // Update badges
     const badges = document.getElementById('messages-panel-badges');
+    const isEnabled = msg.enabled !== false;
     let badgesHtml = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
         + '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-input); color: var(--text-dim);">' + msg.adapter + '</span>';
     if (msg.encrypted) {
         badgesHtml += '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Encrypted at rest">\ud83d\udd12 Encrypted</span>';
     }
+    // Enabled/disabled badge with toggle
+    badgesHtml += '<span onclick="messagesToggle(\'' + msg.action_id.replace(/'/g, "\\\\'") + '\')" '
+        + 'style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; cursor: pointer; transition: all 0.2s; '
+        + (isEnabled
+            ? 'background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Enabled — click to disable">\u2705 Enabled'
+            : 'background: rgba(239,68,68,0.12); color: var(--danger, #ef4444);" title="Disabled — click to enable">\u23f8\ufe0f Disabled')
+        + '</span>';
     badges.innerHTML = badgesHtml;
 
     // Trigger preview

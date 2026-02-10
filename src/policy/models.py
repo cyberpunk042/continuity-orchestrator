@@ -103,6 +103,7 @@ class ActionDefinition(BaseModel):
     payload: Optional[str] = None
     artifact: Optional[Dict[str, Any]] = None
     constraints: Optional[ActionConstraints] = None
+    enabled: bool = True
 
 
 class StageActions(BaseModel):
