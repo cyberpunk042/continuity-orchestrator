@@ -19,6 +19,10 @@ stages:
       constraints:
         no_links: true
         no_entrypoint_reference: true
+    - id: x_operator_reminder_basic
+      adapter: x
+      channel: operator
+      template: reminder_basic
   REMIND_2:
     description: Stronger reminder using secondary channels.
     actions:
