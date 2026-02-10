@@ -23,11 +23,11 @@ stages:
       adapter: x
       channel: operator
       template: reminder_basic
-      enabled: false
     - id: sms_operator_test_sms
       adapter: sms
       channel: operator
       template: test_sms
+      enabled: false
   REMIND_2:
     description: Stronger reminder using secondary channels.
     actions:

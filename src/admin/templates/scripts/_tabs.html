@@ -1,10 +1,17 @@
-// Tab switching
+// Tab switching — supports deep navigation paths like:
+//   #dashboard
+//   #wizard/email
+//   #content/messages/email_remind_1
+//   #content/articles/my-article
+//   #content/media/img_xxx
 function switchTab(tabId, subStep) {
-// Parse compound tab IDs like 'wizard/email'
+// Parse compound tab IDs like 'wizard/email' or 'content/messages/my_msg'
+let deepParts = [];
 if (tabId.includes('/')) {
 const parts = tabId.split('/');
 tabId = parts[0];
-subStep = parts[1];
+subStep = subStep || parts[1];
+deepParts = parts.slice(2); // anything deeper than level 2
 }
 
 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -15,9 +22,11 @@ if (tabBtn) tabBtn.classList.add('active');
 const tabEl = document.getElementById(`tab-${tabId}`);
 if (tabEl) tabEl.classList.add('active');
 
-// Update URL hash
-const hash = subStep ? `${tabId}/${subStep}` : tabId;
-history.replaceState(null, '', `#${hash}`);
+// Update URL hash (full path)
+const hashParts = [tabId];
+if (subStep) hashParts.push(subStep);
+if (deepParts.length) hashParts.push(...deepParts);
+history.replaceState(null, '', `#${hashParts.join('/')}`);
 
 // Load data for the tab
 if (tabId === 'secrets') {
@@ -36,9 +45,85 @@ if (!contentLoaded) {
 loadEditorScripts(); // Start loading CDN in background
 loadContent();
 }
+// Restore sub-mode and deep selection after content loads
+if (subStep) {
+_pendingContentRestore = {
+mode: subStep,
+item: deepParts[0] || null,
+};
+// If content is already loaded, restore immediately
+if (contentLoaded) {
+_restoreContentNav();
+}
+}
 } else if (tabId === 'dashboard') {
 loadStatus();
 }
+}
+
+// Pending deep navigation for content tab (set before data loads)
+let _pendingContentRestore = null;
+// Pending item selection (consumed by sub-loaders after their data is ready)
+let _pendingItemSelect = null;
+
+// Restore content sub-tab and item selection
+function _restoreContentNav() {
+const pending = _pendingContentRestore;
+if (!pending) return;
+_pendingContentRestore = null;
+
+// Store pending item BEFORE switching mode (mode switch triggers data load)
+if (pending.item) {
+_pendingItemSelect = { mode: pending.mode, item: pending.item };
+}
+
+// Switch to sub-mode (articles/media/messages)
+if (pending.mode && pending.mode !== contentCurrentMode) {
+contentSwitchMode(pending.mode, /* skipHash */ true);
+}
+
+// For articles, data is already loaded — select immediately
+if (pending.item && pending.mode === 'articles') {
+_pendingItemSelect = null;
+setTimeout(() => contentSelectArticle(pending.item, true), 50);
+}
+// For media and messages, their loaders will check _pendingItemSelect
+}
+
+// Called by sub-loaders (messagesLoad, loadMedia) after data is ready
+function _consumePendingItemSelect(mode) {
+if (!_pendingItemSelect || _pendingItemSelect.mode !== mode) return;
+const item = _pendingItemSelect.item;
+_pendingItemSelect = null;
+setTimeout(() => {
+if (mode === 'media') {
+mediaSelectItem(item, /* skipHash */ true);
+} else if (mode === 'messages') {
+messagesSelect(item, /* skipHash */ true);
+}
+}, 50);
+}
+
+// Central hash updater — call from any navigation action
+function updateNavHash() {
+const parts = [activeTab];
+
+if (activeTab === 'wizard') {
+const step = wizardSteps[currentWizardStep];
+if (step) parts.push(step.id);
+} else if (activeTab === 'content') {
+parts.push(contentCurrentMode);
+// Add selected item ID
+if (contentCurrentMode === 'articles' && contentSelectedSlug) {
+parts.push(contentSelectedSlug);
+} else if (contentCurrentMode === 'media' && mediaSelectedId) {
+parts.push(mediaSelectedId);
+} else if (contentCurrentMode === 'messages' && typeof messagesSelected !== 'undefined' && messagesSelected) {
+parts.push(messagesSelected);
+}
+}
+
+history.replaceState(null, '', `#${parts.join('/')}`);
 }
 
 // Track which tab is active so we can warn about wizard

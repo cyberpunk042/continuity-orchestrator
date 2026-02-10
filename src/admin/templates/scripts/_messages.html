@@ -53,6 +53,8 @@ async function messagesLoad() {
         messagesRenderRecipients();
         messagesPopulateTemplatePicker();
         contentLog('\u2709\ufe0f Loaded ' + messagesData.length + ' messages, ' + messagesTemplateFiles.length + ' templates on disk');
+        // Restore pending deep navigation (e.g. #content/messages/email_remind_1)
+        if (typeof _consumePendingItemSelect === 'function') _consumePendingItemSelect('messages');
     } catch (err) {
         contentLog('\u274c Failed to load messages: ' + err.message);
     }
@@ -285,7 +287,7 @@ function messagesRenderRecipientList(type, emails) {
 
 // ── Select a message ───────────────────────────────────
 
-async function messagesSelect(actionId) {
+async function messagesSelect(actionId, skipHash) {
     if (messagesDirty) {
         if (!confirm('You have unsaved changes. Discard?')) return;
     }
@@ -298,6 +300,7 @@ async function messagesSelect(actionId) {
     messagesDirty = false;
 
     messagesRenderList();
+    if (!skipHash) updateNavHash();
 
     // Show editor
     document.getElementById('messages-empty').style.display = 'none';
@@ -345,18 +348,18 @@ async function messagesSelect(actionId) {
     // Update badges
     const badges = document.getElementById('messages-panel-badges');
     const isEnabled = msg.enabled !== false;
-    let badgesHtml = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
-        + '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-input); color: var(--text-dim);">' + msg.adapter + '</span>';
-    if (msg.encrypted) {
-        badgesHtml += '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Encrypted at rest">\ud83d\udd12 Encrypted</span>';
-    }
-    // Enabled/disabled badge with toggle
-    badgesHtml += '<span onclick="messagesToggle(\'' + msg.action_id.replace(/'/g, "\\\\'") + '\')" '
+    // Enabled/disabled badge first (clickable toggle)
+    let badgesHtml = '<span onclick="messagesToggle(\'' + msg.action_id.replace(/'/g, "\\\\'") + '\')" '
         + 'style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; cursor: pointer; transition: all 0.2s; '
         + (isEnabled
             ? 'background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Enabled — click to disable">\u2705 Enabled'
             : 'background: rgba(239,68,68,0.12); color: var(--danger, #ef4444);" title="Disabled — click to enable">\u23f8\ufe0f Disabled')
         + '</span>';
+    badgesHtml += '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
+        + '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-input); color: var(--text-dim);">' + msg.adapter + '</span>';
+    if (msg.encrypted) {
+        badgesHtml += '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Encrypted at rest">\ud83d\udd12 Encrypted</span>';
+    }
     badges.innerHTML = badgesHtml;
 
     // Trigger preview

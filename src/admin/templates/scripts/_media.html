@@ -44,7 +44,7 @@ function mediaCancelUploadInProgress() {
 
 // ── Mode switching ─────────────────────────────────────
 
-function contentSwitchMode(mode) {
+function contentSwitchMode(mode, skipHash) {
     if (mode === contentCurrentMode) return;
 
     // Warn if article editor is dirty
@@ -81,6 +81,9 @@ function contentSwitchMode(mode) {
     if (mode === 'messages' && typeof messagesLoaded !== 'undefined' && !messagesLoaded) {
         messagesLoad();
     }
+
+    // Update URL hash
+    if (!skipHash) updateNavHash();
 }
 
 // ── Load media data ────────────────────────────────────
@@ -102,6 +105,8 @@ async function loadMedia() {
 
         renderMediaGallery();
         mediaLoaded = true;
+        // Restore pending deep navigation (e.g. #content/media/img_xxx)
+        if (typeof _consumePendingItemSelect === 'function') _consumePendingItemSelect('media');
     } catch (error) {
         document.getElementById('media-gallery-list').innerHTML =
             `<div style="color: var(--danger); font-size: 0.85rem;">❌ Failed to load: ${error.message}</div>`;
@@ -160,7 +165,7 @@ function renderMediaGallery() {
 
 // ── Select media item ──────────────────────────────────
 
-async function mediaSelectItem(mediaId) {
+async function mediaSelectItem(mediaId, skipHash) {
     // Clean up any running release poll from a previous upload
     if (_mediaReleasePollInterval) {
         clearInterval(_mediaReleasePollInterval);
@@ -168,6 +173,7 @@ async function mediaSelectItem(mediaId) {
     }
     mediaSelectedId = mediaId;
     renderMediaGallery();
+    if (!skipHash) updateNavHash();
 
     const item = mediaEntries.find(m => m.id === mediaId);
     if (!item) return;

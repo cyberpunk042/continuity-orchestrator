@@ -23,6 +23,8 @@ contentEncryptionAvailable = data.encryption_available;
 renderContentKeyBar();
 renderContentList();
 contentLoaded = true;
+// Restore pending deep navigation (e.g. #content/media/img_xxx)
+if (typeof _restoreContentNav === 'function') _restoreContentNav();
 } catch (error) {
 document.getElementById('content-article-list').innerHTML =
 `<div style="color: var(--danger); font-size: 0.85rem;">❌ Failed to load: ${error.message}</div>`;
@@ -131,7 +133,7 @@ el.innerHTML = html;
 
 // ── Select article ──────────────────────────────────────
 
-async function contentSelectArticle(slug) {
+async function contentSelectArticle(slug, skipHash) {
 // Warn if dirty
 if (contentDirty && contentSelectedSlug) {
 if (!confirm('You have unsaved changes. Discard and switch article?')) return;
@@ -143,6 +145,7 @@ contentEditorReady = false;
 const statusEl = document.getElementById('content-save-status');
 if (statusEl) statusEl.style.opacity = '0';
 renderContentList();
+if (!skipHash) updateNavHash();
 
 // Show loading state in editor
 document.getElementById('content-editor-slug').textContent = slug;
