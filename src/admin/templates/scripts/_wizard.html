@@ -175,12 +175,18 @@
                 `,
                 validate: () => true,
                 collect: () => {
-                    const mode = document.querySelector('input[name="deploy-mode"]:checked')?.value || 'github-pages';
+                    // Prefer DOM (when this step is visible), fall back to stored value
+                    const domMode = document.querySelector('input[name="deploy-mode"]:checked')?.value;
+                    const mode = domMode || wizardData.DEPLOY_MODE || envData.DEPLOY_MODE || 'github-pages';
                     const data = { DEPLOY_MODE: mode };
                     if (mode === 'docker') {
-                        data.DOCKER_GIT_SYNC_ALPHA = document.getElementById('wiz-docker-alpha')?.checked ? 'true' : 'false';
-                        data.DOCKER_GIT_SYNC_TICK_INTERVAL = document.getElementById('wiz-docker-tick-interval')?.value || '900';
-                        data.DOCKER_GIT_SYNC_SYNC_INTERVAL = document.getElementById('wiz-docker-sync-interval')?.value || '30';
+                        const alphaEl = document.getElementById('wiz-docker-alpha');
+                        const tickEl = document.getElementById('wiz-docker-tick-interval');
+                        const syncEl = document.getElementById('wiz-docker-sync-interval');
+                        // Only read DOM if elements exist (step is visible), else keep stored
+                        data.DOCKER_GIT_SYNC_ALPHA = alphaEl ? (alphaEl.checked ? 'true' : 'false') : (wizardData.DOCKER_GIT_SYNC_ALPHA || 'false');
+                        data.DOCKER_GIT_SYNC_TICK_INTERVAL = tickEl?.value || wizardData.DOCKER_GIT_SYNC_TICK_INTERVAL || '900';
+                        data.DOCKER_GIT_SYNC_SYNC_INTERVAL = syncEl?.value || wizardData.DOCKER_GIT_SYNC_SYNC_INTERVAL || '30';
                         const tunnelToken = document.getElementById('wiz-tunnel-token')?.value;
                         if (tunnelToken) data.CLOUDFLARE_TUNNEL_TOKEN = tunnelToken;
                     }
