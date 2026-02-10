@@ -587,23 +587,23 @@
 
             <!-- Footer: upload + insert actions -->
             <div class="vault-picker-footer">
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; min-width: 0; flex: 1;">
                     <input type="file" id="vault-picker-file-input" style="display: none;"
                         accept="image/*,video/*,audio/*,application/pdf,text/*,.json,.xml,.eml,.msg,.csv,.md,.zip,.gz,.tar,.7z"
                         onchange="vaultPickerUploadFile(event)">
                     <button class="btn" onclick="document.getElementById('vault-picker-file-input').click()"
-                        style="padding: 0.4rem 0.8rem; font-size: 0.82rem;">
+                        style="padding: 0.4rem 0.8rem; font-size: 0.82rem; flex-shrink: 0;">
                         📤 Upload new
                     </button>
-                    <span id="vault-picker-status" style="font-size: 0.78rem; color: var(--text-dim);"></span>
+                    <span id="vault-picker-status" style="font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;"></span>
                 </div>
-                <div id="vault-picker-actions" style="display: none; gap: 0.5rem;">
+                <div id="vault-picker-actions" style="display: none; gap: 0.5rem; flex-shrink: 0; align-items: center;">
                     <button class="btn primary" id="vault-picker-embed-btn" onclick="vaultPickerInsert('embed')"
-                        style="padding: 0.45rem 1rem; font-size: 0.85rem;">
+                        style="padding: 0.45rem 1rem; font-size: 0.85rem; white-space: nowrap;">
                         ▶ Embed
                     </button>
                     <button class="btn" id="vault-picker-attach-btn" onclick="vaultPickerInsert('attach')"
-                        style="padding: 0.45rem 1rem; font-size: 0.85rem;">
+                        style="padding: 0.45rem 1rem; font-size: 0.85rem; white-space: nowrap;">
                         📎 Attach
                     </button>
                 </div>

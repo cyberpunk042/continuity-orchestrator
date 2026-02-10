@@ -1262,10 +1262,12 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.75rem 1.25rem;
     border-top: 1px solid var(--border);
     background: var(--bg);
     border-radius: 0 0 16px 16px;
+    overflow: hidden;
 }
 
 .vault-picker-empty {
