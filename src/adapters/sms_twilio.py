@@ -135,6 +135,38 @@ class TwilioSMSAdapter(Adapter):
         # Build message body + extract media URLs for MMS
         body, media_urls = self._build_message(context)
         
+        # Validate media URLs are reachable before attempting MMS
+        # Twilio silently drops the ENTIRE message if media_url is unreachable
+        validated_media = []
+        if media_urls:
+            import urllib.request
+            for url in media_urls:
+                try:
+                    req = urllib.request.Request(url, method="HEAD")
+                    req.add_header("User-Agent", "continuity-orchestrator/1.0")
+                    resp = urllib.request.urlopen(req, timeout=5)
+                    if resp.status < 400:
+                        validated_media.append(url)
+                        logger.debug(f"Media URL reachable: {url} ({resp.status})")
+                    else:
+                        logger.warning(
+                            f"Media URL returned {resp.status}, skipping: {url}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Media URL unreachable, skipping for MMS: {url} — {e}"
+                    )
+            
+            if validated_media:
+                logger.info(
+                    f"Sending MMS with {len(validated_media)} media attachment(s)"
+                )
+            elif media_urls:
+                logger.warning(
+                    f"All {len(media_urls)} media URLs unreachable, "
+                    f"falling back to plain SMS"
+                )
+        
         try:
             create_kwargs = {
                 "body": body,
@@ -142,16 +174,13 @@ class TwilioSMSAdapter(Adapter):
                 "to": to_number,
             }
             
-            # Attach media URLs for MMS if present
-            if media_urls:
-                create_kwargs["media_url"] = media_urls
-                logger.info(
-                    f"Sending MMS with {len(media_urls)} media attachment(s)"
-                )
+            # Only attach validated media URLs
+            if validated_media:
+                create_kwargs["media_url"] = validated_media
             
             message = self.client.messages.create(**create_kwargs)
             
-            msg_type = "MMS" if media_urls else "SMS"
+            msg_type = "MMS" if validated_media else "SMS"
             logger.info(f"{msg_type} sent to {to_number}: {message.sid}")
             
             return Receipt.ok(
@@ -165,7 +194,7 @@ class TwilioSMSAdapter(Adapter):
                     "status": message.status,
                     "segments": self._count_segments(body),
                     "template": context.action.template,
-                    "media_count": len(media_urls),
+                    "media_count": len(validated_media),
                 },
             )
             
