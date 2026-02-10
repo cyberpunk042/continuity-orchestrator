@@ -142,23 +142,25 @@ async function handlePostConfig(request: Request, env: Env): Promise<Response> {
 
 // ── GET /status — Public observability endpoint ─────────────────
 async function handleStatus(env: Env): Promise<Response> {
-    const [stateRaw, signalRaw, configRaw, decisionRaw, dispatchLock] = await Promise.all([
+    const [stateRaw, signalRaw, configRaw, decisionRaw, dispatchLock, failCountRaw] = await Promise.all([
         env.SENTINEL_KV.get("state"),
         env.SENTINEL_KV.get("signal"),
         env.SENTINEL_KV.get("config"),
         env.SENTINEL_KV.get("last_decision"),
         env.SENTINEL_KV.get("dispatch_lock"),
+        env.SENTINEL_KV.get("dispatch_failures"),
     ]);
 
     const state: SentinelState | null = stateRaw ? JSON.parse(stateRaw) : null;
     const signal: Signal | null = signalRaw ? JSON.parse(signalRaw) : null;
     const config: SentinelConfig | null = configRaw ? JSON.parse(configRaw) : null;
     const lastDecision: DecisionLog | null = decisionRaw ? JSON.parse(decisionRaw) : null;
+    const dispatchFailures = failCountRaw ? parseInt(failCountRaw, 10) : 0;
 
-    console.log(`[status] configured=${!!config} hasState=${!!state} hasSignal=${!!signal} hasDecision=${!!lastDecision} hasLock=${!!dispatchLock}`);
+    console.log(`[status] configured=${!!config} hasState=${!!state} hasSignal=${!!signal} hasDecision=${!!lastDecision} hasLock=${!!dispatchLock} failures=${dispatchFailures}`);
 
     return json({
-        healthy: true,
+        healthy: dispatchFailures === 0,
         configured: !!config,
         // State summary
         lastTickAt: state?.lastTickAt ?? null,
@@ -173,6 +175,9 @@ async function handleStatus(env: Env): Promise<Response> {
         } : null,
         lastDispatchAt: dispatchLock ?? null,
         nextDueAt: config && state ? computeNextDueAt(state, config) : null,
+        // Dispatch health
+        dispatchFailures,
+        dispatchHealthy: dispatchFailures === 0,
         // Signal info
         pendingSignal: signal ? { type: signal.type, at: signal.at } : null,
         // Config summary

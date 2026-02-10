@@ -334,12 +334,32 @@
                 // Sentinel is live — map Worker /status response fields
                 const lastDecision = data.lastDecision || {};
                 const config = data.config || {};
+                const failures = data.dispatchFailures || 0;
 
-                badge.textContent = 'active';
-                badge.style.background = 'rgba(74, 222, 128, 0.15)';
-                badge.style.color = 'var(--accent)';
+                // Badge reflects actual health, not just reachability
+                if (failures > 0) {
+                    badge.textContent = `⚠ ${failures} failures`;
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.color = 'var(--danger)';
+                } else if (lastDecision.dispatch === false) {
+                    badge.textContent = 'idle';
+                    badge.style.background = 'rgba(251, 191, 36, 0.12)';
+                    badge.style.color = 'var(--warning)';
+                } else {
+                    badge.textContent = 'active';
+                    badge.style.background = 'rgba(74, 222, 128, 0.15)';
+                    badge.style.color = 'var(--accent)';
+                }
 
                 let rows = '';
+
+                // Show failure alert prominently
+                if (failures > 0) {
+                    rows += `<div class="alert" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; padding: 0.6rem; margin-bottom: 0.75rem; font-size: 0.82rem;">
+                        <strong style="color: var(--danger);">🚨 Dispatch failing</strong><br>
+                        <span style="color: var(--text-dim);">${failures} consecutive dispatch failure${failures > 1 ? 's' : ''} — GitHub Actions may be disabled or the token may have expired.</span>
+                    </div>`;
+                }
 
                 if (lastDecision.dispatch !== undefined) {
                     const action = lastDecision.dispatch ? '🟢 dispatched' : '⏭️ skipped';

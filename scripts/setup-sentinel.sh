@@ -86,17 +86,17 @@ else
 fi
 
 # Check wrangler — install locally if missing
-if ! command -v wrangler &>/dev/null && ! npx wrangler --version &>/dev/null 2>&1; then
+if ! command -v wrangler &>/dev/null && ! npx -y wrangler --version &>/dev/null 2>&1; then
     echo -e "  ${YELLOW}⚠ wrangler not found — installing via npx…${NC}"
     npm install -g wrangler 2>/dev/null || true
 fi
 
 if command -v wrangler &>/dev/null; then
     echo -e "  ${GREEN}✓ wrangler $(wrangler --version 2>/dev/null | head -1)${NC}"
-elif npx wrangler --version &>/dev/null 2>&1; then
+elif npx -y wrangler --version &>/dev/null 2>&1; then
     echo -e "  ${GREEN}✓ wrangler (via npx)${NC}"
     # alias doesn't work in non-interactive scripts — use a function instead
-    wrangler() { npx wrangler "$@"; }
+    wrangler() { npx -y wrangler "$@"; }
     export -f wrangler
 else
     echo -e "  ${RED}✗ wrangler not available${NC}"
