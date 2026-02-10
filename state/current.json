@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-10T15:07:06.910545+00:00",
+        "updated_at_iso": "2026-02-10T15:16:12.249024+00:00",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -12,11 +12,11 @@
         "armed": true
     },
     "timer": {
-        "deadline_iso": "2026-02-10T14:07:06.910545+00:00",
+        "deadline_iso": "2026-02-12T05:39:58.884023+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-10T15:07:06.910545+00:00",
-        "time_to_deadline_minutes": -60,
-        "overdue_minutes": 60
+        "now_iso": "2026-02-10T15:15:58.535124Z",
+        "time_to_deadline_minutes": 2304,
+        "overdue_minutes": 0
     },
     "renewal": {
         "last_renewal_iso": "2026-02-10T02:43:14.580419+00:00",
@@ -31,52 +31,23 @@
         "attempt_window_seconds": 60
     },
     "escalation": {
-        "state": "FULL",
-        "state_entered_at_iso": "2026-02-10T15:07:06.910545+00:00",
-        "last_transition_rule_id": "MANUAL_TRIGGER",
+        "state": "OK",
+        "state_entered_at_iso": "2026-02-10T15:16:12.249024+00:00",
+        "last_transition_rule_id": "MANUAL_RESET",
         "monotonic_enforced": true
     },
     "actions": {
-        "executed": {
-            "remind_email_primary": {
-                "status": "ok",
-                "last_delivery_id": "9158fe32-8079-4cc0-b14e-e06f067cc60c",
-                "last_executed_iso": "2026-02-10T03:40:01.597307+00:00"
-            },
-            "remind_email_secondary": {
-                "status": "ok",
-                "last_delivery_id": "4faa5208-f84d-472a-a6b6-db62e8a52c5c",
-                "last_executed_iso": "2026-02-10T04:44:44.202635+00:00"
-            },
-            "remind_sms": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-10T05:22:46.167285+00:00"
-            },
-            "notify_custodians_email": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-10T15:06:40.939949+00:00"
-            },
-            "notify_watchers_webhook": {
-                "status": "skipped",
-                "last_delivery_id": null,
-                "last_executed_iso": "2026-02-10T15:06:40.941548+00:00"
-            }
-        },
-        "last_tick_actions": [
-            "notify_custodians_email",
-            "notify_watchers_webhook"
-        ]
+        "executed": {},
+        "last_tick_actions": []
     },
     "release": {
-        "triggered": true,
-        "trigger_time_iso": "2026-02-10T15:07:06.910545+00:00",
+        "triggered": false,
+        "trigger_time_iso": null,
         "target_stage": "FULL",
         "delay_minutes": 0,
         "delay_scope": "full",
-        "execute_after_iso": "2026-02-10T15:07:06.910545+00:00",
-        "client_token": "q3Qsp2a2VMIJB1igji7RlA"
+        "execute_after_iso": null,
+        "client_token": null
     },
     "integrations": {
         "enabled_adapters": {

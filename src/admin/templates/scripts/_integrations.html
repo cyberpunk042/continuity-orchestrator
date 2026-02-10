@@ -276,13 +276,14 @@
                             <td style="text-align: right; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;">${stateText}</td>
                         </tr>`;
                 }
-                // Separator
-                html += `<tr><td colspan="3" style="padding: 0.3rem 0;"><hr style="border: none; border-top: 1px solid var(--border); margin: 0;"></td></tr>`;
+                html += `</table>`;
+                // Access URLs — own table, no colgroup, so URLs get full width
+                html += `<table style="width: 100%; border-collapse: collapse; margin-top: 0.4rem;">`;
                 // Local URL row
                 html += `
                     <tr style="line-height: 1.8;">
-                        <td style="text-align: center;">🌐</td>
-                        <td style="color: var(--text-dim);">Local</td>
+                        <td style="text-align: center; width: 1.4rem;">🌐</td>
+                        <td style="color: var(--text-dim); white-space: nowrap; padding-right: 0.5rem;">Local</td>
                         <td style="text-align: right;">
                             ${nginxRunning
                                 ? `<a href="http://localhost:8080" target="_blank" style="color: var(--accent);">localhost:8080 🔗</a>`
@@ -297,7 +298,8 @@
                     const tDash = dockerData.tunnel_dashboard_url;
                     let tunnelStatus;
                     if (tunnelRunning && tUrl) {
-                        tunnelStatus = `<a href="${tUrl}" target="_blank" style="color: var(--accent);">${tUrl} 🔗</a>`;
+                        const displayUrl = tUrl.replace(/^https?:\/\//, '');
+                        tunnelStatus = `<a href="${tUrl}" target="_blank" style="color: var(--accent);">${displayUrl} 🔗</a>`;
                     } else if (tunnelRunning && tErr && tDash) {
                         const svcHint = dockerData.tunnel_service_hint || 'http://localhost:8080';
                         tunnelStatus = `<span style="color: var(--warning);">⚠ <a href="${tDash}" target="_blank" style="color: var(--warning);">Add public hostname →</a> <span style="font-size: 0.75rem; color: var(--text-dim);">(service: ${svcHint})</span></span>`;
@@ -310,8 +312,8 @@
                     }
                     html += `
                         <tr style="line-height: 1.8;">
-                            <td style="text-align: center;">🔒</td>
-                            <td style="color: var(--text-dim);">Tunnel</td>
+                            <td style="text-align: center; width: 1.4rem;">🔒</td>
+                            <td style="color: var(--text-dim); white-space: nowrap; padding-right: 0.5rem;">Tunnel</td>
                             <td style="text-align: right;">${tunnelStatus}</td>
                         </tr>`;
                 }
