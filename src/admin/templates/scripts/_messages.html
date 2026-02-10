@@ -11,6 +11,7 @@ let messagesDirty = false;
 let messagesIsNew = false;
 let messagesVariables = [];
 let messagesRecipients = {};
+let messagesEncryptionAvailable = false;
 let _messagesPreviewTimer = null; // Debounce timer for live preview
 
 // Hex-escaped template variable delimiters to avoid Jinja2 conflict
@@ -41,6 +42,10 @@ async function messagesLoad() {
             custodian_emails: rcpData.custodian_emails || [],
             operator_email: rcpData.operator_email || '',
         };
+
+        // Piggyback encryption_available from the content articles API
+        // (key status is global, not per-mode)
+        messagesEncryptionAvailable = !!contentEncryptionAvailable;
 
         messagesLoaded = true;
         messagesRenderList();
@@ -92,6 +97,9 @@ function messagesRenderList() {
             html += '<span style="flex-shrink: 0;">' + msg.icon + '</span>';
             html += '<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + msg.template + '">' + (msg.template || msg.action_id) + '</span>';
             html += '<span style="font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 3px; background: var(--bg-input); color: var(--text-dim);">' + msg.channel + '</span>';
+            if (msg.encrypted) {
+                html += '<span title="Encrypted at rest" style="font-size: 0.62rem; opacity: 0.7;">\ud83d\udd12</span>';
+            }
             if (!msg.content_exists) {
                 html += '<span title="Template file missing" style="font-size: 0.72rem;">⚠️</span>';
             }
@@ -137,7 +145,7 @@ function messagesPopulateTemplatePicker() {
         html += '<optgroup label="' + dir + '/">';
         for (const t of templates) {
             html += '<option value="' + t.name + '" data-path="' + t.path + '" data-dir="' + t.dir + '">';
-            html += t.name + t.ext;
+            html += t.name + t.ext + (t.encrypted ? ' \ud83d\udd12' : '');
             html += '</option>';
         }
         html += '</optgroup>';
@@ -285,14 +293,25 @@ async function messagesSelect(actionId) {
         }
     }
 
+    // Set encryption toggle to current state
+    const encToggle = document.getElementById('messages-encrypt-toggle');
+    if (encToggle) {
+        encToggle.checked = !!msg.encrypted;
+        updateMessagesEncryptNote();
+    }
+
     // Update adapter hints + show correct preview
     messagesUpdateAdapterHints(msg.adapter);
     messagesShowPreviewForAdapter(msg.adapter);
 
     // Update badges
     const badges = document.getElementById('messages-panel-badges');
-    badges.innerHTML = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
+    let badgesHtml = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent);">' + msg.stage + '</span>'
         + '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-input); color: var(--text-dim);">' + msg.adapter + '</span>';
+    if (msg.encrypted) {
+        badgesHtml += '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(34,197,94,0.12); color: var(--success, #22c55e);" title="Encrypted at rest">\ud83d\udd12 Encrypted</span>';
+    }
+    badges.innerHTML = badgesHtml;
 
     // Trigger preview
     messagesRefreshPreview();
@@ -336,6 +355,13 @@ function messagesNew() {
     if (iframe) iframe.srcdoc = '';
 
     document.getElementById('messages-panel-badges').innerHTML = '<span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--success-dim, rgba(34,197,94,0.15)); color: var(--success, #22c55e);">NEW</span>';
+
+    // Default encrypt toggle to key availability for new messages
+    const encToggle = document.getElementById('messages-encrypt-toggle');
+    if (encToggle) {
+        encToggle.checked = !!messagesEncryptionAvailable;
+        updateMessagesEncryptNote();
+    }
 
     messagesDirty = false;
     const status = document.getElementById('messages-save-status');
@@ -530,7 +556,14 @@ async function messagesSave() {
         return;
     }
 
-    const body = { template, stage, adapter, channel, content };
+    // Encryption flag from toggle
+    const encrypt = document.getElementById('messages-encrypt-toggle')?.checked || false;
+    if (encrypt && !messagesEncryptionAvailable) {
+        contentLog('\u26a0\ufe0f Cannot encrypt \u2014 CONTENT_ENCRYPTION_KEY is not set.\nGo to Secrets \u2192 Security to configure it.', true);
+        return;
+    }
+
+    const body = { template, stage, adapter, channel, content, encrypt };
 
     if (!messagesIsNew && messagesSelected) {
         body.action_id = messagesSelected;
@@ -561,7 +594,8 @@ async function messagesSave() {
             setTimeout(() => { status.style.opacity = '0'; }, 2000);
         }
 
-        contentLog('\u2709\ufe0f Saved: ' + template + ' \u2192 ' + stage + ' (' + adapter + ' \u2192 ' + channel + ')');
+        const encLabel = data.encrypted ? ' \ud83d\udd12' : '';
+        contentLog('\u2709\ufe0f Saved: ' + template + ' \u2192 ' + stage + ' (' + adapter + ' \u2192 ' + channel + ')' + encLabel);
 
         // Reload everything
         await messagesLoad();
@@ -705,3 +739,24 @@ async function messagesRemoveRecipient(type, email) {
         contentLog('\u274c Error: ' + err.message);
     }
 }
+
+// ── Encryption toggle note ─────────────────────────────
+
+function updateMessagesEncryptNote() {
+    const note = document.getElementById('messages-encrypt-note');
+    if (!note) return;
+    const checked = document.getElementById('messages-encrypt-toggle')?.checked;
+    if (checked && !messagesEncryptionAvailable) {
+        note.innerHTML = '<span style="color: var(--danger);">\u26a0\ufe0f Key not set \u2014 encryption will fail</span>';
+    } else if (checked) {
+        note.textContent = 'Template will be encrypted before saving to disk';
+    } else {
+        note.textContent = 'Template will be saved as plaintext';
+    }
+}
+
+// Attach toggle listener
+document.getElementById('messages-encrypt-toggle')?.addEventListener('change', function() {
+    messagesMarkDirty();
+    updateMessagesEncryptNote();
+});

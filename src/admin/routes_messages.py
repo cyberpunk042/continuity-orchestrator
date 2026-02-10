@@ -139,6 +139,7 @@ def _find_template_file(template_name: str) -> Optional[Path]:
     """
     Find a template file by name, searching all subdirectories.
     Mirrors the logic in TemplateResolver.resolve().
+    Checks for encrypted (.enc) variants first, then plaintext.
     """
     templates_dir = _templates_dir()
     search_dirs = ["operator", "custodians", "subscribers", "public", "articles", ""]
@@ -149,11 +150,98 @@ def _find_template_file(template_name: str) -> Optional[Path]:
         if not base.exists():
             continue
         for ext in extensions:
+            # Encrypted version first
+            enc_path = base / f"{template_name}{ext}.enc"
+            if enc_path.exists():
+                return enc_path
+            # Then plaintext
             path = base / f"{template_name}{ext}"
             if path.exists():
                 return path
 
     return None
+
+
+def _read_template_content(path: Path) -> str:
+    """
+    Read a template file, decrypting if it is a .enc envelope.
+    """
+    if path.suffix == ".enc":
+        from ..content.crypto import decrypt_file, get_encryption_key
+
+        key = get_encryption_key()
+        if not key:
+            raise ValueError(
+                f"Template '{path.name}' is encrypted but no "
+                f"CONTENT_ENCRYPTION_KEY is configured."
+            )
+        envelope = path.read_bytes()
+        info = decrypt_file(envelope, key)
+        return info["plaintext"].decode("utf-8")
+
+    return path.read_text(encoding="utf-8")
+
+
+def _write_template_content(
+    path: Path,
+    content: str,
+    *,
+    encrypt: Optional[bool] = None,
+) -> Path:
+    """
+    Write template content to disk, optionally encrypting.
+
+    Args:
+        path: Target path (e.g. templates/operator/reminder.md).
+        content: Plaintext template content.
+        encrypt: True = force encrypt (error if no key).
+                 False = force plaintext.
+                 None = auto (encrypt if key available).
+
+    If encrypting, writes to path.enc and removes the plain version.
+    Returns the actual path written to.
+    """
+    from ..content.crypto import encrypt_file, get_encryption_key
+
+    key = get_encryption_key()
+
+    # Resolve encrypt flag
+    if encrypt is True:
+        if not key:
+            raise ValueError(
+                "Cannot encrypt: CONTENT_ENCRYPTION_KEY is not configured."
+            )
+        should_encrypt = True
+    elif encrypt is False:
+        should_encrypt = False
+    else:
+        # Auto: encrypt if key available
+        should_encrypt = bool(key)
+
+    if should_encrypt:
+        # Encrypt and write as .enc
+        enc_path = path.parent / (path.name + ".enc")
+        encrypted = encrypt_file(
+            content.encode("utf-8"),
+            path.name,
+            "text/plain",
+            key,
+        )
+        enc_path.write_bytes(encrypted)
+        # Remove plaintext version if it exists
+        if path.exists():
+            path.unlink()
+        logger.info(f"Saved template (encrypted): {enc_path}")
+        return enc_path
+    else:
+        # Write plaintext
+        path.write_text(content, encoding="utf-8")
+        # Remove .enc version if it exists (downgrade path)
+        enc_path = path.parent / (path.name + ".enc")
+        if enc_path.exists():
+            enc_path.unlink()
+        logger.info(f"Saved template: {path}")
+        return path
 
 
 def _template_dir_for_channel(channel: str) -> str:
@@ -514,6 +602,7 @@ def api_list_messages():
                 "channel": channel,
                 "template": template_name or "",
                 "content_exists": content_exists,
+                "encrypted": template_file is not None and template_file.suffix == ".enc",
                 "file_path": rel_path,
                 "icon": ADAPTER_ICONS.get(adapter, "📄"),
                 "constraints": action.get("constraints", {}),
@@ -529,6 +618,7 @@ def api_list_templates():
 
     Returns files grouped by subdirectory, excluding html/ and css/
     (those are site templates and styles, not message templates).
+    Includes encrypted (.enc) files with their logical name/extension.
     """
     templates_dir = _templates_dir()
     result = []
@@ -540,22 +630,49 @@ def api_list_templates():
             if child.name in excluded_dirs:
                 continue
             for f in sorted(child.iterdir()):
-                if f.is_file() and f.suffix in {".md", ".txt"}:
+                if f.is_file():
+                    encrypted = f.suffix == ".enc"
+                    if encrypted:
+                        # e.g. reminder_basic.md.enc → stem="reminder_basic.md", logical ext=".md"
+                        logical_name = Path(f.stem).stem  # "reminder_basic"
+                        logical_ext = Path(f.stem).suffix  # ".md"
+                        if logical_ext not in {".md", ".txt"}:
+                            continue
+                    elif f.suffix in {".md", ".txt"}:
+                        logical_name = f.stem
+                        logical_ext = f.suffix
+                    else:
+                        continue
+
                     result.append({
-                        "name": f.stem,
+                        "name": logical_name,
                         "path": str(f.relative_to(templates_dir)),
                         "dir": child.name,
-                        "ext": f.suffix,
+                        "ext": logical_ext,
+                        "encrypted": encrypted,
                     })
-        elif child.is_file() and child.suffix in {".md", ".txt"}:
-            # Root-level file (e.g., README.md) — skip README
-            if child.stem.lower() == "readme":
+        elif child.is_file():
+            encrypted = child.suffix == ".enc"
+            if encrypted:
+                logical_name = Path(child.stem).stem
+                logical_ext = Path(child.stem).suffix
+                if logical_ext not in {".md", ".txt"}:
+                    continue
+            elif child.suffix in {".md", ".txt"}:
+                logical_name = child.stem
+                logical_ext = child.suffix
+            else:
+                continue
+
+            # Skip README
+            if logical_name.lower() == "readme":
                 continue
             result.append({
-                "name": child.stem,
+                "name": logical_name,
                 "path": child.name,
                 "dir": "",
-                "ext": child.suffix,
+                "ext": logical_ext,
+                "encrypted": encrypted,
             })
 
     return jsonify({"templates": result})
@@ -563,24 +680,33 @@ def api_list_templates():
 
 @messages_bp.route("/<name>", methods=["GET"])
 def api_get_message(name: str):
-    """Get a template's content by name."""
+    """Get a template's content by name (decrypts transparently)."""
     template_file = _find_template_file(name)
 
     if not template_file or not template_file.exists():
         return jsonify({"error": f"Template '{name}' not found"}), 404
 
-    content = template_file.read_text(encoding="utf-8")
+    try:
+        content = _read_template_content(template_file)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 500
 
+    # Compute the logical path (strip .enc for display)
     try:
         rel_path = str(template_file.relative_to(_templates_dir()))
     except ValueError:
         rel_path = template_file.name
 
+    is_encrypted = template_file.suffix == ".enc"
+    # Logical extension is the one before .enc
+    logical_ext = Path(template_file.stem).suffix if is_encrypted else template_file.suffix
+
     return jsonify({
         "name": name,
         "content": content,
         "file_path": rel_path,
-        "extension": template_file.suffix,
+        "extension": logical_ext,
+        "encrypted": is_encrypted,
     })
 
 
@@ -595,6 +721,7 @@ def api_save_message():
         "adapter": "email",
         "channel": "operator",
         "content": "# Subject line\n\nBody text here...",
+        "encrypt": true,
         "action_id": "optional_custom_id"
     }
     """
@@ -608,6 +735,8 @@ def api_save_message():
     channel = body.get("channel", "").strip()
     content = body.get("content", "")
     action_id = body.get("action_id", "").strip()
+    # encrypt: true/false/null — null means auto-detect
+    encrypt_flag = body.get("encrypt")  # None if absent
 
     # Validation
     if not template_name:
@@ -631,8 +760,10 @@ def api_save_message():
     template_file = template_dir / f"{template_name}{ext}"
 
     # Write template content
-    template_file.write_text(content, encoding="utf-8")
-    logger.info(f"Saved template: {template_file}")
+    try:
+        actual_path = _write_template_content(template_file, content, encrypt=encrypt_flag)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     # Generate action ID if not provided
     if not action_id:
@@ -674,6 +805,7 @@ def api_save_message():
         "action_id": action_id,
         "stage": stage,
         "file_path": f"{subdir}/{template_name}{ext}",
+        "encrypted": actual_path.suffix == ".enc",
     })
 
 
@@ -682,13 +814,22 @@ def api_delete_message(name: str):
     """Delete a message (template file + plan action)."""
     action_id = request.args.get("action_id", "")
 
-    # Find and delete template file
+    # Find and delete template file (check both plain and encrypted)
     template_file = _find_template_file(name)
     file_deleted = False
     if template_file and template_file.exists():
         template_file.unlink()
         file_deleted = True
         logger.info(f"Deleted template file: {template_file}")
+        # Also clean up the other variant (plain ↔ enc)
+        if template_file.suffix == ".enc":
+            plain = template_file.parent / template_file.stem  # e.g. reminder.md
+            if plain.exists():
+                plain.unlink()
+        else:
+            enc = template_file.parent / (template_file.name + ".enc")
+            if enc.exists():
+                enc.unlink()
 
     # Remove action from plan
     action_removed = False

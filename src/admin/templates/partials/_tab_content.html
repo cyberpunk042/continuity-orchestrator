@@ -138,20 +138,20 @@
             <div id="content-editor-controls"
                 style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                 <div
-                    style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+                    style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
                     <!-- Left: encryption toggle -->
-                    <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0;">
                         <label
-                            style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                            style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; white-space: nowrap; flex-shrink: 0;">
                             <input type="checkbox" id="content-encrypt-toggle" style="accent-color: var(--accent);">
-                            <span>🔒 Save encrypted</span>
+                            <span>🔒 Encrypt</span>
                         </label>
-                        <span id="content-encrypt-note" style="font-size: 0.78rem; color: var(--text-dim);"></span>
+                        <span id="content-encrypt-note" style="font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
                     </div>
                     <!-- Right: action buttons -->
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;">
                         <span id="content-save-status"
-                            style="font-size: 0.78rem; color: var(--accent); opacity: 0; transition: opacity 0.3s;"></span>
+                            style="font-size: 0.78rem; color: var(--accent); opacity: 0; transition: opacity 0.3s; white-space: nowrap;"></span>
                         <button class="btn" onclick="contentDeleteArticle()"
                             style="padding: 0.45rem 0.9rem; color: var(--danger);" title="Delete this article">
                             🗑️ Delete
@@ -517,10 +517,19 @@
 
                 <!-- Editor controls -->
                 <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span id="messages-save-status"
-                            style="font-size: 0.78rem; color: var(--accent); opacity: 0; transition: opacity 0.3s;"></span>
-                        <div style="display: flex; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
+                        <!-- Left: encryption toggle -->
+                        <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0;">
+                            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; white-space: nowrap; flex-shrink: 0;">
+                                <input type="checkbox" id="messages-encrypt-toggle" style="accent-color: var(--accent);">
+                                <span>🔒 Encrypt</span>
+                            </label>
+                            <span id="messages-encrypt-note" style="font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                        </div>
+                        <!-- Right: status + action buttons -->
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;">
+                            <span id="messages-save-status"
+                                style="font-size: 0.78rem; color: var(--accent); opacity: 0; transition: opacity 0.3s; white-space: nowrap;"></span>
                             <button class="btn" onclick="messagesDelete()"
                                 style="padding: 0.45rem 0.9rem; color: var(--danger);" title="Delete this message">
                                 🗑️ Delete

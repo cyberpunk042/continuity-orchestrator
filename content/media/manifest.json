@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "media": [
+    {
+      "id": "img_20260210_ac5d",
+      "original_name": "16273991_xl.webp",
+      "mime_type": "image/webp",
+      "size_bytes": 334978,
+      "sha256": "a12c394afa35a756d041dec2f5d43398e2676e89893a9504d7019b63d9ed6890",
+      "encrypted": true,
+      "min_stage": "OK",
+      "referenced_by": [],
+      "uploaded_at": "2026-02-10T01:54:08.930847+00:00",
+      "caption": "",
+      "storage": "git"
+    }
+  ]
+}

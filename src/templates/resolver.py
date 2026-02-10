@@ -1,5 +1,10 @@
 """
 Template Resolver — Load and render template content.
+
+Supports encrypted templates (.enc files) transparently.
+When CONTENT_ENCRYPTION_KEY is configured, templates are stored
+as binary COVAULT envelopes (reusing media encryption) and decrypted
+on load.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ class TemplateResolver:
         Find a template file by name.
 
         Searches in multiple directories and extensions.
+        Checks for encrypted (.enc) variants first, then plaintext.
         Returns the first match or None.
         """
         for subdir in self.SEARCH_ORDER:
@@ -48,6 +54,13 @@ class TemplateResolver:
                 continue
 
             for ext in self.EXTENSIONS:
+                # Check encrypted version first
+                enc_candidate = base_path / f"{template_name}{ext}.enc"
+                if enc_candidate.exists():
+                    logger.debug(f"Resolved template '{template_name}' to {enc_candidate} (encrypted)")
+                    return enc_candidate
+
+                # Then plaintext
                 candidate = base_path / f"{template_name}{ext}"
                 if candidate.exists():
                     logger.debug(f"Resolved template '{template_name}' to {candidate}")
@@ -57,13 +70,45 @@ class TemplateResolver:
         return None
 
     def load(self, template_name: str) -> Optional[str]:
-        """Load a template's content by name."""
+        """
+        Load a template's content by name.
+
+        If the resolved file is an .enc file, it is decrypted transparently
+        using the CONTENT_ENCRYPTION_KEY.
+        """
         path = self.resolve(template_name)
         if path is None:
             return None
 
+        return self._read_template(path)
+
+    def _read_template(self, path: Path) -> str:
+        """
+        Read a template file, decrypting if it is a .enc envelope.
+        """
+        if path.suffix == ".enc":
+            return self._decrypt_template(path)
+
         with path.open(encoding="utf-8") as f:
             return f.read()
+
+    @staticmethod
+    def _decrypt_template(path: Path) -> str:
+        """
+        Decrypt a .enc template file using the content encryption key.
+        """
+        from ..content.crypto import decrypt_file, get_encryption_key
+
+        key = get_encryption_key()
+        if not key:
+            raise ValueError(
+                f"Template '{path.name}' is encrypted but no "
+                f"CONTENT_ENCRYPTION_KEY is configured."
+            )
+
+        envelope = path.read_bytes()
+        info = decrypt_file(envelope, key)
+        return info["plaintext"].decode("utf-8")
 
     def render(self, template_content: str, context: Dict[str, Any]) -> str:
         """

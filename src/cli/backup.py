@@ -99,7 +99,7 @@ def create_backup_archive(
 
     # If decrypting, resolve the encryption key
     passphrase = None
-    if decrypt_content and (include_articles or include_media):
+    if decrypt_content and (include_articles or include_media or include_templates):
         try:
             from ..content.crypto import get_encryption_key
             passphrase = get_encryption_key()
@@ -240,9 +240,31 @@ def create_backup_archive(
 
         # Templates
         if include_templates:
-            for f in template_files:
-                arcname = f"templates/{f.relative_to(templates_dir)}"
-                tar.add(str(f), arcname=arcname)
+            if decrypt_content and passphrase:
+                from ..content.crypto import decrypt_file as _decrypt_tpl
+                from ..content.crypto import is_encrypted_file as _is_enc_file
+                for f in template_files:
+                    arcname = f"templates/{f.relative_to(templates_dir)}"
+                    if f.suffix == ".enc":
+                        try:
+                            envelope = f.read_bytes()
+                            result = _decrypt_tpl(envelope, passphrase)
+                            plaintext = result["plaintext"]
+                            # Strip .enc from the archive name
+                            arc_plain = arcname.removesuffix(".enc")
+                            info = tarfile.TarInfo(name=arc_plain)
+                            info.size = len(plaintext)
+                            info.mtime = int(now.timestamp())
+                            tar.addfile(info, io.BytesIO(plaintext))
+                        except Exception as e:
+                            logger.warning(f"Failed to decrypt template {f.name}, exporting encrypted: {e}")
+                            tar.add(str(f), arcname=arcname)
+                    else:
+                        tar.add(str(f), arcname=arcname)
+            else:
+                for f in template_files:
+                    arcname = f"templates/{f.relative_to(templates_dir)}"
+                    tar.add(str(f), arcname=arcname)
 
     return archive_path, manifest
 
