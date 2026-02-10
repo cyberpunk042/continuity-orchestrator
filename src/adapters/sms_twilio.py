@@ -119,7 +119,7 @@ class TwilioSMSAdapter(Adapter):
         return True, None
     
     def execute(self, context: ExecutionContext) -> Receipt:
-        """Send SMS via Twilio."""
+        """Send SMS/MMS via Twilio."""
         to_number = self._get_recipient(context)
         
         if not to_number:
@@ -132,18 +132,27 @@ class TwilioSMSAdapter(Adapter):
                 retryable=False,
             )
         
-        # Build message body
-        body = self._build_message(context)
+        # Build message body + extract media URLs for MMS
+        body, media_urls = self._build_message(context)
         
         try:
-            message = self.client.messages.create(
-                body=body,
-                from_=self.from_number,
-                to=to_number,
-                status_callback=None,  # Could add webhook for delivery status
-            )
+            create_kwargs = {
+                "body": body,
+                "from_": self.from_number,
+                "to": to_number,
+            }
             
-            logger.info(f"SMS sent to {to_number}: {message.sid}")
+            # Attach media URLs for MMS if present
+            if media_urls:
+                create_kwargs["media_url"] = media_urls
+                logger.info(
+                    f"Sending MMS with {len(media_urls)} media attachment(s)"
+                )
+            
+            message = self.client.messages.create(**create_kwargs)
+            
+            msg_type = "MMS" if media_urls else "SMS"
+            logger.info(f"{msg_type} sent to {to_number}: {message.sid}")
             
             return Receipt.ok(
                 adapter=self.name,
@@ -156,6 +165,7 @@ class TwilioSMSAdapter(Adapter):
                     "status": message.status,
                     "segments": self._count_segments(body),
                     "template": context.action.template,
+                    "media_count": len(media_urls),
                 },
             )
             
@@ -199,13 +209,73 @@ class TwilioSMSAdapter(Adapter):
         # Default to operator
         return context.routing.operator_sms or os.environ.get("OPERATOR_SMS")
     
-    def _build_message(self, context: ExecutionContext) -> str:
-        """Build the SMS message body."""
+    def _extract_media_urls(self, content: str) -> tuple:
+        """
+        Extract media from resolved markdown, split into MMS-embeddable
+        and link-only categories.
+        
+        After resolve_media_uris() runs in tick.py, media:// URIs become
+        public URLs like https://domain.com/media/image.webp.
+        
+        - Plain images  ![caption](url)       → MMS attachment (media_url)
+        - Prefixed media ![video: ...](url)    → URL kept in body text
+                         ![audio: ...](url)
+                         ![file: ...](url)
+        
+        Returns:
+            (mms_urls, link_entries) where link_entries = [(alt, url), ...]
+        """
+        import re
+        media_re = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+        mms_urls = []
+        link_entries = []
+        
+        # Prefixes that indicate non-embeddable media
+        NON_EMBED_PREFIXES = ("video:", "audio:", "file:")
+        
+        for match in media_re.finditer(content):
+            alt = match.group(1).strip()
+            url = match.group(2)
+            
+            # Skip unresolved media:// and data: URIs
+            if url.startswith("media://") or url.startswith("data:"):
+                continue
+            
+            if not (url.startswith("http://") or url.startswith("https://")):
+                continue
+            
+            # Check if it's a non-embeddable type
+            alt_lower = alt.lower()
+            if any(alt_lower.startswith(p) for p in NON_EMBED_PREFIXES):
+                link_entries.append((alt, url))
+            else:
+                # Plain image → MMS attachment
+                mms_urls.append(url)
+        
+        return mms_urls, link_entries
+    
+    def _build_message(self, context: ExecutionContext) -> tuple:
+        """
+        Build the SMS message body and extract media URLs.
+        
+        Returns:
+            (body_text, media_urls) tuple
+        """
         template_content = context.template_content
+        media_urls = []
         
         if template_content:
-            # Strip markdown headers for SMS
+            # Extract media BEFORE stripping to labels
+            mms_urls, link_entries = self._extract_media_urls(template_content)
+            media_urls = mms_urls
+            
+            # Strip markdown headers and media for the text body
             body = self._strip_headers(template_content)
+            
+            # Append non-embeddable media as clickable URLs in the body
+            if link_entries:
+                for alt, url in link_entries:
+                    body += f"\n{url}"
         else:
             # Default message
             stage = context.escalation.state
@@ -222,7 +292,7 @@ class TwilioSMSAdapter(Adapter):
             body = body[:self.MAX_CONCAT_LENGTH - 3] + "..."
             logger.warning(f"SMS truncated to {self.MAX_CONCAT_LENGTH} chars")
         
-        return body
+        return body, media_urls
     
     def _strip_headers(self, content: str) -> str:
         """Remove markdown headers and media from content for SMS."""
