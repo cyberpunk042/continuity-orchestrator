@@ -292,16 +292,23 @@
                     </tr>`;
                 // Tunnel URL row
                 if (tunnelToken) {
+                    const tUrl = dockerData.tunnel_url;
+                    const tErr = dockerData.tunnel_error;
+                    let tunnelStatus;
+                    if (tunnelRunning && tUrl) {
+                        tunnelStatus = `<a href="${tUrl}" target="_blank" style="color: var(--accent);">${tUrl} 🔗</a>`;
+                    } else if (tunnelRunning && tErr) {
+                        tunnelStatus = `<span style="color: var(--warning);" title="${tErr}">⚠ ${tErr}</span>`;
+                    } else if (tunnelRunning) {
+                        tunnelStatus = `<span style="color: var(--accent);">Active</span>`;
+                    } else {
+                        tunnelStatus = `<span style="color: var(--text-dim);">Not running</span>`;
+                    }
                     html += `
                         <tr style="line-height: 1.8;">
                             <td style="text-align: center;">🔒</td>
                             <td style="color: var(--text-dim);">Tunnel</td>
-                            <td style="text-align: right;">
-                                ${tunnelRunning
-                                    ? `<span style="color: var(--accent);">Active (Cloudflare)</span>`
-                                    : `<span style="color: var(--text-dim);">Not running</span>`
-                                }
-                            </td>
+                            <td style="text-align: right;">${tunnelStatus}</td>
                         </tr>`;
                 }
                 html += `</table>`;
@@ -336,9 +343,12 @@
                         Auto git-sync before restart
                     </label>
                 </div>`;
-
             // Action buttons — primary row
             const anyRunning = containers.some(c => c.status === 'running');
+            // Auto-include tunnel profile when a token is configured
+            const defaultProfiles = tunnelToken ? ['git-sync', 'tunnel'] : ['git-sync'];
+            // Helper: produce a single-quoted JS array literal safe for inline onclick=""
+            const jsArr = (arr) => '[' + arr.map(s => `'${s}'`).join(',') + ']';
             html += `<div class="actions" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">`;
             if (anyRunning) {
                 html += `
@@ -353,18 +363,20 @@
                     </button>`;
             } else {
                 html += `
-                    <button class="btn primary" onclick="_dockerStart(['git-sync'])" id="btn-docker-start">
-                        ▶️ Start & Build (git-sync)
+                    <button class="btn primary" onclick="_dockerStart(${jsArr(defaultProfiles)})" id="btn-docker-start">
+                        ▶️ Start &amp; Build (${defaultProfiles.join(' + ')})
                     </button>
                     <button class="btn" onclick="_dockerStart([])" id="btn-docker-start-standalone">
-                        ▶️ Start & Build (standalone)
+                        ▶️ Start &amp; Build (standalone)
                     </button>`;
             }
 
-            // Tunnel button
+            // Tunnel button — only if Docker is running but tunnel isn't
             if (tunnelToken && !tunnelRunning && anyRunning) {
+                const startWithTunnel = [...(activeProfiles || [])];
+                if (!startWithTunnel.includes('tunnel')) startWithTunnel.push('tunnel');
                 html += `
-                    <button class="btn" onclick="_dockerStart(['git-sync', 'tunnel'])" id="btn-docker-tunnel">
+                    <button class="btn" onclick="_dockerStart(${jsArr(startWithTunnel)})" id="btn-docker-tunnel">
                         🌐 Start Tunnel
                     </button>`;
             }

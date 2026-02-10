@@ -14,6 +14,7 @@ Routes:
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
+import requests
 from flask import Blueprint, current_app, jsonify, request
 
 from .helpers import fresh_env
@@ -220,6 +222,91 @@ def _get_container_status() -> list:
     return list(found.values())
 
 
+# ── Tunnel URL retrieval ─────────────────────────────────────────────
+
+# Cache to avoid hitting the API every status poll
+_tunnel_url_cache: dict = {"url": None, "ts": 0.0}
+
+def _get_tunnel_url(env: dict) -> dict:
+    """
+    Retrieve the public hostname for the Cloudflare tunnel.
+
+    Decodes the tunnel token JWT to extract account_id and tunnel_id,
+    then queries the Cloudflare Tunnel Configuration API.
+    Results are cached for 5 minutes.
+
+    Returns:
+        {"url": "https://...", "error": None} on success,
+        {"url": None, "error": "reason"} on failure.
+    """
+    import time
+
+    # Return cached value if fresh (5 min)
+    now = time.time()
+    if _tunnel_url_cache["url"] and (now - _tunnel_url_cache["ts"]) < 300:
+        return {"url": _tunnel_url_cache["url"], "error": None}
+
+    tunnel_token = env.get("CLOUDFLARE_TUNNEL_TOKEN", "")
+    cf_api_token = env.get("CLOUDFLARE_API_TOKEN", "")
+    if not tunnel_token:
+        return {"url": None, "error": "CLOUDFLARE_TUNNEL_TOKEN not set"}
+    if not cf_api_token:
+        return {"url": None, "error": "CLOUDFLARE_API_TOKEN missing from .env — add it in Secrets tab"}
+
+    try:
+        # The tunnel token is a JWT: header.payload.signature
+        # Payload contains {"a": "<account_id>", "t": "<tunnel_id>", "s": "<secret>"}
+        parts = tunnel_token.split(".")
+        if len(parts) < 2:
+            return {"url": None, "error": "Invalid tunnel token format"}
+
+        # Decode payload (base64url)
+        payload_b64 = parts[1]
+        # Add padding if needed
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+
+        account_id = payload.get("a")
+        tunnel_id = payload.get("t")
+        if not account_id or not tunnel_id:
+            return {"url": None, "error": "Could not extract account/tunnel ID from token"}
+
+        # Query Cloudflare API for tunnel configuration
+        resp = requests.get(
+            f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
+            f"/cfd_tunnel/{tunnel_id}/configurations",
+            headers={
+                "Authorization": f"Bearer {cf_api_token}",
+                "Content-Type": "application/json",
+            },
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            logger.warning("Tunnel config API returned %d", resp.status_code)
+            return {"url": None, "error": f"Cloudflare API returned {resp.status_code}"}
+
+        data = resp.json()
+        if not data.get("success"):
+            return {"url": None, "error": "Cloudflare API error"}
+
+        # Extract first public hostname from ingress rules
+        config = data.get("result", {}).get("config", {})
+        ingress = config.get("ingress", [])
+        for rule in ingress:
+            hostname = rule.get("hostname")
+            if hostname:
+                url = f"https://{hostname}"
+                _tunnel_url_cache["url"] = url
+                _tunnel_url_cache["ts"] = now
+                return {"url": url, "error": None}
+
+        return {"url": None, "error": "No public hostname configured on this tunnel"}
+
+    except Exception as e:
+        logger.warning("Failed to retrieve tunnel URL: %s", e)
+        return {"url": None, "error": str(e)}
+
+
 # ── Routes ────────────────────────────────────────────────────────────
 
 
@@ -259,13 +346,25 @@ def docker_status():
             "sync_interval": int(env.get("DOCKER_GIT_SYNC_SYNC_INTERVAL", "30")),
         }
 
-        return jsonify({
+        # Retrieve tunnel public URL if tunnel is running
+        tunnel_info = None
+        if "continuity-tunnel" in running_names:
+            tunnel_info = _get_tunnel_url(env)
+
+        resp = {
             "available": True,
             "compose_file": True,
             "active_profiles": active_profiles,
             "containers": containers,
             "git_sync_config": git_sync_config,
-        })
+        }
+        if tunnel_info:
+            if tunnel_info["url"]:
+                resp["tunnel_url"] = tunnel_info["url"]
+            if tunnel_info["error"]:
+                resp["tunnel_error"] = tunnel_info["error"]
+
+        return jsonify(resp)
 
     except Exception as e:
         logger.error("Failed to get Docker status: %s", e)

@@ -2643,32 +2643,47 @@
 
             // If Docker mode with a tunnel token, and Docker is already running,
             // restart with the tunnel profile so the cloudflared container starts
-            if (deployMode === 'docker' && wizardData.CLOUDFLARE_TUNNEL_TOKEN) {
+            const tunnelToken = wizardData.CLOUDFLARE_TUNNEL_TOKEN || envData.CLOUDFLARE_TUNNEL_TOKEN;
+            console.log('[wizard] Tunnel check: deployMode=', deployMode, 'tunnelToken=', !!tunnelToken);
+            if (deployMode === 'docker' && tunnelToken) {
                 try {
                     const dockerRes = await fetch('/api/docker/status');
                     const dockerData = await dockerRes.json();
+                    console.log('[wizard] Docker status:', JSON.stringify(dockerData));
                     if (dockerData.available && dockerData.containers) {
                         const anyRunning = dockerData.containers.some(c => c.status === 'running');
                         const tunnelRunning = dockerData.active_profiles?.includes('tunnel');
+                        console.log('[wizard] anyRunning=', anyRunning, 'tunnelRunning=', tunnelRunning);
                         if (anyRunning && !tunnelRunning) {
                             statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.5rem 0;">🔒 Starting tunnel container…</div>';
                             const profiles = [...(dockerData.active_profiles || [])];
                             if (!profiles.includes('tunnel')) profiles.push('tunnel');
+                            console.log('[wizard] Starting docker with profiles:', profiles);
                             const startRes = await fetch('/api/docker/start', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ profiles }),
                             });
                             const startData = await startRes.json();
+                            console.log('[wizard] Docker start response:', JSON.stringify(startData));
                             if (startData.success) {
                                 statusDiv.innerHTML += '<div style="color: var(--accent); margin: 0.25rem 0;">🔒 Tunnel container started</div>';
                             } else {
                                 statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Tunnel start: ${startData.error || 'failed'}</div>`;
                             }
+                        } else if (!anyRunning) {
+                            console.log('[wizard] Docker not running — skipping tunnel start');
+                            statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.25rem 0;">ℹ️ Tunnel token saved. Start Docker with the tunnel profile to activate.</div>';
+                        } else {
+                            console.log('[wizard] Tunnel already running');
                         }
+                    } else if (!dockerData.available) {
+                        console.log('[wizard] Docker not available');
+                        statusDiv.innerHTML += '<div style="color: var(--info); margin: 0.25rem 0;">ℹ️ Tunnel token saved. Docker not available — start Docker to activate the tunnel.</div>';
                     }
                 } catch (e) {
                     console.warn('Docker tunnel start check failed:', e);
+                    statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Could not check Docker status: ${e.message}</div>`;
                 }
             }
 
