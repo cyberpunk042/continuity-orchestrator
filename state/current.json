@@ -3,7 +3,7 @@
         "schema_version": 1,
         "project": "my-safekeeper",
         "state_id": "S-INIT-20260209",
-        "updated_at_iso": "2026-02-11T03:36:58.126349Z",
+        "updated_at_iso": "2026-02-11T05:40:15.429576Z",
         "policy_version": 1,
         "plan_id": "default"
     },
@@ -14,9 +14,9 @@
     "timer": {
         "deadline_iso": "2026-02-10T20:57:34.859473+00:00",
         "grace_minutes": 0,
-        "now_iso": "2026-02-11T03:36:57.558601Z",
+        "now_iso": "2026-02-11T05:40:14.866118Z",
         "time_to_deadline_minutes": 0,
-        "overdue_minutes": 399
+        "overdue_minutes": 522
     },
     "renewal": {
         "last_renewal_iso": "2026-02-10T17:57:34.859473+00:00",
@@ -116,7 +116,7 @@
             "notify_all_webhooks": {
                 "status": "skipped",
                 "last_delivery_id": null,
-                "last_executed_iso": "2026-02-11T03:36:58.126048+00:00"
+                "last_executed_iso": "2026-02-11T05:40:15.429233+00:00"
             },
             "persist_final_state": {
                 "status": "ok",
