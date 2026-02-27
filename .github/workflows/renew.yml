@@ -90,11 +90,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
       
       - name: Install uv and package
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          uv pip install --system -e ".[adapters]" --quiet
+          uv pip install --system -e ".[adapters,crypto]" --quiet
       
       - name: Execute renewal
         if: steps.validate.outputs.action == 'renew'

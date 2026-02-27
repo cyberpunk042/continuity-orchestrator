@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
+from ..deps import ensure_package
+
 from ..models.receipt import Receipt
 from ..policy.models import ActionDefinition
 from .base import Adapter, ExecutionContext
@@ -60,8 +62,13 @@ class AdapterRegistry:
             self.register(WebhookAdapter())
             logger.info("Registered real webhook adapter")
         except ImportError:
-            self.register(MockWebhookAdapter())
-            logger.warning("httpx not available, using mock webhook")
+            if ensure_package("httpx"):
+                from .webhook import WebhookAdapter
+                self.register(WebhookAdapter())
+                logger.info("Registered real webhook adapter (after install)")
+            else:
+                self.register(MockWebhookAdapter())
+                logger.warning("httpx not available, using mock webhook")
         
         # Email adapter (Resend)
         if os.environ.get("RESEND_API_KEY"):
@@ -70,8 +77,13 @@ class AdapterRegistry:
                 self.register(ResendEmailAdapter())
                 logger.info("Registered Resend email adapter")
             except ImportError:
-                self.register(MockEmailAdapter())
-                logger.warning("resend package not available, using mock email")
+                if ensure_package("resend"):
+                    from .email_resend import ResendEmailAdapter
+                    self.register(ResendEmailAdapter())
+                    logger.info("Registered Resend email adapter (after install)")
+                else:
+                    self.register(MockEmailAdapter())
+                    logger.warning("resend package not available, using mock email")
         else:
             self.register(MockEmailAdapter())
             logger.debug("RESEND_API_KEY not set, using mock email")
@@ -83,8 +95,13 @@ class AdapterRegistry:
                 self.register(GitHubSurfaceAdapter())
                 logger.info("Registered GitHub Surface adapter")
             except ImportError:
-                self.register(MockGitHubSurfaceAdapter())
-                logger.warning("httpx not available, using mock GitHub")
+                if ensure_package("httpx"):
+                    from .github_surface import GitHubSurfaceAdapter
+                    self.register(GitHubSurfaceAdapter())
+                    logger.info("Registered GitHub Surface adapter (after install)")
+                else:
+                    self.register(MockGitHubSurfaceAdapter())
+                    logger.warning("httpx not available, using mock GitHub")
         else:
             self.register(MockGitHubSurfaceAdapter())
             logger.debug("GITHUB_TOKEN not set, using mock GitHub")
@@ -96,8 +113,13 @@ class AdapterRegistry:
                 self.register(PersistenceAPIAdapter())
                 logger.info("Registered Persistence API adapter")
             except ImportError:
-                self.register(MockAdapter("persistence_api"))
-                logger.warning("httpx not available, using mock persistence")
+                if ensure_package("httpx"):
+                    from .persistence_api import PersistenceAPIAdapter
+                    self.register(PersistenceAPIAdapter())
+                    logger.info("Registered Persistence API adapter (after install)")
+                else:
+                    self.register(MockAdapter("persistence_api"))
+                    logger.warning("httpx not available, using mock persistence")
         else:
             self.register(MockAdapter("persistence_api"))
             logger.debug("PERSISTENCE_API_URL not set, using mock persistence")
@@ -123,8 +145,13 @@ class AdapterRegistry:
                 self.register(TwilioSMSAdapter())
                 logger.info("Registered Twilio SMS adapter")
             except ImportError:
-                self.register(MockSMSAdapter())
-                logger.warning("twilio package not available, using mock SMS")
+                if ensure_package("twilio"):
+                    from .sms_twilio import TwilioSMSAdapter
+                    self.register(TwilioSMSAdapter())
+                    logger.info("Registered Twilio SMS adapter (after install)")
+                else:
+                    self.register(MockSMSAdapter())
+                    logger.warning("twilio package not available, using mock SMS")
         else:
             self.register(MockSMSAdapter())
             logger.debug("Twilio credentials not set, using mock SMS")
@@ -143,8 +170,13 @@ class AdapterRegistry:
                 self.register(XAdapter())
                 logger.info("Registered X (Twitter) adapter")
             except ImportError:
-                self.register(MockAdapter("x"))
-                logger.warning("httpx not available, using mock X adapter")
+                if ensure_package("httpx"):
+                    from .x_twitter import XAdapter
+                    self.register(XAdapter())
+                    logger.info("Registered X (Twitter) adapter (after install)")
+                else:
+                    self.register(MockAdapter("x"))
+                    logger.warning("httpx not available, using mock X adapter")
         else:
             self.register(MockAdapter("x"))
             logger.debug("X API credentials not set, using mock X adapter")
@@ -163,8 +195,13 @@ class AdapterRegistry:
                 self.register(RedditAdapter())
                 logger.info("Registered Reddit adapter")
             except ImportError:
-                self.register(MockAdapter("reddit"))
-                logger.warning("praw not available, using mock Reddit adapter")
+                if ensure_package("praw"):
+                    from .reddit import RedditAdapter
+                    self.register(RedditAdapter())
+                    logger.info("Registered Reddit adapter (after install)")
+                else:
+                    self.register(MockAdapter("reddit"))
+                    logger.warning("praw not available, using mock Reddit adapter")
         else:
             self.register(MockAdapter("reddit"))
             logger.debug("Reddit credentials not set, using mock Reddit adapter")

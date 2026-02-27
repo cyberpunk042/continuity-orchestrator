@@ -9,6 +9,7 @@ description = "A policy-first automation system for scheduled continuity operati
 license = "MIT"
 requires-python = ">=3.11"
 
+# Tier 0: Core — minimum viable tick
 dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -16,24 +17,47 @@ dependencies = [
     "python-dateutil>=2.8",
     "python-dotenv>=1.0",
     "jinja2>=3.0",
-    "cryptography>=42.0",
+    "httpx>=0.25",
 ]
 
 [project.optional-dependencies]
+# Tier 1: Per-adapter dependencies (lazy-installable in production)
+adapters-email = ["resend>=1.0"]
+adapters-sms = ["twilio>=8.0"]
+adapters-reddit = ["praw>=7.0"]
+
+# Tier 2: Feature modules (lazy-installable in production)
+crypto = ["cryptography>=42.0"]
+admin = [
+    "flask>=3.0",
+    "Pillow>=10.0",
+]
+
+# Convenience groups
+adapters = [
+    "resend>=1.0",
+    "twilio>=8.0",
+    "praw>=7.0",
+]
+all = [
+    "resend>=1.0",
+    "twilio>=8.0",
+    "praw>=7.0",
+    "cryptography>=42.0",
+    "flask>=3.0",
+    "Pillow>=10.0",
+]
 dev = [
+    "resend>=1.0",
+    "twilio>=8.0",
+    "praw>=7.0",
+    "cryptography>=42.0",
+    "flask>=3.0",
+    "Pillow>=10.0",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.1",
     "mypy>=1.0",
-]
-adapters = [
-    "httpx>=0.25",
-    "resend>=1.0",
-    "twilio>=8.0",
-]
-admin = [
-    "flask>=3.0",
-    "Pillow>=10.0",
 ]
 
 

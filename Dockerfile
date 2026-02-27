@@ -27,7 +27,6 @@ RUN pip install --no-cache-dir -e .
 RUN pip install --no-cache-dir \
     twilio \
     httpx \
-    praw \
     resend \
     || true
 
