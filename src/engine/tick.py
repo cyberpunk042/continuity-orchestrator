@@ -298,6 +298,7 @@ def run_tick(
     # the tick has nothing to do. Skip adapter execution and audit.
     if not result.state_changed and not dry_run:
         all_terminal = True
+        max_attempts = policy.plan.failure_handling.retry_policy.max_attempts
         for action in actions_for_stage:
             if not action.enabled:
                 continue  # Disabled actions don't count
@@ -305,6 +306,8 @@ def run_tick(
                 prev = state.actions.executed[action.id]
                 if prev.status in ("ok", "skipped"):
                     continue  # Terminal
+                if prev.status == "failed" and prev.attempt_count >= max_attempts:
+                    continue  # Exhausted = terminal
             # Found a non-terminal action
             all_terminal = False
             break
@@ -356,6 +359,19 @@ def run_tick(
                 if prev.status in ("ok", "skipped"):
                     logger.info(f"Skipping {action.id}: already {prev.status}")
                     continue
+                # Enforce max_attempts for failed actions
+                if prev.status == "failed":
+                    max_attempts = policy.plan.failure_handling.retry_policy.max_attempts
+                    if prev.attempt_count >= max_attempts:
+                        logger.warning(
+                            f"Skipping {action.id}: exhausted after "
+                            f"{prev.attempt_count}/{max_attempts} attempts"
+                        )
+                        continue
+                    logger.info(
+                        f"Retrying {action.id}: attempt "
+                        f"{prev.attempt_count + 1}/{max_attempts}"
+                    )
 
             # Resolve template if specified
             template_content = None
@@ -413,11 +429,17 @@ def run_tick(
                     f"— {error_msg}"
                 )
 
-            # Record receipt
+            # Record receipt — track attempt_count for retry enforcement
+            prev_receipt = state.actions.executed.get(action.id)
+            if receipt.status == "failed":
+                attempt_count = (prev_receipt.attempt_count + 1) if prev_receipt else 1
+            else:
+                attempt_count = 0  # Reset on success/skip
             state.actions.executed[action.id] = ActionReceipt(
                 status=receipt.status,
                 last_delivery_id=receipt.delivery_id,
                 last_executed_iso=receipt.ts_iso,
+                attempt_count=attempt_count,
             )
             state.actions.last_tick_actions.append(action.id)
             result.actions_executed.append(action.id)

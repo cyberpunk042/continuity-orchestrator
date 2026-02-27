@@ -78,6 +78,7 @@ class ActionReceipt(BaseModel):
     status: Literal["ok", "skipped", "failed"]
     last_delivery_id: Optional[str] = None
     last_executed_iso: str
+    attempt_count: int = 0
 
 
 class Actions(BaseModel):
