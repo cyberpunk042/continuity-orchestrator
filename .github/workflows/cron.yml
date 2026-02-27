@@ -244,44 +244,10 @@ jobs:
         run: |
           python -m src.main mirror-sync || echo "::warning::Mirror sync failed"
 
-      # ── Notify Sentinel ─────────────────────────────────────
-      # Fire-and-forget POST to the Cloudflare Worker so it knows
-      # the tick completed. When quiescent, the Python-side tick
-      # command already sent the sentinel notification for liveness.
-      - name: Notify sentinel
-        if: |
-          steps.role.outputs.mirror_role != 'SLAVE' &&
-          inputs.dry_run != 'true' &&
-          steps.tick.outputs.quiescent != 'true'
-        continue-on-error: true
-        env:
-          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
-          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
-        run: |
-          if [ -n "$SENTINEL_URL" ]; then
-            STATE_PAYLOAD=$(jq -c '{
-              lastTickAt: .meta.updated_at_iso,
-              deadline: .timer.deadline_iso,
-              stage: .escalation.state,
-              stageEnteredAt: (.escalation.state_entered_at_iso // ""),
-              renewedThisTick: (.renewal.renewed_this_tick // false),
-              lastRenewalAt: (.renewal.last_renewal_iso // ""),
-              stateChanged: true,
-              version: (now | floor)
-            }' state/current.json)
-            RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SENTINEL_URL}/state" \
-              -H "Authorization: Bearer ${SENTINEL_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d "$STATE_PAYLOAD" \
-              2>/dev/null || echo "000")
-            if [ "$RESP" = "200" ]; then
-              echo "✅ Sentinel notified"
-            else
-              echo "⚠️ Sentinel unreachable (HTTP ${RESP}, non-critical)"
-            fi
-          else
-            echo "ℹ️ Sentinel not configured — skipping"
-          fi
+
+      # NOTE: Sentinel notification is handled by the Python-side tick command
+      # (notify_sentinel in src/main.py). It fires on every tick — including
+      # quiescent ones — with a fresh timestamp. No shell step needed.
 
       # Only rebuild site if state changed OR if force_deploy is requested
       - name: Build static site

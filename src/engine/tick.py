@@ -229,7 +229,7 @@ def run_tick(
         logger.info(f"State transition: {previous_state} → {result.new_state}")
 
         if audit_writer:
-            audit_writer.emit_state_transition(
+            _audit_buffer.append(("state_transition", dict(
                 tick_id=tick_id,
                 state_id=state_id,
                 from_state=previous_state,
@@ -237,7 +237,7 @@ def run_tick(
                 rule_id=matched[-1].id if matched else "unknown",
                 policy_version=state.meta.policy_version,
                 plan_id=state.meta.plan_id,
-            )
+            )))
     else:
         result.new_state = state.escalation.state
 
@@ -273,7 +273,7 @@ def run_tick(
                 result.new_state = target_stage
                 
                 if audit_writer:
-                    audit_writer.emit_state_transition(
+                    _audit_buffer.append(("state_transition", dict(
                         tick_id=tick_id,
                         state_id=state_id,
                         from_state=result.previous_state,
@@ -281,7 +281,7 @@ def run_tick(
                         rule_id="MANUAL_RELEASE",
                         policy_version=state.meta.policy_version,
                         plan_id=state.meta.plan_id,
-                    )
+                    )))
             
             # Keep release.triggered set so site continues showing DELAYED
             logger.info("Release executed (triggered flag retained)")
@@ -453,6 +453,8 @@ def run_tick(
                     audit_writer.emit_tick_start(**entry_kwargs)
                 elif entry_type == "rule_matched":
                     audit_writer.emit_rule_matched(**entry_kwargs)
+                elif entry_type == "state_transition":
+                    audit_writer.emit_state_transition(**entry_kwargs)
 
             # Emit tick_end audit
             audit_writer.emit_tick_end(

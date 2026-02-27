@@ -56,14 +56,20 @@ def notify_sentinel(state: "State", tick_result: Optional["TickResult"] = None) 
 
     url, token = cfg
 
+    # lastTickAt = when did the master last run? Always fresh (liveness).
+    # lastStateChange = when did state actually mutate? Context info.
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
     payload = {
-        "lastTickAt":      state.meta.updated_at_iso,
+        "lastTickAt":      now_iso,
+        "lastStateChange": state.meta.updated_at_iso,
         "deadline":        state.timer.deadline_iso,
         "stage":           state.escalation.state,
         "stageEnteredAt":  state.escalation.state_entered_at_iso,
         "renewedThisTick": state.renewal.renewed_this_tick,
         "lastRenewalAt":   state.renewal.last_renewal_iso or "",
         "stateChanged":    tick_result.state_changed if tick_result else False,
+        "quiescent":       tick_result.quiescent if tick_result else False,
         "version":         int(time.time()),
     }
 

@@ -36,12 +36,69 @@ jobs:
       - name: Check master heartbeat (platform-agnostic)
         if: env.MIRROR_ROLE == 'SLAVE'
         id: heartbeat
+        env:
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
         run: |
           echo "🔍 Checking master heartbeat..."
           
-          # Primary signal: freshness of our own state/current.json
-          # This file is updated by the master's git push to us.
-          # If it stops being updated, the master stopped pushing.
+          # Helper: compute age in seconds from an ISO timestamp
+          age_of() {
+            python3 -c "
+          from datetime import datetime, timezone
+          import sys
+          ts = '$1'.replace('+00:00', 'Z').rstrip('Z')
+          for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S'):
+              try:
+                  dt = datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+                  print(int((datetime.now(timezone.utc) - dt).total_seconds()))
+                  break
+              except ValueError: continue
+          else: print(-1)
+          "
+          }
+          
+          # ── Primary: Query Cloudflare Sentinel Worker ──────────
+          # The Python-side tick command POSTs a fresh lastTickAt on
+          # every tick, including quiescent ones. This is the most
+          # reliable liveness signal.
+          if [ -n "$SENTINEL_URL" ] && [ -n "$SENTINEL_TOKEN" ]; then
+            WORKER_RESP=$(curl -s -m 5 \
+              -H "Authorization: Bearer ${SENTINEL_TOKEN}" \
+              "${SENTINEL_URL}/status" 2>/dev/null || echo "{}")
+            
+            LAST_TICK=$(echo "$WORKER_RESP" | python3 -c "
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+              print(d.get('lastTickAt', ''))
+          except: print('')
+          " 2>/dev/null)
+            
+            if [ -n "$LAST_TICK" ]; then
+              AGE=$(age_of "$LAST_TICK")
+              echo "⏱️ Worker says last tick: ${AGE}s ago (threshold: ${{ env.STALENESS_SECONDS }}s)"
+              
+              if [ "$AGE" -ge 0 ] && [ "$AGE" -lt "${{ env.STALENESS_SECONDS }}" ]; then
+                echo "✅ Master is alive (Worker heard from it ${AGE}s ago)"
+                echo "healthy=true" >> $GITHUB_OUTPUT
+                echo "source=worker" >> $GITHUB_OUTPUT
+                echo "age=$AGE" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+              echo "⚠️ Worker reports stale (${AGE}s), checking fallback..."
+            else
+              echo "⚠️ Worker unreachable or empty response, checking fallback..."
+            fi
+          else
+            echo "ℹ️ Sentinel not configured, using state file only..."
+          fi
+          
+          # ── Fallback: Local state/current.json ─────────────────
+          # Works when Worker is unreachable. Note: during prolonged
+          # quiescence, updated_at_iso may be stale (quiescent ticks
+          # don't bump it). This is expected — the Worker check above
+          # is the primary liveness signal.
           if [ ! -f "state/current.json" ]; then
             echo "⚠️ state/current.json not found"
             echo "healthy=false" >> $GITHUB_OUTPUT
@@ -49,7 +106,6 @@ jobs:
             exit 0
           fi
           
-          # Read the updated_at_iso timestamp
           UPDATED_AT=$(python3 -c "
           import json, sys
           try:
@@ -68,31 +124,8 @@ jobs:
             exit 0
           fi
           
-          echo "📅 Last master update: $UPDATED_AT"
-          
-          # Calculate age in seconds
-          AGE=$(python3 -c "
-          from datetime import datetime, timezone
-          import sys
-          try:
-              ts = '$UPDATED_AT'.replace('+00:00', 'Z').rstrip('Z')
-              # Handle both formats
-              for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S'):
-                  try:
-                      dt = datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
-                      break
-                  except ValueError:
-                      continue
-              else:
-                  print(-1)
-                  sys.exit(0)
-              now = datetime.now(timezone.utc)
-              print(int((now - dt).total_seconds()))
-          except Exception as e:
-              print(-1, file=sys.stderr)
-              print(-1)
-          ")
-          
+          echo "📅 Last state update: $UPDATED_AT"
+          AGE=$(age_of "$UPDATED_AT")
           echo "⏱️ State age: ${AGE}s (threshold: ${{ env.STALENESS_SECONDS }}s)"
           
           if [ "$AGE" -lt 0 ]; then
@@ -100,11 +133,12 @@ jobs:
             echo "healthy=false" >> $GITHUB_OUTPUT
             echo "reason=age calculation failed" >> $GITHUB_OUTPUT
           elif [ "$AGE" -lt "${{ env.STALENESS_SECONDS }}" ]; then
-            echo "✅ Master is alive (last push ${AGE}s ago)"
+            echo "✅ Master is alive (state file updated ${AGE}s ago)"
             echo "healthy=true" >> $GITHUB_OUTPUT
+            echo "source=state_file" >> $GITHUB_OUTPUT
             echo "age=$AGE" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Master is STALE (last push ${AGE}s ago, threshold ${{ env.STALENESS_SECONDS }}s)"
+            echo "⚠️ Master is STALE (state file ${AGE}s ago, threshold ${{ env.STALENESS_SECONDS }}s)"
             echo "healthy=false" >> $GITHUB_OUTPUT
             echo "reason=stale (${AGE}s)" >> $GITHUB_OUTPUT
             echo "age=$AGE" >> $GITHUB_OUTPUT

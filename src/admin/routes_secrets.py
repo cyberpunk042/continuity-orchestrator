@@ -527,13 +527,15 @@ def api_sentinel_push_state():
     renewal = state_data.get("renewal", {})
 
     payload = {
-        "lastTickAt": meta.get("updated_at_iso", ""),
+        "lastTickAt": _time.strftime("%Y-%m-%dT%H:%M:%S", _time.gmtime()) + "Z",
+        "lastStateChange": meta.get("updated_at_iso", ""),
         "deadline": timer.get("deadline_iso", ""),
         "stage": escalation.get("state", "OK"),
         "stageEnteredAt": escalation.get("state_entered_at_iso", ""),
         "renewedThisTick": renewal.get("renewed_this_tick", False),
         "lastRenewalAt": renewal.get("last_renewal_iso", ""),
         "stateChanged": False,
+        "quiescent": False,
         "version": int(_time.time()),
     }
 
