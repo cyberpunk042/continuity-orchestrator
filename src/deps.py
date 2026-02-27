@@ -56,12 +56,18 @@ def ensure_package(module_name: str, pip_name: str | None = None) -> bool:
     pip_name = pip_name or _PIP_NAMES.get(module_name, module_name)
     logger.info(f"📦 Auto-installing {pip_name} (first use)...")
 
-    # Try uv first (faster), then pip as fallback
-    installers = [
-        [sys.executable, "-m", "uv", "pip", "install",
-         "--system", pip_name, "-q"],
-        [sys.executable, "-m", "pip", "install", pip_name, "-q"],
-    ]
+    # Try uv first (standalone binary, faster), then pip as fallback
+    # uv is installed via `curl | sh` in Docker, available on PATH
+    # pip fallback needs --break-system-packages on Debian/Ubuntu 3.12+
+    import shutil
+    installers = []
+    uv_path = shutil.which("uv")
+    if uv_path:
+        installers.append([uv_path, "pip", "install", "--system", pip_name, "-q"])
+    installers.append(
+        [sys.executable, "-m", "pip", "install",
+         "--break-system-packages", pip_name, "-q"],
+    )
 
     for cmd in installers:
         try:

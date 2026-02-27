@@ -2,7 +2,7 @@
 
 > Created: 2026-02-27  
 > Reference: ci-dependency-optimization.analysis.md  
-> Status: IN PROGRESS
+> Status: ✅ ALL PARTS COMPLETE
 
 ---
 
@@ -13,7 +13,7 @@ Part 1: Prune dead weight        ✅ DONE — praw removed from Dockerfile, weas
 Part 2: uv cache in CI           ✅ DONE — added to cron.yml, renew.yml, test.yml, deploy-site.yml
 Part 3: Define dependency tiers  ✅ DONE — httpx→core, cryptography→[crypto], per-adapter extras
 Part 4: Lazy-install mechanism   ✅ DONE — src/deps.py + registry integration
-Part 5: Lean production image    → Dockerfile + CI core-only install
+Part 5: Lean production image    ✅ DONE — core-only Dockerfile, Python 3.12, uv for lazy-installs
 ```
 
 ---
