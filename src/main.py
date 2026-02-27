@@ -97,15 +97,28 @@ def tick(
     click.echo(f"  State: {result.previous_state} → {result.new_state}")
     if result.state_changed:
         click.secho("  ⚡ State transitioned!", fg="yellow", bold=True)
+    if result.quiescent:
+        click.secho("  💤 Quiescent — nothing to do", fg="cyan")
     click.echo(f"  Actions selected: {result.actions_selected}")
     click.echo(f"  Actions executed: {result.actions_executed}")
 
-    if not dry_run:
-        click.echo(f"\nSaving state to {state_path}")
-        save_state(state, state_path)
-        click.secho("✓ State persisted", fg="green")
+    # Write GitHub Actions outputs (if running in CI)
+    import os
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"quiescent={'true' if result.quiescent else 'false'}\n")
+            f.write(f"state_changed={'true' if result.state_changed else 'false'}\n")
 
-        # Notify sentinel (fire-and-forget)
+    if not dry_run:
+        if result.quiescent:
+            click.secho("✓ Quiescent — no state changes to persist", fg="cyan")
+        else:
+            click.echo(f"\nSaving state to {state_path}")
+            save_state(state, state_path)
+            click.secho("✓ State persisted", fg="green")
+
+        # Notify sentinel (fire-and-forget) — always, for liveness monitoring
         from .sentinel import notify_sentinel
         if notify_sentinel(state, result):
             click.secho("✓ Sentinel notified", fg="green")

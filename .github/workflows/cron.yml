@@ -142,7 +142,11 @@ jobs:
       
       - name: Commit state and audit changes
         id: commit
-        if: steps.role.outputs.mirror_role != 'SLAVE' && inputs.dry_run != 'true'
+        # Skip when quiescent — no files changed, nothing to commit.
+        if: |
+          steps.role.outputs.mirror_role != 'SLAVE' &&
+          inputs.dry_run != 'true' &&
+          steps.tick.outputs.quiescent != 'true'
         run: |
           if git status --porcelain state/ audit/ | grep -q .; then
             git config user.name "continuity-orchestrator[bot]"
@@ -199,12 +203,13 @@ jobs:
       
       # ── Mirror replication ─────────────────────────────────────
       # After committing state, replicate everything to mirror repos.
-      # Runs on every tick so the mirror is always up to date.
+      # Skipped when quiescent — nothing changed, nothing to sync.
       - name: Sync to mirror repos
         if: |
           steps.role.outputs.mirror_role != 'SLAVE' &&
           inputs.dry_run != 'true' &&
-          vars.MIRROR_ENABLED == 'true'
+          vars.MIRROR_ENABLED == 'true' &&
+          steps.tick.outputs.quiescent != 'true'
         env:
           MIRROR_ENABLED: ${{ vars.MIRROR_ENABLED }}
           MIRROR_1_REPO: ${{ vars.MIRROR_1_REPO }}
@@ -241,11 +246,13 @@ jobs:
 
       # ── Notify Sentinel ─────────────────────────────────────
       # Fire-and-forget POST to the Cloudflare Worker so it knows
-      # the tick completed. If SENTINEL_URL is not set, this no-ops.
+      # the tick completed. When quiescent, the Python-side tick
+      # command already sent the sentinel notification for liveness.
       - name: Notify sentinel
         if: |
           steps.role.outputs.mirror_role != 'SLAVE' &&
-          inputs.dry_run != 'true'
+          inputs.dry_run != 'true' &&
+          steps.tick.outputs.quiescent != 'true'
         continue-on-error: true
         env:
           SENTINEL_URL: ${{ secrets.SENTINEL_URL }}

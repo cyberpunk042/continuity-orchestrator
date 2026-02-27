@@ -72,6 +72,10 @@ class TickResult:
     new_state: str = ""
     state_changed: bool = False
 
+    # Quiescence: True when the tick determined there was nothing to do.
+    # Conditions: no state transition, all selected actions are terminal.
+    quiescent: bool = False
+
     # Rules
     matched_rules: List[str] = field(default_factory=list)
 
@@ -163,17 +167,25 @@ def run_tick(
 
     state_id = state.meta.state_id
 
-    # Emit tick_start audit
+    # Buffer audit entries — flushed at finalization only if not quiescent.
+    # This prevents tick_start and rule_matched entries from being written
+    # for ticks that turn out to have nothing to do.
+    _audit_buffer = []
+
+    # Record tick_start (buffered)
     if audit_writer:
-        audit_writer.emit_tick_start(
-            tick_id=tick_id,
-            state_id=state_id,
-            escalation_state=state.escalation.state,
-            policy_version=state.meta.policy_version,
-            plan_id=state.meta.plan_id,
-            now_iso=now.isoformat().replace("+00:00", "Z"),
-            deadline_iso=state.timer.deadline_iso,
-        )
+        _audit_buffer.append((
+            "tick_start",
+            dict(
+                tick_id=tick_id,
+                state_id=state_id,
+                escalation_state=state.escalation.state,
+                policy_version=state.meta.policy_version,
+                plan_id=state.meta.plan_id,
+                now_iso=now.isoformat().replace("+00:00", "Z"),
+                deadline_iso=state.timer.deadline_iso,
+            ),
+        ))
 
     # --- Phase 2: Time Evaluation ---
     compute_time_fields(state, now)
@@ -195,14 +207,17 @@ def run_tick(
     for r in matched:
         logger.info(f"Rule matched: {r.id}")
         if audit_writer:
-            audit_writer.emit_rule_matched(
-                tick_id=tick_id,
-                state_id=state_id,
-                rule_id=r.id,
-                escalation_state=state.escalation.state,
-                policy_version=state.meta.policy_version,
-                plan_id=state.meta.plan_id,
-            )
+            _audit_buffer.append((
+                "rule_matched",
+                dict(
+                    tick_id=tick_id,
+                    state_id=state_id,
+                    rule_id=r.id,
+                    escalation_state=state.escalation.state,
+                    policy_version=state.meta.policy_version,
+                    plan_id=state.meta.plan_id,
+                ),
+            ))
 
     # --- Phase 5: State Mutation ---
     previous_state = state.escalation.state
@@ -278,11 +293,31 @@ def run_tick(
 
     logger.info(f"Actions for stage {current_stage}: {result.actions_selected}")
 
-    # --- Phase 7: Adapter Execution (Mock) ---
+    # --- Phase 6b: Quiescence Check ---
+    # If no state changed and all selected actions are already terminal,
+    # the tick has nothing to do. Skip adapter execution and audit.
+    if not result.state_changed and not dry_run:
+        all_terminal = True
+        for action in actions_for_stage:
+            if not action.enabled:
+                continue  # Disabled actions don't count
+            if action.id in state.actions.executed:
+                prev = state.actions.executed[action.id]
+                if prev.status in ("ok", "skipped"):
+                    continue  # Terminal
+            # Found a non-terminal action
+            all_terminal = False
+            break
+
+        if all_terminal:
+            result.quiescent = True
+            logger.info("Tick is quiescent — nothing to do")
+
+    # --- Phase 7: Adapter Execution ---
     # Clear previous tick's actions
     state.actions.last_tick_actions = []
 
-    if not dry_run and actions_for_stage:
+    if not dry_run and actions_for_stage and not result.quiescent:
         from pathlib import Path
 
         from ..adapters.base import ExecutionContext
@@ -312,11 +347,14 @@ def run_tick(
                 state.actions.last_tick_actions.append(action.id)
                 continue
 
-            # Check idempotency
+            # Check idempotency — terminal statuses: ok, skipped
+            # "ok" = action succeeded; "skipped" = action evaluated but not applicable
+            # (e.g., no webhook URLs configured). Both are terminal for this
+            # escalation cycle. A reset/renew clears all receipts.
             if action.id in state.actions.executed:
                 prev = state.actions.executed[action.id]
-                if prev.status == "ok":
-                    logger.info(f"Skipping {action.id}: already executed")
+                if prev.status in ("ok", "skipped"):
+                    logger.info(f"Skipping {action.id}: already {prev.status}")
                     continue
 
             # Resolve template if specified
@@ -401,22 +439,33 @@ def run_tick(
     result.duration_ms = int((end_time - start_time) * 1000)
     result.ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # Update state metadata
-    state.meta.updated_at_iso = result.ended_at
+    # When quiescent, don't mutate state or write audit.
+    # The state file should remain untouched so no git commit is triggered.
+    # Liveness is tracked by sentinel (separate from audit).
+    if not result.quiescent:
+        # Update state metadata
+        state.meta.updated_at_iso = result.ended_at
 
-    # Emit tick_end audit
-    if audit_writer:
-        audit_writer.emit_tick_end(
-            tick_id=tick_id,
-            state_id=state_id,
-            escalation_state=state.escalation.state,
-            policy_version=state.meta.policy_version,
-            plan_id=state.meta.plan_id,
-            duration_ms=result.duration_ms,
-            actions_executed=len(result.actions_executed),
-            state_changed=result.state_changed,
-            matched_rules=result.matched_rules,
-        )
+        # Flush buffered audit entries
+        if audit_writer:
+            for entry_type, entry_kwargs in _audit_buffer:
+                if entry_type == "tick_start":
+                    audit_writer.emit_tick_start(**entry_kwargs)
+                elif entry_type == "rule_matched":
+                    audit_writer.emit_rule_matched(**entry_kwargs)
+
+            # Emit tick_end audit
+            audit_writer.emit_tick_end(
+                tick_id=tick_id,
+                state_id=state_id,
+                escalation_state=state.escalation.state,
+                policy_version=state.meta.policy_version,
+                plan_id=state.meta.plan_id,
+                duration_ms=result.duration_ms,
+                actions_executed=len(result.actions_executed),
+                state_changed=result.state_changed,
+                matched_rules=result.matched_rules,
+            )
 
     # Log detailed tick summary
     state_indicator = "🔄" if result.state_changed else "━"

@@ -175,17 +175,29 @@ def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_on
 
         # --- CODE ---
         if sync_all or code_only:
-            emit({"step": "code", "status": "running", "mirror_id": mirror.id})
-            from ..mirror import git_sync
-            ok, commit, error = git_sync.push_to_mirror(mirror, root, "main", force=True)
-            if ok:
-                slave.code.mark_ok(detail=commit)
-                emit({"step": "code", "status": "ok", "detail": commit or "up-to-date", "mirror_id": mirror.id})
+            # Check if HEAD matches last synced commit — skip if unchanged
+            import subprocess as _sp
+            _head = _sp.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=5, cwd=str(root)
+            ).stdout.strip()[:12]
+
+            if slave.code.status == "ok" and slave.code.detail == _head:
+                emit({"step": "code", "status": "ok",
+                      "detail": f"unchanged ({_head})",
+                      "progress": "skipped", "mirror_id": mirror.id})
             else:
-                slave.code.mark_failed(error or "Unknown error")
-                emit({"step": "code", "status": "failed", "error": error, "mirror_id": mirror.id})
-                errors += 1
-            state.save()
+                emit({"step": "code", "status": "running", "mirror_id": mirror.id})
+                from ..mirror import git_sync
+                ok, commit, error = git_sync.push_to_mirror(mirror, root, "main", force=True)
+                if ok:
+                    slave.code.mark_ok(detail=commit)
+                    emit({"step": "code", "status": "ok", "detail": commit or "up-to-date", "mirror_id": mirror.id})
+                else:
+                    slave.code.mark_failed(error or "Unknown error")
+                    emit({"step": "code", "status": "failed", "error": error, "mirror_id": mirror.id})
+                    errors += 1
+                state.save()
 
         # --- SECRETS ---
         if sync_all or secrets_only:
@@ -195,80 +207,98 @@ def mirror_sync(ctx: click.Context, code_only: bool, secrets_only: bool, vars_on
                 secrets_fingerprint,
                 sync_secret,
             )
-            synced = 0
-            secret_errors = []
 
-            # Standard secrets (same name on master and slave)
-            eligible = [(s, s, os.environ.get(s)) for s in SYNCABLE_SECRETS if os.environ.get(s)]
-
-            # Per-mirror renamed secrets (e.g. MIRROR_1_RENEWAL_TRIGGER_TOKEN → RENEWAL_TRIGGER_TOKEN)
             mirror_num = mirror.id.replace("mirror-", "")  # "mirror-1" → "1"
-            for master_key_template, slave_key in RENAMED_SECRETS.items():
-                master_key = master_key_template.replace("{N}", mirror_num)
-                value = os.environ.get(master_key)
-                if value:
-                    eligible.append((master_key, slave_key, value))
+            current_fp = secrets_fingerprint(mirror_num)
 
-            total = len(eligible)
-            emit({"step": "secrets", "status": "running", "progress": f"0/{total}", "mirror_id": mirror.id})
-
-            for master_name, slave_name, value in eligible:
-                ok, err = sync_secret(mirror.token, mirror.repo, slave_name, value)
-                if ok:
-                    synced += 1
-                else:
-                    secret_errors.append(f"{slave_name}: {err}")
-                emit({"step": "secrets", "status": "progress", "progress": f"{synced}/{total}",
-                      "detail": slave_name, "ok": ok, "mirror_id": mirror.id})
-
-            if synced == total:
-                slave.secrets.mark_ok(detail=f"{synced}/{total}", fingerprint=secrets_fingerprint(mirror_num))
-                emit({"step": "secrets", "status": "ok", "progress": f"{synced}/{total}", "mirror_id": mirror.id})
+            # Check if fingerprint matches last sync — skip if unchanged
+            if slave.secrets.status == "ok" and slave.secrets.fingerprint == current_fp:
+                emit({"step": "secrets", "status": "ok",
+                      "detail": "unchanged (fingerprint match)",
+                      "progress": "skipped", "mirror_id": mirror.id})
             else:
-                slave.secrets.mark_failed("; ".join(secret_errors))
-                emit({"step": "secrets", "status": "failed", "progress": f"{synced}/{total}",
-                      "error": "; ".join(secret_errors), "mirror_id": mirror.id})
-                errors += 1
-            state.save()
+                synced = 0
+                secret_errors = []
+
+                # Standard secrets (same name on master and slave)
+                eligible = [(s, s, os.environ.get(s)) for s in SYNCABLE_SECRETS if os.environ.get(s)]
+
+                # Per-mirror renamed secrets (e.g. MIRROR_1_RENEWAL_TRIGGER_TOKEN → RENEWAL_TRIGGER_TOKEN)
+                for master_key_template, slave_key in RENAMED_SECRETS.items():
+                    master_key = master_key_template.replace("{N}", mirror_num)
+                    value = os.environ.get(master_key)
+                    if value:
+                        eligible.append((master_key, slave_key, value))
+
+                total = len(eligible)
+                emit({"step": "secrets", "status": "running", "progress": f"0/{total}", "mirror_id": mirror.id})
+
+                for master_name, slave_name, value in eligible:
+                    ok, err = sync_secret(mirror.token, mirror.repo, slave_name, value)
+                    if ok:
+                        synced += 1
+                    else:
+                        secret_errors.append(f"{slave_name}: {err}")
+                    emit({"step": "secrets", "status": "progress", "progress": f"{synced}/{total}",
+                          "detail": slave_name, "ok": ok, "mirror_id": mirror.id})
+
+                if synced == total:
+                    slave.secrets.mark_ok(detail=f"{synced}/{total}", fingerprint=current_fp)
+                    emit({"step": "secrets", "status": "ok", "progress": f"{synced}/{total}", "mirror_id": mirror.id})
+                else:
+                    slave.secrets.mark_failed("; ".join(secret_errors))
+                    emit({"step": "secrets", "status": "failed", "progress": f"{synced}/{total}",
+                          "error": "; ".join(secret_errors), "mirror_id": mirror.id})
+                    errors += 1
+                state.save()
 
         # --- VARIABLES ---
         if sync_all or vars_only:
             from ..mirror.github_sync import sync_variable, variables_fingerprint
-            vars_to_sync = {
-                "MIRROR_ROLE": "SLAVE",
-                "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
-                "ADAPTER_MOCK_MODE": "true",
-            }
-            if os.environ.get("ARCHIVE_ENABLED"):
-                vars_to_sync["ARCHIVE_ENABLED"] = os.environ["ARCHIVE_ENABLED"]
-            if os.environ.get("ARCHIVE_URL"):
-                vars_to_sync["ARCHIVE_URL"] = os.environ["ARCHIVE_URL"]
-            if master_repo:
-                vars_to_sync["MASTER_REPO"] = master_repo
 
-            total = len(vars_to_sync)
-            synced = 0
-            var_errors = []
-            emit({"step": "variables", "status": "running", "progress": f"0/{total}", "mirror_id": mirror.id})
+            current_fp = variables_fingerprint()
 
-            for var_name, var_value in vars_to_sync.items():
-                ok, err = sync_variable(mirror.token, mirror.repo, var_name, var_value)
-                if ok:
-                    synced += 1
-                else:
-                    var_errors.append(f"{var_name}: {err}")
-                emit({"step": "variables", "status": "progress", "progress": f"{synced}/{total}",
-                      "detail": var_name, "ok": ok, "mirror_id": mirror.id})
-
-            if synced == total:
-                slave.variables.mark_ok(detail=f"{synced}/{total}", fingerprint=variables_fingerprint())
-                emit({"step": "variables", "status": "ok", "progress": f"{synced}/{total}", "mirror_id": mirror.id})
+            # Check if fingerprint matches last sync — skip if unchanged
+            if slave.variables.status == "ok" and slave.variables.fingerprint == current_fp:
+                emit({"step": "variables", "status": "ok",
+                      "detail": "unchanged (fingerprint match)",
+                      "progress": "skipped", "mirror_id": mirror.id})
             else:
-                slave.variables.mark_failed("; ".join(var_errors))
-                emit({"step": "variables", "status": "failed", "progress": f"{synced}/{total}",
-                      "error": "; ".join(var_errors), "mirror_id": mirror.id})
-                errors += 1
-            state.save()
+                vars_to_sync = {
+                    "MIRROR_ROLE": "SLAVE",
+                    "SENTINEL_THRESHOLD": os.environ.get("SENTINEL_THRESHOLD", "3"),
+                    "ADAPTER_MOCK_MODE": "true",
+                }
+                if os.environ.get("ARCHIVE_ENABLED"):
+                    vars_to_sync["ARCHIVE_ENABLED"] = os.environ["ARCHIVE_ENABLED"]
+                if os.environ.get("ARCHIVE_URL"):
+                    vars_to_sync["ARCHIVE_URL"] = os.environ["ARCHIVE_URL"]
+                if master_repo:
+                    vars_to_sync["MASTER_REPO"] = master_repo
+
+                total = len(vars_to_sync)
+                synced = 0
+                var_errors = []
+                emit({"step": "variables", "status": "running", "progress": f"0/{total}", "mirror_id": mirror.id})
+
+                for var_name, var_value in vars_to_sync.items():
+                    ok, err = sync_variable(mirror.token, mirror.repo, var_name, var_value)
+                    if ok:
+                        synced += 1
+                    else:
+                        var_errors.append(f"{var_name}: {err}")
+                    emit({"step": "variables", "status": "progress", "progress": f"{synced}/{total}",
+                          "detail": var_name, "ok": ok, "mirror_id": mirror.id})
+
+                if synced == total:
+                    slave.variables.mark_ok(detail=f"{synced}/{total}", fingerprint=current_fp)
+                    emit({"step": "variables", "status": "ok", "progress": f"{synced}/{total}", "mirror_id": mirror.id})
+                else:
+                    slave.variables.mark_failed("; ".join(var_errors))
+                    emit({"step": "variables", "status": "failed", "progress": f"{synced}/{total}",
+                          "error": "; ".join(var_errors), "mirror_id": mirror.id})
+                    errors += 1
+                state.save()
 
     emit({"step": "done", "status": "done", "success": errors == 0, "errors": errors})
 
