@@ -255,6 +255,8 @@
                             <option value="default" ${wizardData._POLICY_PRESET === 'default' ? 'selected' : ''}>Default (standard escalation)</option>
                             <option value="testing" ${wizardData._POLICY_PRESET === 'testing' ? 'selected' : ''}>Testing (fast cycle — minutes)</option>
                             <option value="gentle" ${wizardData._POLICY_PRESET === 'gentle' ? 'selected' : ''}>Gentle (slow ramp — extended delays)</option>
+                            <option value="monthly" ${wizardData._POLICY_PRESET === 'monthly' ? 'selected' : ''}>Monthly (3d/1d/6h reminders)</option>
+                            <option value="yearly" ${wizardData._POLICY_PRESET === 'yearly' ? 'selected' : ''}>Yearly (30d/7d/1d reminders)</option>
                             <option value="direct_full" ${wizardData._POLICY_PRESET === 'direct_full' ? 'selected' : ''}>Direct to FULL (skip reminders)</option>
                         </select>
                         <div id="wiz-policy-hint" class="form-hint">
@@ -316,23 +318,32 @@
                                 <input type="radio" name="deadline-hours" value="168" ${(wizardData.DEADLINE_HOURS || 48) == 168 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=168">
                                 <div><strong>168h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">1 week</div></div>
                             </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 720 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="720" ${(wizardData.DEADLINE_HOURS || 48) == 720 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=720">
+                                <div><strong>720h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">30 days</div></div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: ${(wizardData.DEADLINE_HOURS || 48) == 8760 ? 'var(--accent-dim)' : 'transparent'};">
+                                <input type="radio" name="deadline-hours" value="8760" ${(wizardData.DEADLINE_HOURS || 48) == 8760 ? 'checked' : ''} onchange="wizardData.DEADLINE_HOURS=8760">
+                                <div><strong>8760h</strong><div style="color: var(--text-dim); font-size: 0.8rem;">1 year</div></div>
+                            </label>
                         </div>
                     </div>
                     <div class="form-group" style="margin-top: 1rem;">
                         <label class="form-label">Or set a custom value:</label>
                         <div style="display: flex; gap: 0.5rem; align-items: center;">
                             <input type="number" class="form-input" id="wiz-custom-deadline" 
-                                   placeholder="hours" min="1" max="8760"
+                                   placeholder="hours" min="1" max="87600"
                                    style="width: 120px;"
-                                   value="${wizardData.DEADLINE_HOURS && ![24, 48, 72, 168].includes(wizardData.DEADLINE_HOURS) ? wizardData.DEADLINE_HOURS : ''}"
+                                   value="${wizardData.DEADLINE_HOURS && ![24, 48, 72, 168, 720, 8760].includes(wizardData.DEADLINE_HOURS) ? wizardData.DEADLINE_HOURS : ''}"
                                    oninput="wizardData.DEADLINE_HOURS=parseInt(this.value)">
                             <span style="color: var(--text-dim);">hours</span>
                         </div>
                     </div>
                     <div class="alert info" style="margin-top: 1rem;">
                         ⏱️ <strong>How it works:</strong> You must renew before the deadline expires.
-                        The system checks every 30 minutes. As the deadline approaches, escalation
-                        stages trigger (reminders → warnings → disclosure).
+                        Escalation thresholds auto-scale relative to the deadline length — shorter
+                        deadlines get tighter windows, longer deadlines (monthly/yearly) get
+                        proportionally spaced reminders.<br>
                         You can always change this later from the Dashboard.
                     </div>
                 `,
@@ -1146,6 +1157,8 @@
                 'default': '6h → 1h → 15min reminders, then immediate partial → 2h full.',
                 'testing': '90m → 60m → 30m reminders (aligned to ~30min cron ticks), 30m to full.',
                 'gentle': '24h → 6h → 1h reminders, 1h partial delay → 6h to full disclosure.',
+                'monthly': '3 days → 1 day → 6h reminders, then immediate partial → 1 day to full.',
+                'yearly': '30 days → 7 days → 1 day reminders, then immediate partial → 7 days to full.',
                 'direct_full': 'Disables all reminders & partial — immediate full disclosure on expiry.',
             };
             hint.textContent = descs[sel.value] || descs[''];
@@ -2603,17 +2616,32 @@
                 }
             }
 
-            // Apply policy preset if selected
-            if (policyPreset) {
+            // Apply policy preset if selected — or auto-select based on deadline
+            // When the user picks a long deadline (monthly/yearly), the default
+            // REMIND thresholds (6h/1h/15m) are way too tight. Auto-apply a matching preset.
+            let effectivePreset = policyPreset;
+            if (!effectivePreset && deadlineTouched && deadlineHours) {
+                if (deadlineHours >= 4320) {          // ≥ 180 days → yearly
+                    effectivePreset = 'yearly';
+                } else if (deadlineHours >= 336) {    // ≥ 14 days → monthly
+                    effectivePreset = 'monthly';
+                } else if (deadlineHours >= 168) {    // ≥ 7 days → gentle
+                    effectivePreset = 'gentle';
+                }
+                // ≤ 6 days: default thresholds are fine, no override needed
+            }
+
+            if (effectivePreset) {
                 try {
                     const policyResp = await fetch('/api/policy/constants', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ preset: policyPreset }),
+                        body: JSON.stringify({ preset: effectivePreset }),
                     });
                     const policyData = await policyResp.json();
                     if (policyData.success) {
-                        statusDiv.innerHTML += `<div style="color: var(--accent); margin: 0.25rem 0;">📋 Applied policy preset: ${policyPreset}</div>`;
+                        const autoLabel = !policyPreset ? ' (auto-selected for ' + deadlineHours + 'h deadline)' : '';
+                        statusDiv.innerHTML += `<div style="color: var(--accent); margin: 0.25rem 0;">📋 Applied policy preset: ${effectivePreset}${autoLabel}</div>`;
                     } else {
                         statusDiv.innerHTML += `<div style="color: var(--warning); margin: 0.25rem 0;">⚠️ Policy preset: ${policyData.error || 'failed'}</div>`;
                     }

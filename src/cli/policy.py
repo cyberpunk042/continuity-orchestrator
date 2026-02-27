@@ -87,6 +87,28 @@ PRESETS: Dict[str, Dict] = {
             "max_failed_attempts": 5,
         },
     },
+    "monthly": {
+        # For 30-day deadlines — proportionally scaled reminders
+        "constants": {
+            "remind_1_at_minutes": 4320,      # 3 days (72 h)
+            "remind_2_at_minutes": 1440,      # 1 day (24 h)
+            "pre_release_at_minutes": 360,    # 6 h
+            "partial_after_overdue_minutes": 0,
+            "full_after_overdue_minutes": 1440, # 1 day after overdue
+            "max_failed_attempts": 3,
+        },
+    },
+    "yearly": {
+        # For 365-day deadlines — wide-spaced reminders
+        "constants": {
+            "remind_1_at_minutes": 43200,       # 30 days (720 h)
+            "remind_2_at_minutes": 10080,       # 7 days (168 h)
+            "pre_release_at_minutes": 1440,     # 1 day (24 h)
+            "partial_after_overdue_minutes": 0,
+            "full_after_overdue_minutes": 10080, # 7 days after overdue
+            "max_failed_attempts": 3,
+        },
+    },
 }
 
 

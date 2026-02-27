@@ -241,6 +241,7 @@
                 ` : data.actions && data.actions.results && data.actions.results.length > 0 ? `
                 <div class="card">
                     <h2><span class="icon">📋</span> Last Actions</h2>
+                    <div style="max-height: 600px; overflow-y: auto;">
                     ${data.actions.results.map(a => `
                         <div class="status-row">
                             <span class="status-label">${a.status === 'ok' ? '✅' : a.status === 'skipped' ? '⏭️' : '❌'} ${a.action_id}</span>
@@ -249,6 +250,7 @@
                             </span>
                         </div>
                     `).join('')}
+                    </div>
                 </div>
                 ` : ''}
                 

@@ -183,57 +183,15 @@ run_admin() {
     local extra_args="${@}"
     echo -e "\n${BOLD}=== Web Admin Panel ===${NC}\n"
     echo -e "${CYAN}Opening browser to local admin panel...${NC}"
-    echo -e "${YELLOW}Press Ctrl+C to stop  |  Press SPACE to live-reload${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to stop  |  Press SPACE to live-reload  |  Press Q to quit${NC}"
     if [[ "$extra_args" == *"--debug"* ]]; then
         echo -e "${RED}Debug mode enabled — verbose logging active${NC}"
     fi
     echo ""
 
-    local server_pid=""
-
-    # Cleanup on exit
-    cleanup_admin() {
-        if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
-            kill "$server_pid" 2>/dev/null
-            wait "$server_pid" 2>/dev/null
-        fi
-        stty sane 2>/dev/null  # restore terminal
-    }
-    trap cleanup_admin EXIT INT TERM
-
-    while true; do
-        # Start server in background
-        python -m src.admin $extra_args &
-        server_pid=$!
-
-        # Wait for keypress or server exit
-        while kill -0 "$server_pid" 2>/dev/null; do
-            # Read a single char with 0.5s timeout
-            if read -rsn1 -t 0.5 key 2>/dev/null; then
-                if [[ "$key" == " " ]]; then
-                    echo ""
-                    echo -e "${CYAN}♻  Reloading server...${NC}"
-                    echo ""
-                    kill "$server_pid" 2>/dev/null
-                    wait "$server_pid" 2>/dev/null
-                    sleep 0.3
-                    break  # restart the while-true loop
-                fi
-            fi
-        done
-
-        # If server exited on its own (not spacebar), exit the loop
-        if ! kill -0 "$server_pid" 2>/dev/null; then
-            wait "$server_pid" 2>/dev/null
-            local exit_code=$?
-            # If we broke out via spacebar, the process is already dead — continue
-            # If it died on its own (crash or Ctrl+C), stop
-            if [[ "$key" != " " ]]; then
-                break
-            fi
-        fi
-        key=""
-    done
+    # Delegate to Python helper for reliable keypress detection
+    # (bash stty+dd/read is fundamentally broken for this — phantom input, signal races, etc.)
+    python "$(dirname "${BASH_SOURCE[0]}")/scripts/serve-with-reload.py" $extra_args
 }
 
 run_config_status() {
